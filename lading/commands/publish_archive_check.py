@@ -121,7 +121,7 @@ class _Comparison:
 
 
 @dc.dataclass(frozen=True, slots=True)
-class _ArchivePhase:
+class ArchivePhase:
     """How a check on a local archive words and classifies its failure.
 
     The packaged and uploaded checks differ only in this vocabulary and in the
@@ -134,7 +134,7 @@ class _ArchivePhase:
     differs_detail: str
 
 
-_PACKAGED = _ArchivePhase(
+PACKAGED = ArchivePhase(
     error_cls=ArchiveMismatchError,
     differs_message=(
         "The archive for crate {crate} differs from the digest expected in "
@@ -143,7 +143,7 @@ _PACKAGED = _ArchivePhase(
     matches_detail="packaged archive matches",
     differs_detail="packaged archive differs",
 )
-_UPLOADED = _ArchivePhase(
+UPLOADED = ArchivePhase(
     error_cls=UploadedArchiveMismatchError,
     differs_message=(
         "The uploaded bytes for crate {crate} differ from the digest expected "
@@ -237,10 +237,25 @@ class ArchiveVerifier:
             )
             raise ArchiveUnavailableError(message) from exc
 
-    def _require_match(
-        self, crate: WorkspaceCrate, crate_root: Path, phase: _ArchivePhase
+    def check_archive(
+        self, crate: WorkspaceCrate, crate_root: Path, phase: ArchivePhase
     ) -> None:
-        """Hash ``crate``'s archive and fail with ``phase``'s error if it differs."""
+        """Require the archive Cargo wrote for ``crate`` to match its digest.
+
+        ``phase`` says whether it is the archive ``cargo package`` just wrote
+        (:data:`PACKAGED`, refused before anything is uploaded) or the one
+        ``cargo publish`` uploaded (:data:`UPLOADED`, which cannot be undone so
+        the run fails loudly).
+
+        Raises
+        ------
+        ArchiveMismatchError
+            For :data:`PACKAGED` when the digest differs.
+        UploadedArchiveMismatchError
+            For :data:`UPLOADED` when the digest differs.
+        ArchiveUnavailableError
+            If the archive cannot be located or read.
+        """  # ruff: ignore[docstring-extraneous-exception]  # raised through phase.error_cls and _digest_archive
         comparison = _Comparison(
             self.expected.digest_for(crate), self._digest_archive(crate, crate_root)
         )
@@ -252,19 +267,6 @@ class ArchiveVerifier:
             message = f"{summary} ({comparison.describe()})"
             raise phase.error_cls(message)
         self._record(crate, ArchiveOutcome.VERIFIED, phase.matches_detail)
-
-    def check_packaged(self, crate: WorkspaceCrate, crate_root: Path) -> None:
-        """Require the archive ``cargo package`` just wrote to match.
-
-        Raises
-        ------
-        ArchiveMismatchError
-            If the digest differs; nothing has been uploaded for this crate or
-            any later one.
-        ArchiveUnavailableError
-            If the archive cannot be located or read.
-        """  # ruff: ignore[docstring-extraneous-exception]  # raised via _require_match
-        self._require_match(crate, crate_root, _PACKAGED)
 
     def mark_unverified(self, crate: WorkspaceCrate, reason: str) -> None:
         """Record that no archive for ``crate`` could be compared."""
@@ -320,19 +322,6 @@ class ArchiveVerifier:
                 "it cannot be compared with the expected digest"
             )
             raise ArchiveUnavailableError(message)
-
-    def check_uploaded(self, crate: WorkspaceCrate, crate_root: Path) -> None:
-        """Require the archive ``cargo publish`` uploaded to match.
-
-        Raises
-        ------
-        UploadedArchiveMismatchError
-            If the digest differs. The upload cannot be undone, so this makes
-            the run fail loudly rather than repair anything.
-        ArchiveUnavailableError
-            If the archive cannot be located or read.
-        """  # ruff: ignore[docstring-extraneous-exception]  # raised via _require_match
-        self._require_match(crate, crate_root, _UPLOADED)
 
     @property
     def outcomes(self) -> cabc.Sequence[CrateOutcome]:

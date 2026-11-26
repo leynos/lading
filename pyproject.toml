@@ -712,17 +712,15 @@ reason = "signal.signal invokes this handler with the interrupted frame; the par
 [[tool.skylos.dead_code.entrypoints]]
 type = "method"
 full_name = [
-    "lading.commands.publish_archive_check.ArchiveVerifier.check_packaged",
+    "lading.commands.publish_archive_check.ArchiveVerifier.check_archive",
     "lading.commands.publish_archive_check.ArchiveVerifier.mark_unverified",
     "lading.commands.publish_archive_check.ArchiveVerifier.resolve_published",
     "lading.commands.publish_archive_check.ArchiveVerifier.confirm_already_published",
-    "lading.commands.publish_archive_check.ArchiveVerifier.check_uploaded",
     "lading.commands.publish_archive_check.ArchiveVerifier.summary_lines",
     "lading.commands.publish_archive_check.ArchiveVerifier._target",
     "lading.commands.publish_archive_check.ArchiveVerifier._ask_cargo_for_target",
     "lading.commands.publish_archive_check.ArchiveVerifier._archive_path",
     "lading.commands.publish_archive_check.ArchiveVerifier._digest_archive",
-    "lading.commands.publish_archive_check.ArchiveVerifier._require_match",
     "lading.commands.publish_digests.ExpectedDigests.digest_for_filename",
     "lading.commands.publish_digests.ExpectedDigests.digest_for",
 ]
@@ -733,7 +731,7 @@ type = "method"
 full_name = [
     "lading.commands.publish_archive_check._Comparison.describe",
 ]
-reason = "The verifier's _require_match and resolve_published format their mismatch messages with it."
+reason = "The verifier's check_archive and resolve_published format their mismatch messages with it."
 
 [[tool.skylos.dead_code.entrypoints]]
 type = "class"

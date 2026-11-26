@@ -28,6 +28,7 @@ import pytest
 from lading.commands import (
     publish,
     publish_execution,
+    publish_failures,
     publish_pipeline,
     publish_plan,
     publish_staging,
@@ -156,7 +157,7 @@ def _handle_index_missing_version_message(
     )
 
     with pytest.raises(publish.PublishPreflightError) as excinfo:
-        publish_pipeline._handle_index_missing_version(
+        publish_failures._handle_index_missing_version(
             failure,
             plan=plan,
             options=publish_pipeline._PublishExecutionOptions(
@@ -239,7 +240,7 @@ def test_index_missing_in_plan_downgrade_snapshot(
     )
 
     # Must not raise - the success/downgrade path returns without raising.
-    publish_pipeline._handle_index_missing_version(
+    publish_failures._handle_index_missing_version(
         failure,
         plan=plan,
         options=publish_pipeline._PublishExecutionOptions(

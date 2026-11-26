@@ -5,6 +5,8 @@ import typing as typ
 import pytest
 
 from lading.commands.publish_archive_check import (
+    PACKAGED,
+    UPLOADED,
     ArchiveOutcome,
     ArchiveUnavailableError,
     ArchiveVerifier,
@@ -33,7 +35,7 @@ def test_missing_archive_is_reported_with_its_path(tmp_path: Path) -> None:
     verifier = _verifier(FakeCargo())
 
     with pytest.raises(ArchiveUnavailableError) as excinfo:
-        verifier.check_packaged(crate, crate.root_path)
+        verifier.check_archive(crate, crate.root_path, PACKAGED)
 
     assert "alpha-0.1.0.crate" in str(excinfo.value), "the path must be named"
     assert not verifier.outcomes, "no outcome is recorded without a comparison"
@@ -53,7 +55,7 @@ def test_unusable_cargo_metadata_is_reported(tmp_path: Path, stdout: str) -> Non
         return 101, stdout, "error: could not read the manifest"
 
     with pytest.raises(ArchiveUnavailableError, match="target directory"):
-        _verifier(runner).check_packaged(crate, crate.root_path)
+        _verifier(runner).check_archive(crate, crate.root_path, PACKAGED)
 
 
 def test_target_directory_is_asked_for_once(tmp_path: Path) -> None:
@@ -63,8 +65,8 @@ def test_target_directory_is_asked_for_once(tmp_path: Path) -> None:
     cargo(("cargo", "package"), cwd=crate.root_path)
     verifier = _verifier(cargo)
 
-    verifier.check_packaged(crate, crate.root_path)
-    verifier.check_uploaded(crate, crate.root_path)
+    verifier.check_archive(crate, crate.root_path, PACKAGED)
+    verifier.check_archive(crate, crate.root_path, UPLOADED)
 
     assert len(cargo.subcommands("metadata")) == 1, (
         "cargo metadata must run once and be remembered"
@@ -80,7 +82,7 @@ def test_outcomes_are_kept_in_decision_order(tmp_path: Path) -> None:
     second = make_crate(tmp_path, "beta")
 
     verifier.mark_unverified(second, "no archive")
-    verifier.check_packaged(first, first.root_path)
+    verifier.check_archive(first, first.root_path, PACKAGED)
 
     assert [outcome.crate for outcome in verifier.outcomes] == ["beta", "alpha"], (
         "outcomes must keep the order they were decided in"
@@ -101,7 +103,7 @@ def test_mismatch_leaves_a_mismatch_outcome(tmp_path: Path) -> None:
     verifier = _verifier(cargo)
 
     with pytest.raises(ArchiveMismatchError):
-        verifier.check_packaged(crate, crate.root_path)
+        verifier.check_archive(crate, crate.root_path, PACKAGED)
 
     assert verifier.outcomes[0].outcome is ArchiveOutcome.MISMATCH, (
         "a refused archive must be recorded as a mismatch"

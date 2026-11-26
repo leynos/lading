@@ -50,6 +50,7 @@ if typ.TYPE_CHECKING:
 import pytest
 
 from lading.commands import publish, publish_pipeline, publish_plan, publish_staging
+from lading.commands.publish_errors import PublishError
 from tests.helpers.path_normalization import normalized
 
 from .conftest import (
@@ -230,7 +231,7 @@ def test_single_crate_helper_invokes_correct_cargo_command(
             _FailureCase(
                 fn=publish_pipeline._publish_crate,
                 live=True,
-                exc_type=publish_pipeline.PublishError,
+                exc_type=PublishError,
                 runner_kwargs={"stdout": "network offline"},
                 subcommand="publish",
                 output_fragment="network offline",
@@ -679,7 +680,7 @@ def test_publish_crates_raise_on_failure(
                 options=publish_pipeline._PublishExecutionOptions(
                     live=True, allow_dirty=True
                 ),
-                exc_type=publish_pipeline.PublishError,
+                exc_type=PublishError,
                 stderr_text="publish failed",
             ),
             id="publish",

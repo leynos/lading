@@ -18,21 +18,18 @@ from lading.commands import (
     publish_digests,
     publish_pipeline,
     publish_preflight,
+    publish_registry,
     publish_staging,
 )
 from lading.commands.publish_archive_check import ArchiveVerifier
 from lading.commands.publish_errors import PublishPreflightError
 from lading.commands.publish_manifest import _apply_strip_patch_strategy
+from lading.commands.publish_plan import PublishPlan, format_plan, plan_publication
 from lading.commands.publish_plan import PublishPlanError as PublishPlanError
-from lading.commands.publish_plan import format_plan, plan_publication
 from lading.utils.path import normalize_workspace_root
 
 if typ.TYPE_CHECKING:
-    from lading.commands.publish_digests import ExpectedDigests
-    from lading.commands.publish_plan import PublishPlan
-    from lading.commands.publish_registry import PublishedDigestFetcher
     from lading.commands.publish_skip import SkipPreflightDecision
-    from lading.config import LadingConfig
     from lading.runtime import CommandRunner
     from lading.workspace import WorkspaceGraph
 
@@ -95,7 +92,7 @@ class PublishOptions:
     build_directory: Path | None = None
     preserve_symlinks: bool = True
     cleanup: bool = True
-    configuration: LadingConfig | None = None
+    configuration: config_module.LadingConfig | None = None
     workspace: WorkspaceGraph | None = None
     command_runner: CommandRunner | None = None
     allow_unpublished_workspace_deps: bool = False
@@ -104,12 +101,12 @@ class PublishOptions:
     skip_preflight: SkipPreflightDecision | None = None
     expect_digests: Path | None = None
     default_registry: str | None = None
-    published_digest_fetcher: PublishedDigestFetcher | None = None
+    published_digest_fetcher: publish_registry.PublishedDigestFetcher | None = None
 
 
 def _ensure_configuration(
-    configuration: LadingConfig | None, workspace_root: Path
-) -> LadingConfig:
+    configuration: config_module.LadingConfig | None, workspace_root: Path
+) -> config_module.LadingConfig:
     """Return the active configuration, loading it from disk when required."""
     if configuration is not None:
         return configuration
@@ -154,7 +151,7 @@ def _validate_publication_options(options: PublishOptions) -> None:
 
 def _preflight_request(
     options: PublishOptions,
-    configuration: LadingConfig,
+    configuration: config_module.LadingConfig,
     runner: CommandRunner,
 ) -> publish_preflight.PreflightRequest:
     """Bundle the pre-flight inputs this publish run was configured with."""
@@ -168,7 +165,7 @@ def _preflight_request(
 
 def _load_expected_digests(
     options: PublishOptions, workspace_root: Path
-) -> ExpectedDigests | None:
+) -> publish_digests.ExpectedDigests | None:
     """Read the ``--expect-digests`` file, if one was given, before any work."""
     if options.expect_digests is None:
         return None
@@ -178,7 +175,7 @@ def _load_expected_digests(
 
 
 def _archive_verifier(
-    expected: ExpectedDigests | None,
+    expected: publish_digests.ExpectedDigests | None,
     plan: PublishPlan,
     options: PublishOptions,
     runner: CommandRunner,
@@ -193,9 +190,47 @@ def _archive_verifier(
     return None
 
 
+def _execution_options(
+    options: PublishOptions, verifier: ArchiveVerifier | None
+) -> publish_pipeline._PublishExecutionOptions:
+    """Translate the public options into the pipeline's execution flags."""
+    return publish_pipeline._PublishExecutionOptions(
+        live=options.live,
+        allow_dirty=options.allow_dirty,
+        allow_unpublished_workspace_deps=options.allow_unpublished_workspace_deps,
+        sccache_stats=options.sccache_stats,
+        sccache_stats_json=options.sccache_stats_json,
+        verifier=verifier,
+    )
+
+
+def _render_summary(
+    plan_message: str,
+    staged: publish_staging.StagedWorkspace,
+    verifier: ArchiveVerifier | None,
+) -> str:
+    """Join the plan, staging fate, and archive checks into the run summary.
+
+    Called after the staging block ends, not inside it: the removal happens as
+    the block exits and can fail, so asking about it from within would report
+    a tree as gone whenever `shutil.rmtree` raised.
+
+    Returns
+    -------
+    str
+        The plan, then the staging summary, then any archive-check lines.
+    """
+    lines = publish_staging._format_preparation_summary(
+        staged.preparation, retained=staged.retained
+    )
+    if verifier is not None:
+        lines = (*lines, "", *verifier.summary_lines())
+    return f"{plan_message}\n\n" + "\n".join(lines)
+
+
 def run(
     workspace_root: Path,
-    configuration: LadingConfig | None = None,
+    configuration: config_module.LadingConfig | None = None,
     workspace: WorkspaceGraph | None = None,
     *,
     options: PublishOptions | None = None,
@@ -250,30 +285,14 @@ def run(
         _apply_strip_patch_strategy(
             staged.staging_root, plan, active_configuration.publish.strip_patches
         )
-        execution_options = publish_pipeline._PublishExecutionOptions(
-            live=effective_options.live,
-            allow_dirty=effective_options.allow_dirty,
-            allow_unpublished_workspace_deps=effective_options.allow_unpublished_workspace_deps,
-            sccache_stats=effective_options.sccache_stats,
-            sccache_stats_json=effective_options.sccache_stats_json,
-            verifier=verifier,
-        )
         publish_pipeline._dispatch_publication(
             plan,
             staged.preparation,
-            options=execution_options,
+            options=_execution_options(effective_options, verifier),
             runner=command_runner,
         )
         plan_message = format_plan(
             plan, strip_patches=active_configuration.publish.strip_patches
         )
-    # Summarised after the block, not inside it. The removal happens as the
-    # block exits, and a removal can fail: asking `effective_options.cleanup`
-    # from within would report a tree as gone whenever `shutil.rmtree` raised.
-    summary_lines = publish_staging._format_preparation_summary(
-        staged.preparation, retained=staged.retained
-    )
-    if verifier is not None:
-        summary_lines = (*summary_lines, "", *verifier.summary_lines())
     LOGGER.info("Publish workflow completed successfully for workspace %s", root_path)
-    return f"{plan_message}\n\n" + "\n".join(summary_lines)
+    return _render_summary(plan_message, staged, verifier)

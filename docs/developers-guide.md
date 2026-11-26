@@ -1851,6 +1851,11 @@ structured command failures. `CargoIndexLookupFailure` is the value object for
 crates.io index lookup failures, and `parse_index_lookup_failure()` is the
 primary owner of cargo's marker-based index-miss detection.
 
+`publish_failures.py` owns the classification of a failed `cargo package` or
+`cargo publish` (`_handle_package_failure`, `_handle_publish_failure`, and the
+`_handle_index_missing_version` wrapper that picks the phase's error class), so
+`publish_pipeline.py` keeps only the sequencing.
+
 `publish_index_check.py` owns crates.io index-lookup downgrade decisions after
 output has crossed that adapter boundary. It receives `CargoIndexLookupFailure`
 instances, applies crate-name canonicalization, and decides whether an index
@@ -1866,17 +1871,18 @@ implement `--expect-digests` (issue
 `require_crates_io_default` and `require_crates_io_crates` refuse another
 registry, and `sha256_file` hashes an archive in bounded chunks.
 `publish_archive_check` owns `ArchiveVerifier`, which `run()` builds after
-validating the plan and the pipeline calls at four points: `check_packaged`
-after `cargo package`, `mark_unverified` when a dry run downgrades packaging,
-`resolve_published` before `cargo publish` (and `confirm_already_published`
-when Cargo reports a version the first check missed), and `check_uploaded`
-after a successful live publish. It asks `cargo metadata --no-deps` for the
-target directory once, through the command runner, and records one
-`CrateOutcome` per crate for the summary and the `publish.archive_check`
-counter. `publish_registry` is the injectable `PublishedDigestFetcher` port;
-`fetch_crates_io_digest` streams the archive from `static.crates.io` through a
-size cap and bounded retries, and tests substitute a fake. The new errors
-(`ExpectedDigestsError`, `ArchiveMismatchError`, `UploadedArchiveMismatchError`,
+validating the plan and the pipeline calls at four points: `check_archive` with
+`PACKAGED` after `cargo package`, `mark_unverified` when a dry run downgrades
+packaging, `resolve_published` before `cargo publish` (and
+`confirm_already_published` when Cargo reports a version the first check
+missed), and `check_archive` with `UPLOADED` after a successful live publish.
+It asks `cargo metadata --no-deps` for the target directory once, through the
+command runner, and records one `CrateOutcome` per crate for the summary and the
+`publish.archive_check` counter. `publish_registry` is the injectable
+`PublishedDigestFetcher` port; `fetch_crates_io_digest` streams the archive from
+`static.crates.io` through a size cap and bounded retries, and tests
+substitute a fake. The new errors (`ExpectedDigestsError`,
+`ArchiveMismatchError`, `UploadedArchiveMismatchError`,
 `PublishedArchiveConflictError`) live in `publish_errors`;
 `ArchiveUnavailableError` and `PublishedArchiveUnavailableError` sit beside the
 code that raises them. `tests/helpers/publish_digests.py` provides `FakeCargo`,

@@ -19,8 +19,15 @@ if typ.TYPE_CHECKING:
 
 import pytest
 
-from lading.commands import publish, publish_pipeline, publish_plan, publish_staging
+from lading.commands import (
+    publish,
+    publish_failures,
+    publish_pipeline,
+    publish_plan,
+    publish_staging,
+)
 from lading.commands.cargo_output_adapter import CargoIndexLookupFailure
+from lading.commands.publish_errors import PublishError
 
 from .conftest import (
     PhaseContext,
@@ -43,7 +50,7 @@ from .index_missing_outputs import (
 # than a type, so the element type is left to inference.
 _PHASE_IDS = [
     pytest.param("package", publish.PublishPreflightError, id="packaging"),
-    pytest.param("publish", publish_pipeline.PublishError, id="publish-dry-run"),
+    pytest.param("publish", PublishError, id="publish-dry-run"),
 ]
 _EXTERNAL_SHAPES_AND_STDERR = (
     ("version-selection", INDEX_MISSING_STDERR_EXTERNAL),
@@ -134,7 +141,7 @@ def test_missing_dep_in_plan_allows_cargo_name_normalization(
         missing_dependency_name="alpha_crate",
     )
 
-    publish_pipeline._handle_index_missing_version(
+    publish_failures._handle_index_missing_version(
         failure,
         plan=plan,
         options=publish_pipeline._PublishExecutionOptions(
@@ -155,7 +162,7 @@ _FLAGLESS_PHASES = (
     (
         "publish-dry-run",
         "publish",
-        publish_pipeline.PublishError,
+        PublishError,
         "cargo publish failed for crate beta",
     ),
 )

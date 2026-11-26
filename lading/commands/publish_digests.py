@@ -153,6 +153,27 @@ def _describe_lines(prefix: str, lines: cabc.Sequence[tuple[int, str]]) -> str:
     return f"{prefix}: {shown}"
 
 
+def _scan_entries(
+    text: str,
+) -> tuple[dict[str, str], list[tuple[int, str]], list[tuple[int, str]]]:
+    """Split ``text`` into digests, malformed lines, and repeated names."""
+    digests: dict[str, str] = {}
+    malformed: list[tuple[int, str]] = []
+    repeated: list[tuple[int, str]] = []
+    for number, raw_line in enumerate(text.splitlines(), start=1):
+        line = raw_line.rstrip("\r")
+        if not line.strip():
+            continue
+        entry = _ENTRY_PATTERN.fullmatch(line)
+        if entry is None:
+            malformed.append((number, line))
+        elif entry["name"] in digests:
+            repeated.append((number, entry["name"]))
+        else:
+            digests[entry["name"]] = entry["digest"].lower()
+    return digests, malformed, repeated
+
+
 def parse_digest_text(text: str, *, source: str) -> dict[str, str]:
     """Parse ``sha256sum``-format ``text`` into digests keyed by file name.
 
@@ -190,20 +211,7 @@ def parse_digest_text(text: str, *, source: str) -> dict[str, str]:
     True
     True
     """
-    digests: dict[str, str] = {}
-    malformed: list[tuple[int, str]] = []
-    repeated: list[tuple[int, str]] = []
-    for number, raw_line in enumerate(text.splitlines(), start=1):
-        line = raw_line.rstrip("\r")
-        if not line.strip():
-            continue
-        entry = _ENTRY_PATTERN.fullmatch(line)
-        if entry is None:
-            malformed.append((number, line))
-        elif entry["name"] in digests:
-            repeated.append((number, entry["name"]))
-        else:
-            digests[entry["name"]] = entry["digest"].lower()
+    digests, malformed, repeated = _scan_entries(text)
     problems: list[str] = []
     if malformed:
         problems.append(

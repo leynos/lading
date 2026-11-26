@@ -12,27 +12,15 @@ import logging
 import time
 import typing as typ
 
-from lading.commands.cargo_output_adapter import (
-    CargoAlreadyPublishedFailure,
-    CargoIndexLookupFailure,
-    CargoSubprocessResult,
-    parse_already_published_failure,
-    parse_index_lookup_failure,
-)
-from lading.commands.publish_errors import PublishError, PublishPreflightError
+from lading.commands import publish_failures
+from lading.commands.publish_archive_check import PACKAGED, UPLOADED
+from lading.commands.publish_errors import PublishPreflightError
 from lading.commands.publish_execution import (
     _CargoInvocation,
     _run_timed_cargo,
 )
 from lading.commands.publish_execution import (
     _invoke as _invoke,
-)
-from lading.commands.publish_index_check import (
-    _format_cargo_failure_message,
-    _IndexMissingVersionHandling,
-)
-from lading.commands.publish_index_check import (
-    _handle_index_missing_version as _raw_handle_index_missing_version,
 )
 from lading.commands.publish_manifest import PublishPreparationError
 from lading.commands.publish_sccache import SccacheSession, create_session
@@ -88,27 +76,6 @@ class _PublicationPipelineState:
         return f"{self.plan.publishable.index(crate) + 1}/{len(self.plan.publishable)}"
 
 
-def _handle_index_missing_version(
-    failure: CargoIndexLookupFailure,
-    *,
-    plan: PublishPlan,
-    options: _PublishExecutionOptions,
-) -> None:
-    """Delegate using the phase-appropriate error class."""
-    error_cls = (
-        PublishError if failure.subcommand == "publish" else PublishPreflightError
-    )
-    _raw_handle_index_missing_version(
-        failure,
-        handling=_IndexMissingVersionHandling(
-            plan=plan,
-            options=options,
-            logger=LOGGER,
-        ),
-        error_cls=error_cls,
-    )
-
-
 class _CrateAction(typ.Protocol):
     """Action applied to each crate in the publication pipeline."""
 
@@ -150,6 +117,21 @@ def _cargo_flags(options: _PublishExecutionOptions) -> tuple[str, ...]:
     )
 
 
+def _run_recorded_cargo(
+    invocation: _CargoInvocation,
+    state: _PublicationPipelineState,
+    *,
+    runner: CommandRunner,
+) -> _TimedCargoResult:
+    """Run one timed cargo invocation and record it with the sccache session."""
+    result = _run_timed_cargo(invocation, runner=runner, clock=state.clock)
+    if state.sccache is not None:
+        state.sccache.record(
+            invocation.crate_name, invocation.subcommand, result.elapsed_seconds
+        )
+    return result
+
+
 def _package_crate(
     crate: WorkspaceCrate,
     state: _PublicationPipelineState,
@@ -163,44 +145,22 @@ def _package_crate(
     crate_root = _resolve_staged_crate_root(crate, plan, state.preparation.staging_root)
     position = state.position(crate)
     LOGGER.info("Running cargo package for crate %s (%s)", crate.name, position)
-    result = _run_timed_cargo(
+    result = _run_recorded_cargo(
         _CargoInvocation(("cargo", "package", *package_args), crate_root, crate.name),
+        state,
         runner=runner,
-        clock=state.clock,
     )
-    if state.sccache is not None:
-        state.sccache.record(crate.name, "package", result.elapsed_seconds)
-    if result.exit_code == 0:
-        LOGGER.info(
-            "Successfully packaged crate %s (%s) in %.1fs",
-            crate.name,
-            position,
-            result.elapsed_seconds,
-        )
-        if options.verifier is not None:
-            options.verifier.check_packaged(crate, crate_root)
+    if result.exit_code != 0:
+        publish_failures._handle_package_failure(crate, result, state=state)
         return
-    lookup_failure = parse_index_lookup_failure(
-        crate_name=crate.name,
-        subcommand="package",
-        result=CargoSubprocessResult(
-            exit_code=result.exit_code,
-            stdout=result.stdout,
-            stderr=result.stderr,
-        ),
+    LOGGER.info(
+        "Successfully packaged crate %s (%s) in %.1fs",
+        crate.name,
+        position,
+        result.elapsed_seconds,
     )
-    if lookup_failure is not None:
-        _handle_index_missing_version(lookup_failure, plan=plan, options=options)
-        if options.verifier is not None:
-            options.verifier.mark_unverified(
-                crate, "cargo package was downgraded to a warning; no archive built"
-            )
-        return
-    message = _format_cargo_failure_message(
-        "package", crate.name, result.exit_code, result.streams
-    )
-    LOGGER.error(message)
-    raise PublishPreflightError(message)
+    if options.verifier is not None:
+        options.verifier.check_archive(crate, crate_root, PACKAGED)
 
 
 def _publish_crates(
@@ -233,13 +193,11 @@ def _publish_crate(
         crate.name,
         state.position(crate),
     )
-    result = _run_timed_cargo(
+    result = _run_recorded_cargo(
         _CargoInvocation(("cargo", "publish", *publish_args), crate_root, crate.name),
+        state,
         runner=runner,
-        clock=state.clock,
     )
-    if state.sccache is not None:
-        state.sccache.record(crate.name, "publish", result.elapsed_seconds)
     _handle_publish_result(crate, result, state=state)
 
 
@@ -250,61 +208,28 @@ def _handle_publish_result(
     state: _PublicationPipelineState,
 ) -> None:
     """Handle a completed ``cargo publish`` invocation."""
-    plan = state.plan
     options = state.options
-    exit_code, stdout, stderr = result.exit_code, result.stdout, result.stderr
-    if exit_code == 0:
-        success_message = (
-            "Successfully published crate %s (%s) in %.1fs"
-            if options.live
-            else "Dry-run publish succeeded for crate %s (%s) in %.1fs"
+    if result.exit_code != 0:
+        publish_failures._handle_publish_failure(crate, result, state=state)
+        return
+    success_message = (
+        "Successfully published crate %s (%s) in %.1fs"
+        if options.live
+        else "Dry-run publish succeeded for crate %s (%s) in %.1fs"
+    )
+    LOGGER.info(
+        success_message, crate.name, state.position(crate), result.elapsed_seconds
+    )
+    if options.live and options.verifier is not None:
+        # The upload cannot be undone, so a difference here fails the run
+        # loudly rather than being repaired.
+        options.verifier.check_archive(
+            crate,
+            _resolve_staged_crate_root(
+                crate, state.plan, state.preparation.staging_root
+            ),
+            UPLOADED,
         )
-        LOGGER.info(
-            success_message, crate.name, state.position(crate), result.elapsed_seconds
-        )
-        if options.live and options.verifier is not None:
-            # The upload cannot be undone, so a difference here fails the run
-            # loudly rather than being repaired.
-            options.verifier.check_uploaded(
-                crate,
-                _resolve_staged_crate_root(crate, plan, state.preparation.staging_root),
-            )
-        return
-    cargo_result = CargoSubprocessResult(
-        exit_code=exit_code,
-        stdout=stdout,
-        stderr=stderr,
-    )
-    already_published_failure: CargoAlreadyPublishedFailure | None = (
-        parse_already_published_failure(cargo_result)
-    )
-    if already_published_failure is not None and options.verifier is not None:
-        options.verifier.confirm_already_published(crate)
-        return
-    if already_published_failure is not None:
-        LOGGER.warning(
-            "Crate %s @ %s is already published; skipping",
-            crate.name,
-            crate.version,
-        )
-        return
-    lookup_failure = parse_index_lookup_failure(
-        crate_name=crate.name,
-        subcommand="publish",
-        result=cargo_result,
-    )
-    if lookup_failure is not None:
-        # cargo publish --dry-run packages internally and hits the same
-        # crates.io index lookup as cargo package, so honour the override
-        # consistently across both phases.
-        _handle_index_missing_version(lookup_failure, plan=plan, options=options)
-        return
-
-    message = _format_cargo_failure_message(
-        "publish", crate.name, exit_code, (stdout, stderr)
-    )
-    LOGGER.error(message)
-    raise PublishError(message)
 
 
 def _execute_live_publication_pipeline(
