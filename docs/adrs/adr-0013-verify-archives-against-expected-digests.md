@@ -1,4 +1,4 @@
-# ADR-012: Verify archives against caller-supplied digests before upload
+# ADR-013: Verify archives against caller-supplied digests before upload
 
 ## Status
 

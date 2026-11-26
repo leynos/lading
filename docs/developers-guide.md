@@ -1859,7 +1859,7 @@ downgraded by `allow_unpublished_workspace_deps` during dry-run publication.
 
 `publish_digests.py`, `publish_archive_check.py`, and `publish_registry.py`
 implement `--expect-digests` (issue
-[#419](https://github.com/leynos/lading/issues/419); [ADR-012](adrs/adr-0012-verify-archives-against-expected-digests.md)).
+[#419](https://github.com/leynos/lading/issues/419); [ADR-013](adrs/adr-0013-verify-archives-against-expected-digests.md)).
 `publish_digests` is the pure half: `parse_digest_text`,
 `load_expected_digests` and `validate_against_plan` turn the file into
 `ExpectedDigests` and reject it before anything is staged,

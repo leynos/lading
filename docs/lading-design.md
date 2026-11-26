@@ -781,7 +781,7 @@ _Figure 2: Publish pre-flight sequence from checks through crate publication._
    run with `--locked`. The `ArchiveVerifier` owns these steps and the
    per-crate outcomes shown in the publish summary; the crates.io download is
    an injectable port. See
-   [ADR-012](adrs/adr-0012-verify-archives-against-expected-digests.md).
+   [ADR-013](adrs/adr-0013-verify-archives-against-expected-digests.md).
 
 ## 4a. `clean` Subcommand Design
 

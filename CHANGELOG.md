@@ -17,6 +17,6 @@ All notable changes to `lading` are recorded here. The format follows
   live upload. Both cargo commands run with `--locked`, per-crate outcomes
   appear in the log and the publish summary, and the `publish.archive_check`
   metric counts them. Only crates.io is supported
-  ([#419](https://github.com/leynos/lading/issues/419); [ADR-012](docs/adrs/adr-0012-verify-archives-against-expected-digests.md)).
+  ([#419](https://github.com/leynos/lading/issues/419); [ADR-013](docs/adrs/adr-0013-verify-archives-against-expected-digests.md)).
 - `WorkspaceCrate.registries` carries the registries named by a manifest's
   `publish` key, or `None` when the key does not restrict them.
