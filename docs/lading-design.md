@@ -1039,13 +1039,20 @@ set and `subprocess_runner` otherwise, so the execution layer routes commands
 through cmd-mox IPC rather than spawning real processes:
 
 ```python
-from cuprum import Program, sh, scoped
-from lading.utils.commands import CARGO, GIT, LADING_CATALOGUE
+from cuprum import (
+    ExecutionContext,
+    Program,
+    ProgramCatalogue,
+    current_context,
+    sh,
+    scoped,
+)
 
 def _invoke(
     program: Program,
     args: tuple[str, ...],
     *,
+    catalogue: ProgramCatalogue,
     cwd: Path | None = None,
 ) -> CommandResult:
     """Execute command, routing through cmd-mox when stub mode is enabled."""
@@ -1053,16 +1060,32 @@ def _invoke(
         # Route to cmd-mox IPC server for test isolation
         return _invoke_via_cmd_mox(program, args, cwd)
 
-    # Production path: use cuprum's scoped catalogue
-    with scoped(catalogue=LADING_CATALOGUE):
-        cmd_builder = sh.make(program, catalogue=LADING_CATALOGUE)
+    # Production path. `catalogue` is the per-invocation catalogue from
+    # §7.6.3: LADING_CATALOGUE's programmes plus any validated exact path.
+    # Activating it and building from it must name the same object, or a
+    # registered path would be denied by the enclosing allowlist.
+    # `cwd` travels in the execution context. It is a reserved builder
+    # keyword: passing it to the builder raises TypeError, because older
+    # cuprum serialized it into a `--cwd=` flag instead.
+    with scoped(catalogue=catalogue):
+        # §7.6.3: an inherited binding would run a file the allowlist never
+        # authorized, so refuse any binding of the program about to run --
+        # including one naming the registered path. Measured: the lookup
+        # returns the inherited binding, and None when there is none.
+        if current_context().executable_binding(program) is not None:
+            raise CommandPreparationError(
+                f"{program} is bound by an enclosing scope; refusing to run it"
+            )
+        cmd_builder = sh.make(program, catalogue=catalogue)
         cmd = cmd_builder(*args)
-        return cmd.run_sync()
+        return cmd.run_sync(context=ExecutionContext(cwd=cwd))
 ```
 
 This block is a sketch of the intended 5.2 end state rather than today's code.
-`lading/cli.py` does define `_select_runner()`, but it returns a
-`CommandRunner` and knows nothing about cuprum; the `_invoke` in
+It takes a `catalogue` argument rather than reaching for `LADING_CATALOGUE`,
+because a registered exact path is not in the shared catalogue and nesting
+cannot add it (§7.6.3). `lading/cli.py` does define `_select_runner()`, but it
+returns a `CommandRunner` and knows nothing about cuprum; the `_invoke` in
 `lading/commands/publish_execution.py:47` takes an argument vector and
 delegates to the subprocess runner. The released boundary is
 `lading/runtime/subprocess_runner.py`, as §7.2 and §7.5 record, and only the
@@ -1123,13 +1146,17 @@ and returns the command result to the Lading caller._
    echoing a stream whose reader has gone away while capture and child reaping
    continue, which reproduces lading's relay policy. The default stays strict.
 3. The adapter therefore passes `c_locale_env(normalize_environment(...))` as
-   a `REPLACE` environment and selects `BEST_EFFORT` on the output options,
-   rather than wrapping the sink or bootstrapping an `os.execve` child. A sink
-   must still avoid exposing a raw `.buffer`, because cuprum writes raw bytes
-   to that attribute instead of taking the text path; lading's relay policy
-   keeps its UTF-8 replacement decoding for the text path.
+   a `REPLACE` environment and bootstraps no `os.execve` child. Echo still goes
+   through a text facade over `write_to_relay_sink`, as §7.6.4 requires: the
+   facade is what preserves the sticky binary fallback and emits the ADR-007
+   events, which `BEST_EFFORT` does not replace. `BEST_EFFORT` is selected as a
+   secondary guard that should stay unfired while the facade absorbs the error.
+   The facade must avoid exposing a raw `.buffer`, because cuprum writes raw
+   bytes to that attribute instead of taking the text path.
    `max_echo_line_bytes=None` is selected for current unbounded relay parity.
-   `tests/unit/test_cuprum_policies.py` pins both opt-ins.
+   The two opt-ins are pinned by `tests/unit/test_cuprum_policies.py`
+   (`EnvMode`) and `tests/unit/test_cuprum_echo_policies.py`
+   (`BrokenPipePolicy`).
 4. Cargo output continues to be relayed as it is produced, not buffered until
    completion, and recorded output remains complete.
 
@@ -1138,6 +1165,362 @@ preserving the user experience of seeing cargo output as it happens rather than
 buffered at completion. Sections 1, 3, 4, and 7 of the
 [beta adoption assessment](cuprum-v0-2-0-beta1-adoption-assessment.md) assess
 these outcomes.
+
+### 7.6. Adapter Compatibility Policy (Step 5.1.5)
+
+This section is the policy a maintainer implements in 5.2. It is not the
+adapter: `lading/runtime/subprocess_runner.py` still owns the only production
+spawn call, and every statement below is about the boundary that replaces it.
+The substantive decision, its alternatives, and the rejected options are
+[ADR-012](adrs/adr-0012-record-command-runner-adapter-compatibility-policy.md).
+
+Five requirements bound the adapter. R1 is the result and failure boundary, R2
+the child environment, R3 executable authorization and resolution, R4 the
+relay, and R5 the caller and cmd-mox boundary. Each states behaviour that the
+beta2 API can reproduce exactly; where it cannot, the residual gap is named
+rather than smoothed over. The API facts here were measured against the pinned
+`cuprum==0.2.0b2` on CPython 3.14/Linux while preparing this policy.
+
+#### 7.6.1. Result and failure boundary (R1)
+
+`CommandRunner(command, *, cwd=None, env=None, echo_stdout=True)` keeps its
+signature and returns `tuple[int, str, str]`. The adapter always requests
+capture, so both streams are decoded text; a non-zero exit is data and never an
+exception. `SafeCmd.run_sync()` returns a `CommandResult` whose `stdout` and
+`stderr` are `None` only when capture is off, which the adapter never selects.
+Callers never see a cuprum type.
+
+Every failure is classified before it reaches a caller. The mapping is fixed:
+
+| Situation                                            | Cuprum behaviour                             | Adapter result                               |
+| ---------------------------------------------------- | -------------------------------------------- | -------------------------------------------- |
+| Empty argument vector                                | No call is made                              | `ValueError`, as today                       |
+| Program absent from the catalogue given to `sh.make` | `UnknownProgramError` (`LookupError`)        | `CommandPreparationError`, chained           |
+| Program denied by the active scope allowlist         | `ForbiddenProgramError` (`PermissionError`)  | `CommandPreparationError`, chained           |
+| Executable-binding resolver failed                   | `ExecutableResolutionError` (`RuntimeError`) | `CommandPreparationError`, chained           |
+| Launch failed: absent, non-executable, or bad `cwd`  | `FileNotFoundError` or `PermissionError`     | `CommandSpawnError(program, cause)`, chained |
+| Child exited non-zero                                | A result with `exit_code != 0`               | `(exit_code, stdout, stderr)`, data          |
+
+_Table 1: Failure classification for the cuprum adapter._
+
+Two properties of that table are load-bearing.
+
+`ForbiddenProgramError` subclasses `PermissionError`, so it is an `OSError`. An
+adapter that wraps the call in `except OSError` and raises `CommandSpawnError`
+would report a policy rejection as a missing binary. The adapter must therefore
+match the cuprum preparation errors explicitly, and only then the launch
+`OSError`. `ExecutableResolutionError` subclasses `RuntimeError` instead, so
+the same blanket handler would miss it entirely. Both are the reason the
+mapping is written out rather than inferred from the exception hierarchy.
+
+`CommandPreparationError` does not exist yet. It is the one exception type this
+policy adds, in `lading/runtime/` beside the adapter, and 5.2.1 introduces it
+with the adapter itself. It exists because the alternative -- reusing
+`CommandSpawnError` for policy rejection -- would make
+`lading/workspace/metadata.py` translate a catalogue or scope denial into
+`CargoExecutableNotFoundError`, the misleading missing-Cargo diagnostic this
+policy forbids. It subclasses `LadingError`, carries the requested program name
+and the cuprum cause, and is caught nowhere except where a caller already
+handles a lading failure. No domain caller imports a cuprum exception.
+
+A launch `OSError` is not narrowed by inspecting the message or the errno. A bad
+`cwd` raises `FileNotFoundError` exactly as a missing executable does, and a
+directory or non-executable file raises `PermissionError`, so the adapter
+reports all of them as `CommandSpawnError` and leaves the distinction to a
+caller that can check `cwd` before launching. Existing translations are
+unchanged: `metadata` still maps a `CommandSpawnError` naming `cargo` to
+`CargoExecutableNotFoundError`, and publish still maps a spawn failure to
+`PublishPreflightError`. Those translations now run only for their existing
+spawn case, because preparation failures no longer reach them.
+
+One caller classifies by cause and must be extended in the same commit as 5.2.1.
+`lading/commands/bump_lockfile_regeneration.py` maps the cause of a
+`LockfileRegenerationError` to the bounded metric label `command_spawn`,
+`runner_value`, or `cargo_exit`. It catches only `CommandSpawnError` and
+`ValueError` today, so a new preparation failure would be recorded as
+`cargo_exit` -- a cargo exit that never happened. 5.2.1 adds the prepared error
+to that handler and to the label set, and the metric contract in the
+developers' guide gains the label in the same change.
+
+#### 7.6.2. Child environment (R2)
+
+`env=None` inherits the parent environment with the existing C-locale
+normalization. A supplied mapping, including `{}`, replaces inheritance. Both
+compose as they do today: values are stringified, then
+`lading.utils.process.c_locale_env` pins `LC_ALL=C`, `LANG=C` and `LANGUAGE=''`.
+
+The adapter expresses replacement with
+`ExecutionContext(env=<composed>, env_mode=EnvMode.REPLACE)`, importing
+`EnvMode` from `cuprum.context`. Three measured properties make that a faithful
+reproduction of `Popen(env=...)`:
+
+- A per-call `REPLACE` starts from an empty environment and applies only the
+  supplied mapping. A parent sentinel and an ambient `env(...)` overlay set by
+  an enclosing scope are both absent in the child, while `os.environ` in the
+  parent is unmodified.
+- `env={}` and `env=None` under `REPLACE` both produce the empty environment,
+  so the `None`-means-inherit distinction is made by the adapter, not by
+  cuprum. Forwarding `None` unchanged would give the child an empty
+  environment, which is why the adapter composes the parent environment into an
+  explicit mapping before the call. `None` genuinely inherits only under the
+  default `OVERLAY`.
+- With the C-locale pins present, the child's key set is exactly the supplied
+  keys plus those three. CPython adds `LC_CTYPE` only when the environment
+  carries no locale variable at all (PEP 538), so it does not appear here.
+
+Ambient scope overlays are discarded by a per-call `REPLACE`, which is why the
+adapter does not need to compose against, or clear, anything scope-related.
+Nothing in this path mutates `os.environ`; the prohibition is absolute, because
+a mutation would race every other command in the process.
+
+`lading/testing/cmd_mox_runner.py` keeps its distinct composition step. It
+builds an inherited environment from `os.environ`, merges the caller's mapping,
+adds `PWD`, and filters `PATH`; that final mapping is then handed to real
+execution as an exact replacement, not an overlay. Composition before the
+boundary and replacement at it are separate decisions, and only the second is
+this policy's subject.
+
+An exec shim is not selected. beta2's documented replacement mode closes the
+gap that motivated the beta1 proposal, and adding a bootstrap would introduce a
+second error boundary for no contract gain. If a future beta regresses
+replacement, the deviation is a design change, not an implementation choice: a
+shim would need an isolated interpreter bootstrap, a target resolved against
+the intended `PATH` and `cwd`, values carried in the environment rather than in
+secret-bearing argv, inherited stdin or an explicit payload, signal and exit
+parity, the target's identity in logs, and a spawn-error channel that can never
+be confused with a target exit code. The bootstrap inherits the parent
+environment and is not an isolation boundary.
+
+#### 7.6.3. Executable authorization and resolution (R3)
+
+Authorization has three separate surfaces, and the adapter keeps them separate.
+
+**Catalogue membership** is checked once, when `sh.make()` builds the command.
+The adapter passes the intended catalogue explicitly and activates the same one
+with `scoped(catalogue=...)`, so the builder resolves it without relying on the
+active scope.
+
+**Execution scope** is checked when the command runs, against the innermost
+allowlist. A catalogue scope narrows the allowlist to exactly that catalogue's
+programs, and nested catalogue scopes intersect: a program in an inner
+catalogue but not in the enclosing one is still denied. Measured, with an outer
+catalogue holding both programmes and an inner one holding only the first: the
+first ran, the second raised `ForbiddenProgramError`, and reversing the nesting
+denied the second again. A narrower `scoped(ScopeConfig(allowlist=...))` is
+likewise preserved. The adapter therefore uses an appropriately narrow scope
+and never assumes that naming a catalogue grants permission.
+
+**Executable identity** is what actually runs. The adapter registers the
+validated executable as an exact-path `Program`, and that registration must be
+in the _same_ catalogue it activates -- not in a separate local one. Two
+catalogues cannot be combined by nesting, because their allowlists intersect
+rather than union: an absolute-path `Program` registered only in an inner
+catalogue is denied while an outer catalogue that lacks it is active. So the
+adapter builds one per-invocation catalogue carrying the intended programmes
+plus each validated exact path, activates it, and builds from it.
+
+A matching basename is not enough. Catalogue lookup is keyed by the whole
+`Program` string, so registering one path authorizes that path and not another
+executable of the same name. The per-invocation catalogue is derived from
+`LADING_CATALOGUE` rather than replacing it, is scoped to one invocation, and
+the adapter never permits all programs.
+
+A configured `RUSTC_WRAPPER` is **not** always absolute, so it cannot be
+registered as it stands. `detect_wrapper` accepts any value whose basename
+starts with `sccache`, and its tests pin the bare-name case:
+`RUSTC_WRAPPER=sccache` returns `Path("sccache")`.
+
+`detect_wrapper` returns a `Path` and `_query` passes `str(wrapper)` to the
+runner, so the exact string the operator wrote does not survive: `Path`
+normalizes, and the runner sees the normalized form. Which resolution applies
+therefore depends on what that form looks like, and two cases behave
+differently. Both were measured with positive and negative controls:
+
+- **No separator -- a bare name.** `RUSTC_WRAPPER=sccache` reaches the runner as
+  `sccache` and resolves on `PATH`. `./sccache` normalizes to the same string,
+  so it takes the same route and also resolves on `PATH`, not against `cwd`.
+- **A separator -- a relative path.** `RUSTC_WRAPPER=bin/sccache` keeps its
+  slash, and the platform resolves it against the working directory, not
+  `PATH`. Confirmed in both directions: a file under `PATH` alone did not
+  satisfy it, and a file under `cwd` did. A bare name showed the mirror image,
+  resolving from `PATH` and failing when only `cwd` held the file.
+
+The policy preserves both routes rather than flattening them, so an operator
+who names a relative path keeps the `cwd`-relative meaning they already have.
+The adapter resolves a non-absolute wrapper accordingly -- bare names against
+the effective child `PATH`, values containing a separator against the requested
+`cwd` -- and uses an absolute value as written. It does not "correct" a
+relative path to a `PATH` lookup, which would change current behaviour.
+
+Resolution yields an absolute, existing, executable path, and _that_ is what
+gets registered. Registration always happens after resolution, never on the
+operator's raw string.
+
+A wrapper that does not resolve, or that resolves to something not executable,
+keeps today's classification: `CommandSpawnError`. It is a missing executable,
+and `lading/runtime/subprocess_runner.py` already maps the launch `OSError` for
+one to `CommandSpawnError`; reclassifying it as a preparation failure would
+change the chained cause an existing caller sees, for no contract gain. Only
+catalogue membership, scope permission and resolver failure are preparation
+errors. The distinction this policy adds is the other one: a missing wrapper is
+never a catalogue or scope denial, so it never produces the misleading
+missing-Cargo diagnostic.
+
+Cuprum's `bind_executable()` is the alternative and is not selected for 5.2. It
+separates the logical program from the file executed and reports the file as
+`CommandResult.resolved_path`. It does not widen authorization: binding a
+program the scope does not allow still raises `ForbiddenProgramError` before
+the resolver runs. It does not narrow it to the bound file either, and that
+asymmetry is the part a future binding must not inherit. Measured: a scope
+permitting only the logical `Program`, bound to an unrelated executable, ran
+that executable with no check on it at all. Authorization named the program;
+resolution named the file. Exact-path registration is preferred here because
+these callers have no stable logical name to preserve, and because it keeps
+authorization and execution on the same string.
+
+That tie is not unconditional, and the exception has to be stated rather than
+assumed away. An enclosing scope that binds the _same_ `Program` is inherited
+by the adapter's scope, because the adapter sets no bindings and the merge
+keeps the parent layer, so the run executes the bound file while the allowlist
+still authorizes the registered path. Measured, with a registered
+`/tmp/bindtest/legit` and an enclosing `bind_executable` of the same `Program`
+to `/usr/bin/echo`: the child ran `/usr/bin/echo` and `resolved_path` reported
+it, while the unbound control ran the registered file. A binding for a
+_different_ `Program` had no effect, so the exposure is specific to a binding
+that names the registered path itself.
+
+The adapter must therefore not let that configuration run. It rejects a scope
+in which the program it is about to execute is already bound, whichever file
+the binding names, rather than trusting registration to have settled the
+question; the alternative -- accepting the run and reporting the bound file --
+would execute an unauthorized binary behind an authorization check that passed.
+Refusing every binding, rather than only one that names a different file, keeps
+the decision with registration: a binding that happens to name the registered
+path today can be changed without the adapter noticing, and the adapter should
+not be the place that decides two sources of truth still agree. This is a 5.2
+implementation obligation, recorded here because it is the one way the
+exact-path rule can be defeated without any code in this policy changing.
+
+Resolution of a bare name against the effective child environment is cuprum's,
+and its measured behaviour is part of this policy:
+
+- A bare name resolves against the child's `PATH` and the requested `cwd`.
+- A relative `PATH` entry is anchored to the child's `cwd` when one is given,
+  and otherwise to the parent process's own working directory.
+- An **absent** `PATH` falls back to the platform's default search path, so a
+  bare name may still resolve even though the caller supplied no `PATH` at all.
+- An **empty** `PATH` is not the same thing and is not a "search nothing"
+  instruction. POSIX treats its single empty entry as the child's working
+  directory, so a bare name resolves from `cwd` and fails only when the file is
+  not there. Measured on the pinned cuprum, CPython 3.14: `PATH=""` with the
+  executable in the child's `cwd` ran it, and the same `PATH` without it raised
+  `FileNotFoundError`. Both directions match a plain `subprocess` control, so
+  this is the platform's rule rather than a cuprum behaviour. At the adapter
+  boundary that miss is a launch failure and follows the mapping in §7.6.1: it
+  surfaces as `CommandSpawnError` with the `FileNotFoundError` chained, not as
+  a bare `FileNotFoundError`. The adapter never substitutes the parent's `PATH`
+  for either case, and it does not treat an empty `PATH` as a way to forbid
+  lookup.
+- A relative target such as `./tool` resolves against `cwd` when one is given,
+  and otherwise against the parent process's own working directory. That is a
+  different mechanism from the `PATH` search a bare name uses, and it is not a
+  substitute for one. The target succeeds when the file is there and fails at
+  the operating system level when it is not; cuprum itself does not reject it.
+- A bound relative path is rejected unless the binding opts into
+  `allow_relative=True`. With it, a `cwd` anchors the binding and
+  `resolved_path` reports the anchored file; without one the path is passed
+  through unchanged, so the platform resolves it -- a bare name on `PATH`, a
+  path with a separator against the parent's own directory. Prefer an absolute
+  binding whenever the same file must run regardless of where execution starts.
+- A symlink is reported as the configured path, not its target. Following the
+  link is the operating system's job.
+
+None of this is a sandbox. Validation happens before the launch, and the file
+can be replaced between the check and the `exec`, so a check-and-use race
+remains possible and must not be advertised as protection. Interpreter, `make`
+and fixture executables stay in test-only catalogues and never enter the
+production one.
+
+#### 7.6.4. Text-first relay (R4)
+
+The adapter selects `capture=True`, `echo_stdout` from the caller's
+`echo_stdout`, `echo_stderr=True`, and `max_echo_line_bytes=None`. That
+reproduces today's contract: both streams are captured completely, metadata
+stdout stays silent, and every other command's stderr is echoed live. Omitting
+`max_echo_line_bytes=None` would silently truncate a long line in the mirror,
+because the default bounds each echoed line at 64 KiB.
+
+Echo reaches a text facade the adapter supplies as
+`ExecutionContext.stdout_sink` and `stderr_sink`. The facade satisfies only
+`write` and `flush`, holds no `.buffer`, and delegates both to
+`lading.runtime.stream_relay.write_to_relay_sink`, keeping the
+`(active_sink, binary_sink)` state it returns for each stream. That is what
+preserves the current policy:
+
+- UTF-8 decoding with replacement is the capture path, so undecodable bytes
+  never raise and never truncate what a caller receives.
+- A parent text stream that rejects a payload with `UnicodeEncodeError` is
+  flushed, then the exact UTF-8 bytes go to that stream's binary `buffer`, and
+  the selection is sticky for later payloads. A text-only stream without a
+  buffer is disabled for the rest of that stream, and capture continues.
+- A `BrokenPipeError` disables mirroring for that stream and nothing else.
+- Each of those decisions emits the ADR-007 event it emits today.
+
+The facade must not expose `.buffer`. Cuprum prefers a sink attribute named
+`buffer` over the text path and writes raw bytes to it, which would bypass the
+helper and lose both the encoding-fallback decision and its event. Only the
+helper may reach the underlying sink's binary buffer.
+
+`RunOutputOptions(broken_pipe_policy=BrokenPipePolicy.BEST_EFFORT)` is selected
+as a second-line guard. Because the facade absorbs `BrokenPipeError` itself and
+returns normally, cuprum's policy should never fire in production; it is set so
+that a path which bypasses the facade cannot abort the run and lose the result.
+The division of records is fixed: the facade's ADR-007 event is the record of a
+relay decision, and a `CommandResult.relay_fallbacks` entry means the facade
+failed to absorb a sink failure. Emitting both for one decision is a defect.
+
+Complete capture retains a stream's output in full, so a large output keeps its
+current memory cost. That is the capture path, and it is where the cost lives.
+The echo path is not additionally buffered: `max_echo_line_bytes=None` makes
+cuprum build no line limiter at all and write each chunk straight to the
+facade, so an unterminated line costs the facade nothing while it accumulates
+and only the capture buffer grows. This policy makes no bounded-memory claim
+and adds no truncation limit. It also promises no ordering between stdout and
+stderr; each stream is ordered with itself, and the two are relayed
+concurrently.
+
+#### 7.6.5. Caller and cmd-mox boundary (R5)
+
+Arguments stay positional. Command-specific construction stays in the caller;
+cuprum's generic keyword builder would serialize `check=True` as
+`--check=True`, which is wrong for Cargo, so the adapter never uses it.
+
+Stdin keeps its three distinct meanings. No `stdin` argument inherits the
+parent's. `StdinInput(text=...)` supplies text, `StdinInput(data=...)` supplies
+bytes, and an empty string supplies empty input and closes the stream -- the
+three are not interchangeable. Early child exit with unread input remains the
+child's business, as it is today.
+
+`cmd_mox_runner` keeps its IPC routing, cargo subcommand namespacing,
+real-command overrides, `PATH` filtering, `PWD` handling, stdin, and result
+reporting unchanged. Only its real passthrough invocation moves to the adapter,
+so passthrough keeps live output without recursively re-entering the shim.
+
+Synchronous and asynchronous execution keep their existing boundaries.
+`run_sync()` calls `asyncio.run()`, so it raises `RuntimeError` inside a
+running event loop; an async caller awaits `run()`. The adapter must not nest
+`asyncio.run()` to paper over that, and any thread bridge that is later needed
+must carry context-local scope and hooks with it.
+
+Logging is unchanged: exactly one INFO record per external command invocation
+from `log_command_invocation`, the existing redacted DEBUG environment record,
+and the existing per-crate duration metrics. Cuprum's own observers stay unused
+unless a change deliberately adds one, because a second invocation record
+duplicates the first.
+
+One adapter serves every caller. No second generic runner abstraction is
+introduced, and the `CommandRunner` protocol remains the only seam a test
+injects.
 
 ## 8. Release Publication
 

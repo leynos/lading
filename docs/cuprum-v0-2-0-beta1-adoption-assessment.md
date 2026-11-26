@@ -516,16 +516,18 @@ session still closes, and the result records a `RelayFallback` carrying
 `EchoStream.STDOUT` and `EchoErrorCategory.BROKEN_PIPE`. The default remains
 `STRICT`, so a caller must opt in deliberately.
 
-**Evidence.** `tests/unit/test_cuprum_policies.py` pins both opt-ins. It
-composes lading's real `normalize_environment` and `c_locale_env` functions with
+**Evidence.** Two test modules pin the opt-ins, one per concern.
+`tests/unit/test_cuprum_policies.py` covers the environment: it composes
+lading's real `normalize_environment` and `c_locale_env` functions with
 `EnvMode.REPLACE` and asserts the child's environment key set is exactly the
 supplied keys plus the C-locale pins, with a parent sentinel and both Actions
 variables set first so inheritance would be visible; an `OVERLAY` counterpart
 asserts those variables do leak, which keeps the replacement test falsifiable.
-A second pair drives a text-only sink whose `write` raises `BrokenPipeError`:
-`BEST_EFFORT` yields exit 0, full capture of both streams, one fallback record,
-one write attempt, and a closed session, while `STRICT` raises. All four tests
-fail on the 0.1.x surface and pass on 0.2.0b2.
+`tests/unit/test_cuprum_echo_policies.py` covers the relay: it drives a
+text-only sink whose `write` raises `BrokenPipeError`, where `BEST_EFFORT`
+yields exit 0, full capture of both streams, one fallback record, one write
+attempt, and a closed session, while `STRICT` raises. All of them fail on the
+0.1.x surface and pass on 0.2.0b2.
 
 **Remaining gaps.** Nothing above changes the deferred features in §6.3 to
 §6.6; they are still absent from the released API. Within the two resolved
@@ -543,6 +545,122 @@ the uploader runs end to end against a stub `gh` in both entry modes with no
 publication, checking that `0.2.0b2` is the cuprum the isolated environment
 resolves. The beta1 findings remain the reference for the initial snapshot and
 for the still-deferred features.
+
+## 9. Addendum: adapter policy measurements against 0.2.0b2
+
+Added 2026-11-24, during roadmap 5.1.5. Sections 1 to 8 remain the record of
+their own dates; this addendum adds measurements that the adapter policy in
+[design §7.6](lading-design.md#76-adapter-compatibility-policy-step-515) and
+[ADR-012](adrs/adr-0012-record-command-runner-adapter-compatibility-policy.md)
+rely on. It rewrites no earlier text; the one conclusion it overturns is
+recorded as a supersession below rather than edited in place.
+
+**One §8 conclusion is superseded, deliberately recorded rather than edited.**
+Section 8's Table 6 lists the "stateful relay sink suppressing
+`BrokenPipeError`" as retired, and its "Remaining gaps" paragraph concludes
+that "the binary fallback has no consumer in the production runner". Both were
+written when `BEST_EFFORT` looked like a complete replacement. They are wrong
+for the adapter, on two counts. First, `BEST_EFFORT` does not preserve the
+encoding-fallback decision or its ADR-007 event, so the stateful sink is not
+retired after all: it is the text facade design §7.6.4 requires, with
+`BEST_EFFORT` demoted to a guard that should stay unfired. Second, the binary
+fallback does have a consumer: `lading.runtime.stream_relay` uses it whenever a
+parent text stream cannot encode decoded output, and the facade keeps that
+behaviour. Section 8's text is preserved as written, with this paragraph as its
+superseding record; the current requirement is design §7.6.4.
+
+**What was measured.** Against the pinned `cuprum==0.2.0b2`, on CPython 3.14
+and Linux, with throwaway probe scripts outside the repository: environment
+composition under both modes, resolution of bare, relative and absolute
+programs, `bind_executable()` identity and authorization, echo onto text-only
+sinks and sinks exposing a buffer, encoding failure, broken pipes under both
+policies, exit data, capture and echo bounds, and `run_sync()` inside a running
+loop. These are adapter-policy facts, not integration evidence for 5.2, and
+they are not a cross-platform claim.
+
+**Failure classification is not derivable from the exception hierarchy.**
+`UnknownProgramError` is a `LookupError`; `ForbiddenProgramError` is a
+`PermissionError`, and therefore an `OSError`; `ExecutableResolutionError` is a
+`RuntimeError`; `InvalidExecutableBindingError` is a `ValueError`. A launch
+failure is a plain `FileNotFoundError` or `PermissionError`. Because a
+catalogue or scope denial is an `OSError`, an adapter that wraps the call in
+`except OSError` reports policy rejection as a missing binary. Section 3's
+distinction -- catalogue rejection is not executable discovery -- therefore
+needs an explicit, ordered mapping, not a single handler.
+
+**Replacement composes exactly as `Popen(env=...)` does.** A parent sentinel
+and an ambient `env(...)` overlay were both absent from a child run with a
+per-call `EnvMode.REPLACE`, and `os.environ` in the parent was unchanged.
+`env=None` and `env={}` under `REPLACE` both gave the empty environment, so the
+inherit-means-`None` rule belongs to the adapter. With `LC_ALL=C`, `LANG=C` and
+`LANGUAGE=''` supplied, the child's key set was exactly the supplied keys plus
+those three; CPython's PEP 538 `LC_CTYPE` coercion adds a key only when no
+locale variable is present, so it does not appear under lading's normalization.
+This confirms section 8's answer and closes section 3.2 for the adapter.
+
+**Resolution follows the child environment.** A bare name resolved against the
+child's `PATH`; a relative `PATH` entry was anchored to the child's `cwd` when
+one was given, and to the parent process's working directory otherwise. An
+**absent** `PATH` fell back to the platform default search path and still
+resolved a bare name. An **empty** `PATH` was initially recorded here as a
+failure, and that was wrong: POSIX reads its empty entry as the child's working
+directory, so a bare name resolves from `cwd`. Re-measured on the pinned
+cuprum, CPython 3.14, in both directions — `PATH=""` ran an executable present
+in the child's `cwd` and raised `FileNotFoundError` when it was absent,
+matching a plain `subprocess` control. An empty `PATH` therefore restricts
+lookup to `cwd`; it does not forbid lookup. A relative target resolved against
+`cwd` when one was given and against the parent process's working directory
+otherwise -- it succeeded from a directory holding the file and failed with
+`FileNotFoundError` from one without, so the failure was the operating
+system's, not a cuprum refusal. A symlinked binding reported the configured
+path, not its target. These distinctions are absent from section 4's table and
+are what design §7.6.3 records.
+
+**`bind_executable()` separates identity from authorization, and widens it in
+neither direction.** Binding a program the active scope did not allow still
+raised `ForbiddenProgramError` before the resolver ran. It did **not** narrow
+authorization to the bound file either: a scope permitting only the logical
+`Program`, bound to an unrelated executable, ran that executable with no check
+on it, and reported it as `resolved_path`. Authorization named the program and
+resolution named the file, so the binding vouches for neither the path it
+supplies nor any claim that the path was approved. A relative binding was
+rejected without `allow_relative=True`, and with it was anchored to the supplied
+`cwd`. Exact path identity held in the other direction too: a catalogue
+holding a different path with the same basename raised `UnknownProgramError`.
+Section 6.4's executable-identity gap is therefore narrower than the beta1
+snapshot implied for the adapter's purposes: identity can be preserved, and
+*authorization* of a resolved path still needs the local-catalogue rule, which
+is why the adapter registers exact paths rather than binding logical names.
+
+**Echo is byte-first whenever a sink exposes `.buffer`.** A sink with a
+`buffer` attribute received raw bytes on that buffer and no text writes at all,
+so the text path -- and with it any encoding-fallback decision -- is bypassed.
+A text-only sink is the only sink that reaches the text path. Section 8's
+remaining-difference note is confirmed and is why the adapter's facade must not
+expose a buffer.
+
+**A text facade keeps the relay contract intact.** With a text-only sink,
+invalid UTF-8 was replaced, split multi-byte sequences were reassembled, CRLF
+and a final unterminated line were preserved, and a narrow-encoding sink
+recorded exactly one `UNICODE_ENCODE` fallback with full capture. Section 3.3's
+broken-pipe blocker is answered twice over: `BEST_EFFORT` recorded one
+`BROKEN_PIPE` fallback when the error escaped the sink, and a facade that
+absorbed the error produced no fallback at all, because cuprum never saw it.
+The two records are therefore distinguishable, which is what design §7.6.4
+fixes as the division of responsibility.
+
+**Bounds and data.** A non-zero exit returned as `CommandResult` data with no
+exception. With `max_echo_line_bytes=None` a 70,000-byte line was echoed in
+full and captured in full; with the default bound the capture stayed at 70,000
+bytes while the echo stopped at 65,534. `run_sync()` inside a running event
+loop raised `RuntimeError`, and `await run()` in the same loop succeeded, which
+is the constraint §7.6.5 records.
+
+**Not measured, and not claimed.** Windows or macOS behaviour, native-wheel
+parsing path parity, process-group and signal semantics under the adapter,
+timeouts and cancellation under lading's own workflows, and any behaviour of a
+beta after `0.2.0b2`. Those belong to roadmap 5.4.1 and need real integration
+evidence rather than a probe.
 
 [^1]: Inspected
       [lading revision](https://github.com/leynos/lading/tree/c0dda6821de1ac097ce89be96003a051aa11ac99)

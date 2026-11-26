@@ -2055,6 +2055,57 @@ around command execution. `lading bump` uses the runtime runner directly for
 lockfile refreshes, while `lading publish` uses `_invoke` where failures should
 surface as `PublishPreflightError`.
 
+#### The cuprum adapter contract
+
+Roadmap 5.2 replaces the production backend with a cuprum adapter behind the
+same `CommandRunner` port. The adapter does not exist yet: `subprocess_runner`
+is still the production implementation, the only cuprum execution in the tree
+is the release uploader's, and `LADING_CATALOGUE` is still staged rather than
+enforced. What follows is the agreed policy the adapter must satisfy, not a
+description of current execution.
+
+The normative statement is
+[design §7.6](lading-design.md#76-adapter-compatibility-policy-step-515); [ADR-012](adrs/adr-0012-record-command-runner-adapter-compatibility-policy.md)
+records the decision and the rejected alternatives. This subsection is the
+short form a maintainer needs before touching the runner.
+
+- **Result.** The signature and `(exit_code, stdout, stderr)` result are
+  unchanged. Both streams are always captured, and a non-zero exit is data. No
+  module outside the adapter imports a cuprum type.
+- **Failures.** Map cuprum's preparation errors, then the launch `OSError`, and
+  do not infer the class from the hierarchy: `ForbiddenProgramError` is an
+  `OSError`, so a blanket handler reports policy rejection as a missing binary.
+  Preparation failures become a `LadingError` of their own in 5.2.1, so they
+  cannot reach the existing spawn translations. That change also extends the
+  `lockfile.regenerate` cause labels in
+  `lading/commands/bump_lockfile_regeneration.py` and the metric table above.
+- **Environment.** `env=None` inherits; any mapping replaces. Compose with
+  `normalize_environment` and `c_locale_env`, then pass
+  `ExecutionContext(env=..., env_mode=EnvMode.REPLACE)`. Never mutate
+  `os.environ`.
+- **Authorization.** Pass the catalogue explicitly and use a narrow scope.
+  Register a resolved executable path as an exact-path `Program` in the _same_
+  per-invocation catalogue the adapter activates and builds from: nested
+  catalogue scopes intersect, so a separate local catalogue would be denied. A
+  configured `RUSTC_WRAPPER` may be bare or relative, and the two resolve
+  differently: a bare name (including `./sccache`, which `Path` normalizes to
+  `sccache`) goes to `PATH`, while a value containing a separator such as
+  `bin/sccache` goes to `cwd`. Preserve that split, require an existing
+  executable, and register the resolved path. A basename match does not
+  authorize. `bind_executable()` is the alternative when a logical name must
+  survive, and it does not widen the allowlist -- but it does not authorize the
+  bound file either, so a binding must authorize that path separately. See
+  design §7.6.3.
+- **Relay.** Select `capture=True`, the caller's `echo_stdout`,
+  `echo_stderr=True`, `max_echo_line_bytes=None`, and
+  `BrokenPipePolicy.BEST_EFFORT`, and echo through a text-only facade over
+  `write_to_relay_sink` that exposes no `.buffer`. The facade's ADR-007 event
+  records a relay decision; a `relay_fallbacks` entry records a failure the
+  facade did not absorb. Never emit both for one decision.
+- **Boundary.** Positional arguments only, caller-owned command construction,
+  three distinct stdin meanings, unchanged cmd-mox IPC, no nested
+  `asyncio.run()`, and exactly one invocation log record.
+
 #### Timed per-crate cargo invocations
 
 `publish_execution._run_timed_cargo(invocation, *, runner, clock)` runs one

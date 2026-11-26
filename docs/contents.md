@@ -37,6 +37,10 @@ branch, recording the plan, progress, decisions, and retrospective for a change.
 - [Regenerate discovered nested lockfiles][execplan-regenerate-lockfiles] -
   completed plan for discovery-driven lockfile regeneration in the bump command.
 
+- [Record adapter compatibility policy](execplans/5-1-5-record-adapter-compatibility-policy.md)
+  - completed plan for roadmap 5.1.5, recording the cuprum beta2 adapter
+  policy; the 5.2 implementation remains out of scope.
+
 ## Decision records
 
 - [ADR-003: Use multi-stage Python linting][adr-003] - accepted linting policy
@@ -63,6 +67,10 @@ branch, recording the plan, progress, decisions, and retrospective for a change.
 - [ADR-011: Preserve the CLI result and diagnostic-stream boundary under
   Cyclopts 4][adr-011] - accepted policy for raw command results, stdout
   summaries, stderr diagnostics, exit-code mapping, and the dependency floor.
+- [ADR-012: Preserve the command runner contract in the cuprum
+  adapter][adr-012] - accepted policy for the tuple and failure boundary, exact
+  environment replacement, exact-executable authorization, and text-first relay
+  behind `CommandRunner`.
 
 ## Reference documents
 
@@ -98,4 +106,5 @@ branch, recording the plan, progress, decisions, and retrospective for a change.
 [adr-009]: adrs/adr-0009-pypi-first-distribution-publication.md
 [adr-010]: adrs/adr-0010-adopt-nose-duplication-gate.md
 [adr-011]: adrs/adr-0011-cyclopts-4-cli-result-and-diagnostic-boundary.md
+[adr-012]: adrs/adr-0012-record-command-runner-adapter-compatibility-policy.md
 [execplan-regenerate-lockfiles]: execplans/regenerate-lockfiles.md
