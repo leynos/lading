@@ -11,7 +11,7 @@ command, a scope that hides those token values from everything lading prints.
 import collections.abc as cabc
 import os
 import sys
-from contextlib import AbstractContextManager, nullcontext
+from contextlib import AbstractContextManager, contextmanager, nullcontext
 from pathlib import Path
 
 from lading.commands.publish_cargo_config import CargoEnvironment
@@ -39,7 +39,22 @@ def hidden_for(tokens: cabc.Sequence[str]) -> AbstractContextManager[object]:
     """
     if not any(token.partition("=")[0] == "--expect-digests" for token in tokens):
         return nullcontext()
-    return use_secrets(cargo_environment(os.environ).secrets)
+    return _hidden_digest_run()
+
+
+@contextmanager
+def _hidden_digest_run() -> cabc.Generator[None]:
+    """Hide the environment's token values first, then the credentials file's.
+
+    Resolving the Cargo environment reads the credentials file and can warn
+    about it, quoting a path that may itself hold a token. The values the
+    environment already names are therefore active before that read, and the
+    file's own are added once it has been read.
+    """
+    with use_secrets(registry_token_values(os.environ)):
+        environment = cargo_environment(os.environ)
+        with use_secrets(environment.secrets):
+            yield
 
 
 def print_error(message: str) -> None:

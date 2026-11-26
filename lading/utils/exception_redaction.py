@@ -88,8 +88,28 @@ def _scrub_container(value: object, redact: Redact, memo: Memo) -> object:
                 items(value)
             )
         case _:
-            result = value
+            result = _scrub_object(value, redact)
     return result
+
+
+def _scrub_object(value: object, redact: Redact) -> object:
+    """Return ``value``, or its redacted text when it renders a secret.
+
+    An object of a type this does not rebuild (a ``Path``, say) can still show
+    a secret when formatted. If ``str`` or ``repr`` would, it is replaced by its
+    redacted ``str``; one that cannot render at all becomes ``<unrenderable>``.
+
+    Returns
+    -------
+    object
+        ``value`` itself when it renders clean, otherwise a redacted string.
+    """
+    try:
+        is_clean = _renders_clean(value, redact)
+        text = f"{value}"
+    except Exception:  # ruff: ignore[blind-except] -- a value that cannot render itself
+        return "<unrenderable>"
+    return value if is_clean else redact(text)
 
 
 def _scrub_fields(exc: BaseException, redact: Redact, memo: Memo) -> None:
@@ -104,9 +124,9 @@ def _scrub_fields(exc: BaseException, redact: Redact, memo: Memo) -> None:
         exc.__notes__ = [redact(str(note)) for note in notes]
 
 
-def _renders_clean(exc: BaseException, redact: Redact) -> bool:
-    """Whether ``str`` and ``repr`` of ``exc`` are unchanged by redaction."""
-    return all(redact(text) == text for text in (str(exc), repr(exc)))
+def _renders_clean(value: object, redact: Redact) -> bool:
+    """Whether ``str`` and ``repr`` of ``value`` are unchanged by redaction."""
+    return all(redact(text) == text for text in (str(value), repr(value)))
 
 
 def _clean(exc: BaseException, redact: Redact, memo: Memo) -> BaseException:

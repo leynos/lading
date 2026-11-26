@@ -1,6 +1,7 @@
 """Unit tests for the ``lading publish --expect-digests`` option."""
 
 import collections.abc as cabc
+import logging
 import typing as typ
 from pathlib import Path
 
@@ -215,3 +216,30 @@ def test_runner_without_digests_is_the_plain_one_even_with_a_token(
     assert cli._select_runner() is cli.subprocess_runner, (
         "the plain runner must be used exactly as before the option existed"
     )
+
+
+def test_credentials_file_warning_is_redacted_before_its_tokens_are_known(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+    captured_options: dict[str, publish_command.PublishOptions],
+) -> None:
+    """A token in the Cargo home path is hidden from the unreadable-file warning."""
+    leak = "home-credential-12ab34cd56ef"
+    home = tmp_path / f"cargo-{leak}"
+    home.mkdir()
+    (home / "credentials.toml").write_text("[registry\n", encoding="utf-8")
+    monkeypatch.setenv("CARGO_HOME", str(home))
+    monkeypatch.setenv("CARGO_REGISTRY_TOKEN", leak)
+    caplog.set_level(logging.WARNING)
+
+    assert _publish(tmp_path, "--expect-digests", "digests.txt") == 0, (
+        "publish must succeed with the stubbed run"
+    )
+
+    seen = caplog.text
+    assert "Ignoring unreadable Cargo credentials file" in seen, (
+        "the warning must still be reported"
+    )
+    assert leak not in seen, "the token in the path must be hidden"
+    assert captured_options, "the stubbed publish must have run"

@@ -352,3 +352,43 @@ def test_publish_run_with_a_cyclic_error_from_the_runner_is_clean(
         "the formatted traceback must be clean"
     )
     assert caught[0].args[1][1] is caught[0].args[1], "the cycle must survive"
+
+
+class _Unrenderable:
+    """An object whose text cannot be produced."""
+
+    def __str__(self) -> str:
+        """Fail to render."""
+        message = "no text"
+        raise RuntimeError(message)
+
+
+def test_rendered_objects_in_extra_fields_are_redacted() -> None:
+    """A ``Path`` (or any object) that would render the token is replaced."""
+    seen: list[str] = []
+
+    class _Show(logging.Handler):
+        """Display the ``note`` and ``odd`` extras."""
+
+        def emit(self, record: logging.LogRecord) -> None:
+            """Remember the rendered record."""
+            seen.append(self.format(record))
+
+    handler = _Show()
+    handler.setFormatter(logging.Formatter("%(note)s | %(odd)s"))
+    target = logging.getLogger("lading.commands.publish")
+    previous_level = target.level
+    target.setLevel(logging.INFO)
+    target.addHandler(handler)
+    try:
+        with use_secrets((_LEAK,)):
+            target.info(
+                "event", extra={"note": Path(f"/work/{_LEAK}"), "odd": _Unrenderable()}
+            )
+    finally:
+        target.removeHandler(handler)
+        target.setLevel(previous_level)
+
+    assert _LEAK not in seen[0], "the rendered Path must not show the token"
+    assert "<unrenderable>" in seen[0], "an object that cannot render is replaced"
+    assert REDACTED in seen[0], "the redaction must show"

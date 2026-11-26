@@ -1913,18 +1913,20 @@ carrying its type name), `publish.run` opens the scope before it logs or
 validates anything, and `use_secrets` also installs a log-record factory
 (`RecordFactory`, so a handler on any logger is covered), a wrapper around
 `Logger.makeRecord` (`MakeRecordPatch`, which redacts the `extra` fields
-applied after the factory), and `RedactingFilter` on the root log handlers
+applied after the factory, replacing any object that would render a secret with
+its redacted text), and `RedactingFilter` on the root log handlers
 (`protect_handler` covers handlers configured later), and
-`lading.cli_environment` prints errors and summaries through `redact_active`,
-so a message built without any redaction is still hidden where it leaves lading
-for a digest-checked run. Every runner logs through
-`subprocess_runner.run_logged`, so the `Running external command` line is
-identical with or without redaction; `env_redaction` is the older key-based
-masking for logged environment overrides. `publish_registry` is the injectable
-`PublishedDigestFetcher` port; `fetch_crates_io_digest` streams the archive from
-`static.crates.io` through a size cap and bounded retries, and tests
-substitute a fake. The new errors (`ExpectedDigestsError`,
-`ArchiveMismatchError`, `UploadedArchiveMismatchError`,
+`lading.cli_environment` activates the environment's token values before it
+reads the credentials file (so a warning about it is redacted) and prints
+errors and summaries through `redact_active`, so a message built without any
+redaction is still hidden where it leaves lading for a digest-checked run.
+Every runner logs through `subprocess_runner.run_logged`, so the
+`Running external command` line is identical with or without redaction;
+`env_redaction` is the older key-based masking for logged environment overrides.
+`publish_registry` is the injectable `PublishedDigestFetcher` port;
+`fetch_crates_io_digest` streams the archive from `static.crates.io` through a
+size cap and bounded retries, and tests substitute a fake. The new errors
+(`ExpectedDigestsError`, `ArchiveMismatchError`, `UploadedArchiveMismatchError`,
 `PublishedArchiveConflictError`) live in `publish_errors`;
 `ArchiveUnavailableError` and `PublishedArchiveUnavailableError` sit beside the
 code that raises them. `tests/helpers/publish_digests.py` provides `FakeCargo`,
