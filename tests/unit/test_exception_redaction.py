@@ -1,6 +1,7 @@
 """Exceptions leaving a digest-checked scope are sanitized, type intact."""
 
 import logging
+import shutil
 import traceback
 from pathlib import Path
 
@@ -10,11 +11,18 @@ from lading import config as config_module
 from lading.commands import publish
 from lading.commands.publish_cargo_config import CargoEnvironment
 from lading.commands.publish_errors import ExpectedDigestsError
+from lading.commands.publish_manifest import PublishPreparationError
 from lading.exceptions import LadingError
-from lading.utils.redaction import REDACTED, sanitize_exception, use_secrets
+from lading.utils.exception_redaction import sanitize_exception
+from lading.utils.redaction import REDACTED, redact_text, use_secrets
 from tests.helpers.publish_digests import PublishRig
 
 _LEAK = "exc-credential-44dd55ee66ff"
+
+
+def _redact(text: str) -> str:
+    """Replace the synthetic token in ``text``."""
+    return redact_text(text, (_LEAK,))
 
 
 class _DetailedError(Exception):
@@ -27,17 +35,25 @@ class _DetailedError(Exception):
         self.code = 7
 
 
+class _Holder:
+    """An opaque object the sanitizer cannot see inside."""
+
+    def __init__(self, text: str) -> None:
+        """Keep ``text`` where only the owner's ``__str__`` reads it."""
+        self.text = text
+
+
 class _StubbornError(Exception):
     """An exception whose text comes from somewhere redaction cannot reach."""
 
     def __init__(self) -> None:
-        """Hide the text in a private slot-like attribute read by ``__str__``."""
+        """Hide the text inside an opaque holder."""
         super().__init__("opaque")
-        self._rendered = [f"stubborn {_LEAK}"]
+        self._holder = _Holder(f"stubborn {_LEAK}")
 
     def __str__(self) -> str:
-        """Render from the list, which the sanitizer does not walk."""
-        return self._rendered[0]
+        """Render from the holder, which the sanitizer does not walk."""
+        return f"{self._holder.text}"
 
 
 def test_message_attributes_notes_and_chain_are_redacted_in_place() -> None:
@@ -48,7 +64,7 @@ def test_message_attributes_notes_and_chain_are_redacted_in_place() -> None:
     error.__cause__ = cause
     error.__context__ = OSError(2, f"missing {_LEAK}", f"/work/{_LEAK}")
 
-    safe = sanitize_exception(error, (_LEAK,))
+    safe = sanitize_exception(error, _redact)
 
     rendered = "".join(traceback.format_exception(safe))
     assert safe is error, "a reconstructible exception is kept as it is"
@@ -60,7 +76,7 @@ def test_message_attributes_notes_and_chain_are_redacted_in_place() -> None:
 
 def test_unreconstructible_exception_is_replaced_by_a_redacted_lading_error() -> None:
     """When the type renders text redaction cannot reach, it is replaced."""
-    safe = sanitize_exception(_StubbornError(), (_LEAK,))
+    safe = sanitize_exception(_StubbornError(), _redact)
 
     assert isinstance(safe, LadingError), "the replacement must be a LadingError"
     assert _LEAK not in str(safe), "the replacement must be clean"
@@ -129,3 +145,103 @@ def test_start_log_and_validation_run_inside_the_scope(
 
     assert "Starting publish workflow" in caplog.text, "the start log must appear"
     assert _LEAK not in caplog.text, "no record may show the token in the path"
+
+
+def test_strings_nested_in_args_and_attributes_are_redacted_at_any_depth() -> None:
+    """Containers inside ``args`` and attributes are rebuilt with clean strings."""
+    error = _DetailedError("outer", "x")
+    error.args = (
+        ["outer", [(f"src/{_LEAK}", {f"k{_LEAK}": {f"v{_LEAK}"}})]],
+        frozenset({f"f{_LEAK}"}),
+    )
+
+    safe = sanitize_exception(error, _redact)
+
+    assert _LEAK not in repr(safe) + str(safe), "str and repr must be clean"
+    assert safe is error, "a clean exception is sanitized in place"
+
+
+def test_a_dirty_exception_in_the_chain_is_replaced_at_its_position() -> None:
+    """A replaced cause keeps its type name and its place under the outer error."""
+    outer = ValueError("outer")
+    outer.__cause__ = _StubbornError()
+
+    safe = sanitize_exception(outer, _redact)
+
+    assert safe is outer, "the clean outer exception stays"
+    assert isinstance(safe.__cause__, LadingError), "the dirty cause is replaced"
+    assert "_StubbornError" in str(safe.__cause__), "it carries the original type name"
+    assert _LEAK not in "".join(traceback.format_exception(safe)), "no token remains"
+
+
+def _copytree_into_a_failing_destination(source: Path, destination: Path) -> None:
+    """Raise a ``shutil.Error`` whose reasons quote token-bearing paths."""
+    errors = [(str(source / _LEAK), str(destination / _LEAK), f"denied {_LEAK}")]
+    failure = shutil.Error(errors)
+    try:
+        raise failure
+    except shutil.Error as exc:
+        message = "Cannot copy workspace into staging directory"
+        raise PublishPreparationError(message) from exc
+
+
+def test_shutil_error_chained_under_a_preparation_error_is_clean(
+    tmp_path: Path,
+) -> None:
+    """The caller's formatted traceback shows no token from a nested reason list."""
+    caught: list[BaseException] = []
+
+    def leave_the_scope() -> None:
+        """Run the failing copy inside an active scope."""
+        with use_secrets((_LEAK,)):
+            _copytree_into_a_failing_destination(tmp_path, tmp_path / "out")
+
+    try:
+        leave_the_scope()
+    except PublishPreparationError as exc:
+        caught.append(exc)
+
+    assert caught, "the preparation error must reach the caller"
+    assert _LEAK not in "".join(traceback.format_exception(caught[0])), (
+        "nothing in the chain, including the shutil.Error's nested tuples, may show it"
+    )
+
+
+def test_handler_on_a_specific_logger_receives_only_redacted_records(
+    tmp_path: Path,
+) -> None:
+    """Redaction happens at record creation, so any handler is covered."""
+    seen: list[str] = []
+
+    class _Collect(logging.Handler):
+        """Collect formatted records."""
+
+        def emit(self, record: logging.LogRecord) -> None:
+            """Remember the rendered record, traceback included."""
+            seen.append(self.format(record))
+
+    handler = _Collect()
+    target = logging.getLogger("lading.commands.publish")
+    previous_level = target.level
+    target.setLevel(logging.INFO)
+    target.addHandler(handler)
+    rig = PublishRig.create(tmp_path / _LEAK)
+    options = publish.PublishOptions(
+        build_directory=rig.build_directory,
+        command_runner=rig.cargo,
+        expect_digests=rig.digests_file({"alpha": b"x"}),
+        cargo_environment=CargoEnvironment(None, None, (_LEAK,)),
+    )
+    try:
+        with pytest.raises(ExpectedDigestsError):
+            publish.run(
+                rig.root, config_module.LadingConfig(), rig.workspace(), options=options
+            )
+    finally:
+        target.removeHandler(handler)
+        target.setLevel(previous_level)
+
+    assert any("Starting publish workflow" in line for line in seen), (
+        "the direct handler must receive the start log"
+    )
+    assert _LEAK not in "\n".join(seen), "and it must not show the token"

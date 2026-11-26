@@ -36,8 +36,11 @@ Examples
 import collections.abc as cabc
 import contextlib
 import contextvars
+import functools
 import logging
 import re
+
+from lading.utils.exception_redaction import sanitize_exception
 
 REDACTED = "<redacted>"
 
@@ -132,81 +135,71 @@ class RedactingFilter(logging.Filter):
         bool
             Always ``True``; the record is rewritten, never dropped.
         """
-        record.msg = redact_text(record.getMessage(), self._secrets)
-        record.args = ()
-        if record.exc_info and not record.exc_text:
-            record.exc_text = logging.Formatter().formatException(record.exc_info)
-        if record.exc_text:
-            record.exc_text = redact_text(record.exc_text, self._secrets)
-        if record.stack_info:
-            record.stack_info = redact_text(record.stack_info, self._secrets)
+        redact_record(record, self._secrets)
         return True
 
 
-_TEXT_ATTRIBUTES = ("strerror", "filename", "filename2")
+def redact_record(record: logging.LogRecord, secrets: cabc.Sequence[str]) -> None:
+    """Render ``record`` and replace ``secrets`` in its message, traceback and stack.
 
-
-def _redact_text_attributes(exc: BaseException, secrets: cabc.Sequence[str]) -> None:
-    """Redact the string attributes ``exc`` may render itself from, and its notes."""
-    for name in (*_TEXT_ATTRIBUTES, *vars(exc)):
-        value = getattr(exc, name, None)
-        if isinstance(value, str):
-            setattr(exc, name, redact_text(value, secrets))
-    notes = getattr(exc, "__notes__", None)
-    if notes:
-        exc.__notes__ = [redact_text(str(note), secrets) for note in notes]
-
-
-def _nested_exceptions(exc: BaseException) -> list[BaseException]:
-    """Return exceptions held in ``exc``'s attributes, plus its cause and context."""
-    held = [value for value in vars(exc).values() if isinstance(value, BaseException)]
-    return [*held, *(e for e in (exc.__cause__, exc.__context__) if e is not None)]
-
-
-def _sanitize_in_place(
-    exc: BaseException, secrets: cabc.Sequence[str], seen: set[int]
-) -> None:
-    """Redact ``exc``'s message, text attributes, notes and chain in place."""
-    if id(exc) in seen:
-        return
-    seen.add(id(exc))
-    exc.args = tuple(
-        redact_text(arg, secrets) if isinstance(arg, str) else arg for arg in exc.args
-    )
-    _redact_text_attributes(exc, secrets)
-    for other in _nested_exceptions(exc):
-        _sanitize_in_place(other, secrets, seen)
-
-
-def sanitize_exception(exc: Exception, secrets: cabc.Sequence[str]) -> Exception:
-    """Hide ``secrets`` from ``exc`` and everything chained to it.
-
-    The exception is rewritten in place, so its type and its non-sensitive
-    attributes are exactly what callers expect. When the type renders itself
-    from something this cannot reach (so ``str(exc)`` still shows a secret), a
-    redacted :class:`~lading.exceptions.LadingError` replaces it, chained to
-    nothing.
-
-    Returns
-    -------
-    Exception
-        ``exc`` itself, or the replacement.
-
-    Examples
-    --------
-    >>> error = ValueError("token hunter2")
-    >>> sanitize_exception(error, ("hunter2",)) is error
-    True
-    >>> str(error)
-    'token <redacted>'
+    The arguments are applied and cleared, and the traceback is formatted now
+    and cached as ``exc_text``, so whatever handler formats the record later
+    sees only redacted text.
     """
-    _sanitize_in_place(exc, secrets, set())
-    shown = str(exc)
-    if redact_text(shown, secrets) == shown:
-        return exc
-    from lading.exceptions import LadingError
+    record.msg = redact_text(record.getMessage(), secrets)
+    record.args = ()
+    if record.exc_info and not record.exc_text:
+        record.exc_text = logging.Formatter().formatException(record.exc_info)
+    if record.exc_text:
+        record.exc_text = redact_text(record.exc_text, secrets)
+    if record.stack_info:
+        record.stack_info = redact_text(record.stack_info, secrets)
 
-    return LadingError(redact_text(shown, secrets))
+
+class RecordFactory:
+    """A log-record factory that redacts each record as it is created.
+
+    Installed while secrets are active, it covers a handler attached directly to
+    any logger, which a filter on the root handlers would miss. It wraps the
+    factory it replaces and can be switched off when its scope ends, which keeps
+    nested and overlapping scopes safe.
+
+    Parameters
+    ----------
+    previous : Callable[..., logging.LogRecord]
+        The factory being wrapped.
+    secrets : cabc.Sequence[str]
+        The values to replace.
+    """
+
+    def __init__(
+        self,
+        previous: cabc.Callable[..., logging.LogRecord],
+        secrets: cabc.Sequence[str],
+    ) -> None:
+        """Wrap ``previous``, redacting ``secrets`` until :meth:`disable`."""
+        self.previous = previous
+        self._secrets = tuple(secrets)
+        self._enabled = True
+
+    def __call__(self, *args: object, **kwargs: object) -> logging.LogRecord:
+        """Create a record with the wrapped factory, then redact it.
+
+        Returns
+        -------
+        logging.LogRecord
+            The redacted record.
+        """
+        record = self.previous(*args, **kwargs)
+        if self._enabled:
+            redact_record(record, self._secrets)
+        return record
+
+    def disable(self) -> None:
+        """Stop redacting, and unwrap if this is still the installed factory."""
+        self._enabled = False
+        if logging.getLogRecordFactory() is self:
+            logging.setLogRecordFactory(self.previous)
 
 
 @contextlib.contextmanager
@@ -214,10 +207,12 @@ def use_secrets(secrets: cabc.Iterable[str]) -> cabc.Generator[None]:
     """Hide ``secrets`` (in addition to any already active) from shown output.
 
     For the duration of the block the secrets are replaced by
-    :func:`redact_active`, and a :class:`RedactingFilter` is installed on the
-    root logger's handlers. Both are removed afterwards, so nothing changes for
-    a run that never activates any. An exception that propagates out of the block
-    is sanitized first (see :func:`sanitize_exception`).
+    :func:`redact_active`, a :class:`RecordFactory` redacts every log record as
+    it is created (so a handler on any logger is covered), and a
+    :class:`RedactingFilter` is installed on the root logger's handlers. Both
+    are removed afterwards, so nothing changes for a run that never activates
+    any. An exception that propagates out of the block is sanitized first (see
+    :func:`~lading.utils.exception_redaction.sanitize_exception`).
     """
     combined = _longest_first((*_ACTIVE.get(), *secrets))
     token = _ACTIVE.set(combined)
@@ -225,16 +220,19 @@ def use_secrets(secrets: cabc.Iterable[str]) -> cabc.Generator[None]:
     for handler in logging.getLogger().handlers:
         redaction.attach(handler)
     _LIVE.append(redaction)
+    factory = RecordFactory(logging.getLogRecordFactory(), combined)
+    logging.setLogRecordFactory(factory)
     try:
         yield
     except Exception as exc:
         # An exception leaving the scope is a sink too: it reaches callers, logs
         # and tracebacks after the scope has ended.
-        safe = sanitize_exception(exc, combined)
+        safe = sanitize_exception(exc, functools.partial(redact_text, secrets=combined))
         if safe is exc:
             raise
-        raise safe from None
+        raise safe from safe.__cause__
     finally:
+        factory.disable()
         _LIVE.remove(redaction)
         redaction.detach_all()
         _ACTIVE.reset(token)
