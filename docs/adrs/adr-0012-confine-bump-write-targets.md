@@ -195,6 +195,16 @@ Path dependencies outside the workspace are not members and remain Cargo's
 responsibility. A missing dependency manifest fails the preflight, which Cargo
 would also reject.
 
+### 2026-11-23: Injected crate roots and workspace pointers
+
+An injected crate's `root_path` must be the directory containing its validated
+manifest, because README adoption uses that path as the destination. A
+`package.workspace` pointer in the requested root manifest is checked before
+Cargo runs: a pointer that names a different workspace is rejected with the
+`--workspace-root` suggestion, so Cargo never opens an unvalidated manifest
+through it. Cargo include paths are probed with their `..` components intact,
+matching Cargo's own optional-include handling.
+
 ### 2026-11-23: Configuration grammar, environment binding and fence containers
 
 Cargo configuration is parsed with `tomlkit`, because Cargo accepts TOML 1.1

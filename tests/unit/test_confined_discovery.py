@@ -5,6 +5,7 @@ that Cargo was not invoked when the rejection is lexically decidable, so the
 pre-Cargo contract is exercised rather than assumed.
 """
 
+import os
 import typing as typ
 from pathlib import Path
 
@@ -286,3 +287,30 @@ def test_load_bump_workspace_accepts_an_explicit_root_member(tmp_path: Path) -> 
     assert {crate.name for crate in graph.crates} == {"root", "alpha"}, (
         "an explicit root member must not prevent discovery of the other members"
     )
+
+
+def test_a_package_workspace_pointer_must_name_the_requested_root(
+    tmp_path: Path,
+) -> None:
+    """A pointer at another workspace is rejected before Cargo runs."""
+    _write_manifest(
+        tmp_path / "Cargo.toml",
+        '[package]\nname = "root"\nversion = "0.1.0"\n\nworkspace = "other"\n',
+    )
+    other = tmp_path / "other"
+    other.mkdir()
+    if not hasattr(os, "mkfifo"):
+        pytest.skip("os.mkfifo is unavailable on this platform")
+    try:
+        os.mkfifo(other / "Cargo.toml")
+    except OSError as exc:  # pragma: no cover - capability
+        pytest.skip(f"cannot create a FIFO here: {exc}")
+    runner = _RecordingRunner(payload={"workspace_root": str(tmp_path)})
+
+    with pytest.raises(BumpPreflightError) as excinfo:
+        load_bump_workspace(tmp_path, runner=typ.cast("CommandRunner", runner))
+
+    assert str(other) in str(excinfo.value), (
+        "the diagnostic must name the pointer's target root"
+    )
+    assert not runner.calls, "the pointer must be rejected before Cargo runs"

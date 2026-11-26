@@ -224,3 +224,15 @@ def _validate_injected_workspace(root_path: Path, workspace: WorkspaceGraph) -> 
             message = f"{key} must be named Cargo.toml: {crate.manifest_path}"
             raise UnsafeBumpTargetError(message)
         confine_relative_path(root_path, relative.as_posix(), key=key)
+        crate_root = graph_relative_manifest(
+            root_path,
+            graph_spelling,
+            crate.root_path,
+            key=f"workspace member {crate.name!r} root",
+        )
+        if crate_root != relative.parent:
+            message = (
+                f"workspace member {crate.name!r} root {crate.root_path} does "
+                f"not contain its manifest {crate.manifest_path}"
+            )
+            raise BumpPreflightError(message)

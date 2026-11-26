@@ -200,3 +200,23 @@ def test_loader_keeps_an_over_indented_delimiter_as_body_text(
     assert example.body == "print(1)\n  ```", (
         "only a fence indented within the container may close the example"
     )
+
+
+def test_loader_reads_a_marker_on_a_list_continuation_line(
+    tmp_path: Path,
+) -> None:
+    """A marker indented under a list item keeps that container's indentation."""
+    path = _write(
+        tmp_path,
+        "- Item\n"
+        "    <!-- tested-example: cont -->\n"
+        "    ```python\n"
+        "    print(1)\n"
+        "    ```\n",
+    )
+
+    example = load_tested_examples(path)["cont"]
+
+    assert example.body == "print(1)", (
+        "the continuation-line container indentation must be honoured"
+    )

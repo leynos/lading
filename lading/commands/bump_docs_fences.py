@@ -72,6 +72,25 @@ def rewrite_markdown_toml_fences(
     return updated, changed
 
 
+_SOURCE_LINE: typ.Final[re.Pattern[str]] = re.compile(
+    r"[^\r\n]*(?:\r\n|\r|\n)|[^\r\n]+$"
+)
+
+
+def _source_lines(markdown_text: str) -> list[str]:
+    """Split ``markdown_text`` on CR, LF, and CRLF only.
+
+    ``str.splitlines`` also splits on U+2028 and other separators that
+    MarkdownIt does not treat as line breaks, which would misalign token maps.
+
+    Returns
+    -------
+    list[str]
+        The source lines, each retaining its own ending.
+    """
+    return _SOURCE_LINE.findall(markdown_text)
+
+
 def replace_markdown_fences(
     markdown_text: str,
     language: str,
@@ -96,7 +115,7 @@ def replace_markdown_fences(
     """
     parser = MarkdownIt("commonmark")
     tokens = parser.parse(markdown_text)
-    lines = markdown_text.splitlines(keepends=True)
+    lines = _source_lines(markdown_text)
     output: list[str] = []
     last_index = 0
     for token in tokens:
@@ -166,23 +185,59 @@ def render_fence(
     if token.map is None:
         message = "Fence token missing map data"
         raise ValueError(message)
-    start, _ = token.map
-    fence_marker = token.markup or "```"
-    indent = extract_fence_indent(lines[start], fence_marker)
-    info = token.info or language
-    original_body = token.content
-    new_body = transform(original_body)
-    suffix_match = re.search(r"(\r?\n+)$", original_body)
-    suffix = suffix_match.group(1) if suffix_match else ""
-    body_text = new_body.rstrip("\r\n") + suffix
-    indented_body = "".join(
-        f"{indent}{line}" for line in body_text.splitlines(keepends=True)
+    start, end = token.map
+    original = "".join(lines[start:end])
+    new_body = transform(token.content)
+    if new_body == token.content:
+        return original
+    opener = lines[start]
+    marker = token.markup or "```"
+    prefix = extract_fence_indent(opener, marker)
+    continuation = _continuation_indent(prefix)
+    ending = _line_ending(opener) or "\n"
+    closer = lines[end - 1] if end > start + 1 else ""
+    if marker not in closer:
+        closer = f"{prefix}{marker}{ending}"
+    body_text = new_body.rstrip("\r\n")
+    rendered = "".join(
+        f"{continuation}{line}{ending}" for line in body_text.split("\n")
     )
-    return f"{indent}{fence_marker}{info}\n{indented_body}{indent}{fence_marker}\n"
+    return opener + rendered + closer
+
+
+def _continuation_indent(prefix: str) -> str:
+    """Return the indentation a transformed body line needs.
+
+    A block-quote marker is repeated; a list marker is replaced by spaces of the
+    same width so the body stays in the list item without another bullet.
+
+    Returns
+    -------
+    str
+        The prefix to place before each transformed body line.
+    """
+    stripped = prefix.strip()
+    if not stripped or set(stripped) == {">"}:
+        return prefix
+    return " " * len(prefix)
+
+
+def _line_ending(line: str) -> str:
+    """Return ``line``'s ending, or an empty string when it has none.
+
+    Returns
+    -------
+    str
+        The CRLF, LF, or CR ending, or an empty string when the line has none.
+    """
+    for ending in ("\r\n", "\n", "\r"):
+        if line.endswith(ending):
+            return ending
+    return ""
 
 
 def extract_fence_indent(line: str, fence_marker: str) -> str:
-    """Return indentation preceding ``fence_marker`` in ``line``.
+    """Return the text preceding ``fence_marker`` in ``line``.
 
     Parameters
     ----------
@@ -194,8 +249,7 @@ def extract_fence_indent(line: str, fence_marker: str) -> str:
     Returns
     -------
     str
-        The whitespace preceding the fence marker, or empty string if not found.
-
+        The text before the fence marker, or an empty string if not found.
     """
     position = line.find(fence_marker)
     return "" if position < 0 else line[:position]

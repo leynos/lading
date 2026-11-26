@@ -546,6 +546,15 @@ Scenario: Bumping rejects an escaping configured lockfile manifest
   processor moved to `bump_docs_fences`, discovery test setup is shared, and
   the port and migration docs state the required members and repair-command
   working directory.
+- [x] 2026-11-23: Thirteenth CodeRabbit review cleared. Cargo include paths
+  keep their `..` components until the probe (verified against Cargo: an
+  optional `missing/../shared.toml` still loads when `missing` is absent). The
+  fence renderer preserves unchanged fences, list markers and closer lines, and
+  splits source lines only on CR, LF and CRLF. Injected crates must have a root
+  containing their manifest; `package.workspace` pointers are checked before
+  Cargo; `graph_relative_manifest` rejects `..`. The stale-lockfile message now
+  names the repair command instead of an ineffective rerun, and the migration
+  guide records the required port members and the qualified override rule.
 - [ ] EP-M5 release: tag and release `v0.4.0b1` after review convergence, then
   record the tag commit on issue #409.
 
@@ -671,7 +680,12 @@ Scenario: Bumping rejects an escaping configured lockfile manifest
   explicit member covers the directory.
 - Example fences track the list container's indentation separately from the
   opener's own indentation, so only a container-relative closing fence ends an
-  example.
+  example. A marker on a list continuation line inherits the enclosing list's
+  content indentation.
+- Cargo include paths are probed with their `..` components intact: Cargo does
+  not collapse them before deciding whether an optional include exists, so a
+  path whose leading directory is missing is skipped. This was verified against
+  the installed Cargo with an isolated `CARGO_HOME`.
 
 ## Outcomes & retrospective
 

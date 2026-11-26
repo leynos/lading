@@ -8,7 +8,7 @@ used before its suffix is confined beneath the canonical root.
 
 from pathlib import Path
 
-from lading.utils.confinement import relative_to_root
+from lading.utils.confinement import UnsafeBumpTargetError, relative_to_root
 
 __all__ = ["graph_relative_manifest"]
 
@@ -44,8 +44,12 @@ def graph_relative_manifest(
     UnsafeBumpTargetError
         If the manifest escapes both spellings of the root or contains a
         parent-traversing component.
-    """  # ruff: ignore[docstring-extraneous-exception]  # raised by relative_to_root
+    """
     try:
-        return manifest_path.relative_to(graph_spelling)
+        relative = manifest_path.relative_to(graph_spelling)
     except ValueError:
         return relative_to_root(root_path, manifest_path, key=key, label="manifest")
+    if ".." in relative.parts:
+        message = f"{key}: manifest contains a parent traversal: {manifest_path}"
+        raise UnsafeBumpTargetError(message)
+    return relative

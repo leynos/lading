@@ -13,6 +13,7 @@ from lading.commands import bump, bump_prepare
 from lading.commands.bump_plan import PlanBuilder
 from lading.utils.confinement import BumpPreflightError, UnsafeBumpTargetError
 from lading.workspace import WorkspaceCrate, WorkspaceGraph
+from lading.workspace.graph_paths import graph_relative_manifest
 from tests.helpers.workspace_builders import _make_config
 
 
@@ -118,3 +119,42 @@ def test_manifest_preparation_accepts_an_aliased_root_spelling(
     assert "crates/alpha/Cargo.toml" in [
         proposal.path.display for proposal in plan.proposals
     ], "the alias-spelled member manifest must be prepared"
+
+
+def test_injected_crate_root_must_contain_its_manifest(tmp_path: Path) -> None:
+    """A crate whose root_path names another directory is rejected."""
+    root = tmp_path.resolve()
+    (root / "Cargo.toml").write_text("[workspace]\nmembers = []\n", encoding="utf-8")
+    manifest = root / "crates" / "alpha" / "Cargo.toml"
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text('version = "0.1.0"\n', encoding="utf-8")
+    crate = WorkspaceCrate(
+        name="alpha",
+        version="0.1.0",
+        manifest_path=manifest,
+        root_path=root / "crates" / "beta",
+        publish=True,
+        readme_is_workspace=False,
+        dependencies=(),
+    )
+    graph = WorkspaceGraph(workspace_root=root, crates=(crate,))
+
+    with pytest.raises(BumpPreflightError) as excinfo:
+        _initialize(root, graph)
+
+    assert "does not contain its manifest" in str(excinfo.value), (
+        "the diagnostic must say the crate root disagrees with its manifest"
+    )
+
+
+def test_graph_relative_manifest_rejects_parent_traversal(tmp_path: Path) -> None:
+    """A manifest lexically beneath an alias may still traverse upwards."""
+    root = tmp_path.resolve()
+    with pytest.raises(UnsafeBumpTargetError) as excinfo:
+        graph_relative_manifest(
+            root, root, root / ".." / "outside" / "Cargo.toml", key="member"
+        )
+
+    assert "parent traversal" in str(excinfo.value), (
+        "a parent-traversing suffix must be rejected"
+    )

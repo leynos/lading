@@ -298,8 +298,15 @@ def test_regeneration_rejects_a_changed_cargo_environment(tmp_path: Path) -> Non
     with pytest.raises(LockfileRegenerationError) as excinfo:
         regenerate_planned(plan, runner=runner, environ={"CARGO_HOME": "two"})
 
-    assert "CARGO_HOME" in str(excinfo.value), (
+    message = str(excinfo.value)
+    assert "CARGO_HOME" in message, (
         "the diagnostic must name the changed environment variable"
+    )
+    assert "cargo update --workspace --manifest-path" in message, (
+        "the diagnostic must name the lockfile repair command"
+    )
+    assert "re-run the bump" not in message, (
+        "a same-version rerun cannot repair the stale lockfiles"
     )
     assert runner.cargo_update_calls() == [], (
         "regeneration must not reach Cargo with a stale plan"

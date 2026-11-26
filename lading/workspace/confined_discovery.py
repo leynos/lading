@@ -117,6 +117,7 @@ def _read_workspace_tables(root: Path) -> tuple[tuple[str, ...], tuple[str, ...]
     except TOMLKitError as exc:
         message = f"workspace manifest is not valid TOML: {manifest.display}: {exc}"
         raise BumpPreflightError(message) from exc
+    _require_workspace_pointer(root, document)
     workspace = document.get("workspace")
     if not isinstance(workspace, cabc.Mapping):
         # A package-only manifest is a valid single-package workspace; Cargo
@@ -127,6 +128,40 @@ def _read_workspace_tables(root: Path) -> tuple[tuple[str, ...], tuple[str, ...]
         _string_sequence(workspace_mapping.get("members"), _MEMBERS_KEY),
         _string_sequence(workspace_mapping.get("exclude"), _EXCLUDES_KEY),
     )
+
+
+def _require_workspace_pointer(
+    root: Path,
+    document: cabc.Mapping[str, typ.Any],
+) -> None:
+    """Reject a ``package.workspace`` pointer that names a different root.
+
+    Cargo follows the pointer and reads the target workspace's manifests, so
+    the requested root must already be that workspace. Rejecting the pointer
+    before the metadata call keeps Cargo from opening an unvalidated file.
+
+    Raises
+    ------
+    BumpPreflightError
+        If the pointer names a root other than ``root``.
+    """
+    package = document.get("package")
+    if not isinstance(package, cabc.Mapping):
+        return
+    pointer = package.get("workspace")
+    if not isinstance(pointer, str) or not pointer.strip():
+        return
+    target = Path(pointer)
+    if not target.is_absolute():
+        target = root / target
+    normalised = Path(os.path.normpath(target))
+    if normalised != root:
+        message = (
+            f"workspace manifest points at {normalised}, not {root}; pass "
+            f"--workspace-root {normalised} so the requested root is the "
+            "workspace Cargo reports"
+        )
+        raise BumpPreflightError(message)
 
 
 def _string_sequence(value: object, key: str) -> tuple[str, ...]:

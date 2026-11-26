@@ -23,7 +23,9 @@ _CONTAINER_MARKERS: typ.Final[re.Pattern[str]] = re.compile(
     r"^(?:(?:>\s?)|(?:[-+*]|\d{1,9}[.)])\s+)+"
 )
 _QUOTE_TOKEN: typ.Final[re.Pattern[str]] = re.compile(r"^ {0,3}> ?")
-_LIST_MARKER: typ.Final[re.Pattern[str]] = re.compile(r"^(?:[-+*]|\d{1,9}[.)])\s+")
+_LIST_ITEM: typ.Final[re.Pattern[str]] = re.compile(
+    r"^(?P<indent> *)(?:[-+*]|\d{1,9}[.)])(?P<space>[ \t]+)"
+)
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -70,10 +72,12 @@ def load_tested_examples(path: Path) -> dict[str, MarkedExample]:
     lines = path.read_text(encoding="utf-8").splitlines()
     examples: dict[str, MarkedExample] = {}
     index = 0
+    list_indent = 0
     while index < len(lines):
         raw = lines[index]
         _reject_unmarked_fence(raw, path, index)
-        marker = _marker_at(raw, path, index)
+        list_indent = _list_context(raw, list_indent)
+        marker = _marker_at(raw, path, index, list_indent)
         if marker is None:
             index += 1
             continue
@@ -88,6 +92,16 @@ def load_tested_examples(path: Path) -> dict[str, MarkedExample]:
     return examples
 
 
+def _list_context(raw: str, current: int) -> int:
+    """Return the content indentation of the enclosing list item, if any."""
+    match = _LIST_ITEM.match(raw)
+    if match is not None:
+        return match.end()
+    if raw.strip() and not raw.startswith((" ", "\t")):
+        return 0
+    return current
+
+
 def _reject_unmarked_fence(raw: str, path: Path, index: int) -> None:
     """Raise when ``raw`` opens a fence that no marker introduces."""
     if _fence_delimiter(_without_container(raw.strip())) is not None:
@@ -95,12 +109,22 @@ def _reject_unmarked_fence(raw: str, path: Path, index: int) -> None:
         raise ValueError(message)
 
 
-def _marker_at(raw: str, path: Path, index: int) -> _MarkerContext | None:
+def _marker_at(
+    raw: str,
+    path: Path,
+    index: int,
+    list_indent: int,
+) -> _MarkerContext | None:
     """Return the marker on ``raw``, or ``None`` when it carries none."""
     depth = _quote_depth(raw)
     content = _strip_quotes(raw, depth) or ""
-    list_marker = _LIST_MARKER.match(content)
-    marker_text = _LIST_MARKER.sub("", content).strip()
+    list_item = _LIST_ITEM.match(content)
+    if list_item is not None:
+        marker_text = content[list_item.end() :].strip()
+        container_indent = list_item.end()
+    else:
+        marker_text = content.strip()
+        container_indent = max(list_indent, _indentation(raw)) if list_indent else 0
     if not marker_text.startswith("<!-- tested-example:"):
         return None
     match = _MARKER.match(marker_text)
@@ -111,7 +135,7 @@ def _marker_at(raw: str, path: Path, index: int) -> _MarkerContext | None:
         path=path,
         identifier=match.group(1),
         depth=depth,
-        container_indent=list_marker.end() if list_marker else 0,
+        container_indent=container_indent,
     )
 
 

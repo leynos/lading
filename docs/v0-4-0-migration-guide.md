@@ -60,8 +60,9 @@ workspace that relied on any of the following now fails with exit status 1 and a
   `--no-rebuild-lockfiles` ignores configured entries.
 - A non-empty `CARGO_RESOLVER_LOCKFILE_PATH` in the environment, or a
   `resolver.lockfile-path` in a Cargo configuration file, including a file
-  pulled in through that configuration's `include` entries. Unset the variable
-  or remove the setting.
+  pulled in through that configuration's `include` entries. This applies when
+  lockfile regeneration is enabled; `--no-rebuild-lockfiles` checks neither
+  route. Unset the variable or remove the setting.
 
 Configured lockfile manifests are resolved to the effective workspace root
 Cargo reports. A manifest that belongs to the outer workspace now reports the
@@ -81,6 +82,12 @@ The guarantee is validation before mutation. A failure during an actual write
 or Cargo invocation is not rolled back, and a concurrent process that changes a
 path after validation is not defended against.
 
+A custom `LockfileRepository` supplied through
+`BumpOptions.lockfile_repository` must implement `plan_lockfiles` and
+`regenerate_planned`. The older `resolve_lockfile_paths` and
+`regenerate_lockfiles` methods remain available for callers that supply a
+manifest tuple directly, but they alone no longer satisfy the port.
+
 ## Who is affected
 
 | Your environment                                                       | Action required                                             |
@@ -93,7 +100,7 @@ path after validation is not defended against.
 | CPython 3.14 or later, hard-linked write target                        | Required: replace it with an independent copy of the file.  |
 | CPython 3.14 or later, invalid configured lockfile manifest            | Required: make it an existing, confined `Cargo.toml`.       |
 | CPython 3.14 or later, invalid implicit member manifest                | Required: make the path dependency real and regular.        |
-| CPython 3.14 or later, Cargo lockfile-path override                    | Required: unset the variable or remove the setting.         |
+| CPython 3.14 or later, Cargo lockfile-path override                    | Required, with regeneration enabled: unset the variable.    |
 | CPython 3.13                                                           | Required: upgrade the interpreter, or remain on 0.3.1.      |
 | CPython 3.12 or earlier                                                | Required: upgrade the interpreter; 0.3.1 required 3.13.     |
 

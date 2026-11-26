@@ -226,8 +226,9 @@ def _require_unchanged_environment(
         message = (
             "Cargo environment changed after lockfile planning: "
             + ", ".join(changed)
-            + "; re-run the bump so the plan is validated against the current "
-            "environment"
+            + "; the manifests may already carry the target version, so a "
+            "same-version rerun would skip regeneration. Repair each lockfile "
+            "with cargo update --workspace --manifest-path <manifest>."
         )
         raise LockfileRegenerationError(message)
 
