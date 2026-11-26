@@ -144,14 +144,9 @@ def _apply_non_member_manifest_rewrites(
     )
     application_started_at = clock()
     try:
-        if dry_run:
-            rewritten_paths = _apply_rewrite_plans(context, stage, dry_run=True)
-        elif not stage.plans:
-            rewritten_paths = _apply_rewrite_plans(context, stage, dry_run=False)
-        else:
-            rewritten_paths = _apply_rewrites_under_workspace_lock(
-                context, target_version, stage
-            )
+        rewritten_paths = _apply_planned_rewrites(
+            context, target_version, stage, dry_run=dry_run
+        )
     except BaseException as rewrite_error:
         if _should_recover_manifest_rewrite_failure(rewrite_error, dry_run=dry_run):
             recovery_error = _recover_failed_manifest_rewrite_application(
@@ -160,11 +155,15 @@ def _apply_non_member_manifest_rewrites(
                 changed_manifests,
                 rewrite_error,
             )
-            _record_failed_manifest_rewrite_metric(
+            _record_manifest_rewrite_metric(
                 stage,
                 application_started_at,
                 clock,
-                dry_run=dry_run,
+                _application_metrics_labels(
+                    dry_run=dry_run,
+                    failed=True,
+                    has_plans=bool(stage.plans),
+                ),
             )
             if recovery_error is not None:
                 raise recovery_error from rewrite_error
@@ -172,16 +171,63 @@ def _apply_non_member_manifest_rewrites(
     # The resolver already canonicalized these paths; resolving after a write
     # could follow a replaced symlink and report a different manifest.
     changed_manifests.update(rewritten_paths)
-    outcome = "skipped" if dry_run or not stage.plans else "applied"
-    bump_manifest_rewrite_metrics.record_manifest_rewrite_metrics(
-        stage.planning_duration_seconds + clock() - application_started_at,
-        ManifestRewriteMetricLabels(
-            phase="application",
-            outcome=outcome,
+    _record_manifest_rewrite_metric(
+        stage,
+        application_started_at,
+        clock,
+        _application_metrics_labels(
             dry_run=dry_run,
-            error_category="none",
+            failed=False,
+            has_plans=bool(stage.plans),
         ),
     )
+
+
+def _application_metrics_labels(
+    *,
+    dry_run: bool,
+    failed: bool,
+    has_plans: bool,
+) -> ManifestRewriteMetricLabels:
+    """Return outcome labels for an applied or failed rewrite stage."""
+    if failed:
+        outcome, error_category = "failed", "write"
+    elif dry_run or not has_plans:
+        outcome, error_category = "skipped", "none"
+    else:
+        outcome, error_category = "applied", "none"
+    return ManifestRewriteMetricLabels(
+        phase="application",
+        outcome=outcome,
+        dry_run=dry_run,
+        error_category=error_category,
+    )
+
+
+def _record_manifest_rewrite_metric(
+    stage: _ManifestRewriteStage,
+    application_started_at: float,
+    clock: cabc.Callable[[], float],
+    labels: ManifestRewriteMetricLabels,
+) -> None:
+    """Record one rewrite duration with its outcome labels."""
+    bump_manifest_rewrite_metrics.record_manifest_rewrite_metrics(
+        stage.planning_duration_seconds + clock() - application_started_at,
+        labels,
+    )
+
+
+def _apply_planned_rewrites(
+    context: _BumpContext,
+    target_version: str,
+    stage: _ManifestRewriteStage,
+    *,
+    dry_run: bool,
+) -> tuple[Path, ...]:
+    """Apply cached plans through the boundary their configuration requires."""
+    if dry_run or not stage.plans:
+        return _apply_rewrite_plans(context, stage, dry_run=dry_run)
+    return _apply_rewrites_under_workspace_lock(context, target_version, stage)
 
 
 def _apply_rewrite_plans(
@@ -268,22 +314,3 @@ def _recover_failed_manifest_rewrite_application(
         for note in getattr(rewrite_error, "__notes__", ()):
             recovery_error.add_note(note)
     return recovery_error
-
-
-def _record_failed_manifest_rewrite_metric(
-    stage: _ManifestRewriteStage,
-    application_started_at: float,
-    clock: cabc.Callable[[], float],
-    *,
-    dry_run: bool,
-) -> None:
-    """Record the failed duration of a handled rewrite application."""
-    bump_manifest_rewrite_metrics.record_manifest_rewrite_metrics(
-        stage.planning_duration_seconds + clock() - application_started_at,
-        ManifestRewriteMetricLabels(
-            phase="application",
-            outcome="failed",
-            dry_run=dry_run,
-            error_category="write",
-        ),
-    )

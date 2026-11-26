@@ -165,26 +165,40 @@ def _held_workspace_locks() -> dict[str, tuple[AtomicWriteIdentity, int]]:
 def _workspace_lock_directory() -> Path:
     """Return a per-user lock directory independent of process cache settings."""
     if os.name == "nt":
-        try:
-            home_directory = Path.home()
-        except RuntimeError as exc:
-            message = "Cannot locate a stable per-user workspace write lock directory"
-            raise PermissionError(message) from exc
-    else:
-        try:
-            home_directory = Path(pwd.getpwuid(os.getuid()).pw_dir)
-        except KeyError as exc:
-            message = (
-                "Cannot locate a stable per-user workspace write lock directory: "
-                "the current user has no passwd entry"
-            )
-            raise PermissionError(message) from exc
-        except OSError as exc:
-            message = "Cannot locate a stable per-user workspace write lock directory"
-            raise PermissionError(message) from exc
-        if not home_directory.is_absolute():
-            message = "Cannot locate a stable per-user workspace write lock directory"
-            raise PermissionError(message)
-    if os.name == "nt":
-        return home_directory / "AppData" / "Local" / "lading" / "workspace-write-locks"
+        return _windows_lock_directory()
+    return _posix_lock_directory()
+
+
+def _windows_lock_directory() -> Path:
+    """Return the per-user lock directory used on Windows."""
+    try:
+        home_directory = Path.home()
+    except RuntimeError as exc:
+        message = "Cannot locate a stable per-user workspace write lock directory"
+        raise PermissionError(message) from exc
+    return home_directory / "AppData" / "Local" / "lading" / "workspace-write-locks"
+
+
+def _posix_lock_directory() -> Path:
+    """Return the per-user lock directory derived from the passwd entry."""
+    home_directory = _posix_home_directory()
     return home_directory / ".local" / "state" / "lading" / "workspace-write-locks"
+
+
+def _posix_home_directory() -> Path:
+    """Return an absolute passwd home directory for the current account."""
+    try:
+        home_directory = Path(pwd.getpwuid(os.getuid()).pw_dir)
+    except KeyError as exc:
+        message = (
+            "Cannot locate a stable per-user workspace write lock directory: "
+            "the current user has no passwd entry"
+        )
+        raise PermissionError(message) from exc
+    except OSError as exc:
+        message = "Cannot locate a stable per-user workspace write lock directory"
+        raise PermissionError(message) from exc
+    if not home_directory.is_absolute():
+        message = "Cannot locate a stable per-user workspace write lock directory"
+        raise PermissionError(message)
+    return home_directory

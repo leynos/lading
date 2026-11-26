@@ -103,24 +103,9 @@ def _process_workspace_and_crate_manifests(
 ) -> None:
     """Restore pre-bump manifests if a workspace manifest stage fails."""
     try:
-        if rewrite_stage.is_configured:
-            bump_pipeline_manifest_sources._validate_pre_bump_versions(
-                context, rewrite_stage
-            )
-        _process_workspace_manifest(
+        _update_workspace_and_crate_manifests(
             context, target_version, rewrite_stage, changed_manifests
         )
-        _process_crate_manifests(
-            context, target_version, rewrite_stage, changed_manifests
-        )
-        if rewrite_stage.is_configured:
-            bump_pipeline_manifest_sources._validate_post_bump_versions(
-                context, rewrite_stage, target_version
-            )
-            for manifest_path in tuple(rewrite_stage.written_manifest_contents):
-                bump_pipeline_manifest_recovery.validate_member_manifest_before_update(
-                    manifest_path, rewrite_stage
-                )
     except BaseException as stage_error:
         rollback_error = _restore_manifest_stage_after_failure(
             context,
@@ -133,6 +118,39 @@ def _process_workspace_and_crate_manifests(
                 rollback_error.add_note(note)
             raise rollback_error from stage_error
         raise
+
+
+def _update_workspace_and_crate_manifests(
+    context: _BumpContext,
+    target_version: str,
+    rewrite_stage: bump_pipeline_manifest_rewrites._ManifestRewriteStage,
+    changed_manifests: set[Path],
+) -> None:
+    """Validate, update, and revalidate the workspace and member manifests."""
+    if rewrite_stage.is_configured:
+        bump_pipeline_manifest_sources._validate_pre_bump_versions(
+            context, rewrite_stage
+        )
+    _process_workspace_manifest(
+        context, target_version, rewrite_stage, changed_manifests
+    )
+    _process_crate_manifests(context, target_version, rewrite_stage, changed_manifests)
+    if not rewrite_stage.is_configured:
+        return
+    bump_pipeline_manifest_sources._validate_post_bump_versions(
+        context, rewrite_stage, target_version
+    )
+    _revalidate_written_member_manifests(rewrite_stage)
+
+
+def _revalidate_written_member_manifests(
+    rewrite_stage: bump_pipeline_manifest_rewrites._ManifestRewriteStage,
+) -> None:
+    """Recheck member manifests this run wrote after their member stage."""
+    for manifest_path in tuple(rewrite_stage.written_manifest_contents):
+        bump_pipeline_manifest_recovery.validate_member_manifest_before_update(
+            manifest_path, rewrite_stage
+        )
 
 
 def _restore_manifest_stage_after_failure(

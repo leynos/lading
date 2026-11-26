@@ -84,95 +84,75 @@ class _RollbackProbe:
         self.bounded_rollback_write(path, content, write_options)
 
 
-def test_rollback_does_not_follow_member_path_swapped_outside_workspace(
+def _exercise_rollback_swap(
     tmp_path: Path,
-) -> None:
-    """A swapped member path cannot redirect rollback outside the workspace."""
+    *,
+    swap_at_rollback: bool,
+) -> _RollbackProbe:
+    """Run a failed fixture batch whose rollback target moves outside the tree."""
     case = _make_partial_write_failure_case(tmp_path / "workspace")
-    alpha_manifest = _alpha_manifest_path(case)
-    outside_manifest = tmp_path / "outside-alpha.toml"
     probe = _RollbackProbe(
         case=case,
-        alpha_manifest=alpha_manifest,
-        outside_manifest=outside_manifest,
+        alpha_manifest=_alpha_manifest_path(case),
+        outside_manifest=tmp_path / "outside-alpha.toml",
         atomic_write=write_atomic_text,
     )
-
+    writer = (
+        probe.retarget_during_rollback_write
+        if swap_at_rollback
+        else probe.bounded_rollback_write
+    )
     try:
         with mock.patch.object(
             bump_pipeline_manifest_restore,
             "write_atomic_text",
-            side_effect=probe.bounded_rollback_write,
+            side_effect=writer,
         ):
             failure = _run_partial_write_failure(
                 case,
-                before_failure=probe.swap_member_path_outside,
+                before_failure=(
+                    None if swap_at_rollback else probe.swap_member_path_outside
+                ),
             )
 
         assert isinstance(failure, ManifestRewriteWriteError), (
             "the fixture write failure should become a rollback error"
         )
-        assert failure.failed_path == alpha_manifest, (
-            "the rollback error should identify the member path rejected by the "
-            "workspace boundary"
+        assert failure.failed_path == probe.alpha_manifest, (
+            "the rollback error should identify the rejected member path"
         )
-        assert alpha_manifest.is_symlink(), (
+        assert probe.alpha_manifest.is_symlink(), (
             "rollback must leave the changed link in place"
         )
-        assert alpha_manifest.readlink() == outside_manifest, (
+        assert probe.alpha_manifest.readlink() == probe.outside_manifest, (
             "rollback must not retarget the changed link"
         )
-        assert outside_manifest.read_bytes() == probe.state.outside_contents, (
+        assert probe.outside_manifest.read_bytes() == probe.state.outside_contents, (
             "rollback must not overwrite the outside target"
         )
     finally:
-        if alpha_manifest.is_symlink():
-            alpha_manifest.unlink()
-        outside_manifest.unlink(missing_ok=True)
+        if probe.alpha_manifest.is_symlink():
+            probe.alpha_manifest.unlink()
+        probe.outside_manifest.unlink(missing_ok=True)
+    return probe
+
+
+def test_rollback_does_not_follow_member_path_swapped_outside_workspace(
+    tmp_path: Path,
+) -> None:
+    """A swapped member path cannot redirect rollback outside the workspace."""
+    _exercise_rollback_swap(tmp_path, swap_at_rollback=False)
 
 
 def test_rollback_revalidates_member_boundary_at_writer_time(
     tmp_path: Path,
 ) -> None:
     """A retarget immediately before the write cannot escape the workspace."""
-    case = _make_partial_write_failure_case(tmp_path / "workspace")
-    alpha_manifest = _alpha_manifest_path(case)
-    outside_manifest = tmp_path / "outside-alpha.toml"
-    probe = _RollbackProbe(
-        case=case,
-        alpha_manifest=alpha_manifest,
-        outside_manifest=outside_manifest,
-        atomic_write=write_atomic_text,
+    probe = _exercise_rollback_swap(tmp_path, swap_at_rollback=True)
+
+    assert probe.state.symlink_swapped, (
+        "the rollback writer callback must retarget the member path"
     )
-
-    try:
-        with mock.patch.object(
-            bump_pipeline_manifest_restore,
-            "write_atomic_text",
-            side_effect=probe.retarget_during_rollback_write,
-        ):
-            failure = _run_partial_write_failure(case)
-
-        assert isinstance(failure, ManifestRewriteWriteError), (
-            "the fixture write failure should become a rollback error"
-        )
-        assert probe.state.symlink_swapped, (
-            "the rollback writer callback must retarget the member path"
-        )
-        assert failure.failed_path == alpha_manifest, (
-            "the write-time workspace boundary should identify alpha"
-        )
-        assert alpha_manifest.is_symlink(), "the changed link must remain in place"
-        assert alpha_manifest.readlink() == outside_manifest, (
-            "rollback must not retarget the changed link"
-        )
-        assert outside_manifest.read_bytes() == probe.state.outside_contents, (
-            "the bounded writer must leave the outside target unchanged"
-        )
-    finally:
-        if alpha_manifest.is_symlink():
-            alpha_manifest.unlink()
-        outside_manifest.unlink(missing_ok=True)
 
 
 def test_rollback_restores_original_target_for_workspace_member_symlink(

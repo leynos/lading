@@ -156,12 +156,32 @@ def _write_manifest_plan(
     write_callbacks: _ManifestRewriteWriteCallbacks | None,
 ) -> None:
     """Atomically write a plan or raise a progress-aware rewrite error."""
+    write_status = _begin_manifest_write(plan, write_callbacks)
+    _write_planned_manifest(plan, workspace_root, progress, write_status)
+    _complete_manifest_write(plan, progress, write_callbacks)
+
+
+def _begin_manifest_write(
+    plan: ManifestRewritePlan,
+    write_callbacks: _ManifestRewriteWriteCallbacks | None,
+) -> AtomicWriteStatus:
+    """Run the optional pre-write callback and return its replacement status."""
     write_status = AtomicWriteStatus()
+    if write_callbacks is None or write_callbacks.before_write is None:
+        return write_status
+    return write_callbacks.before_write(
+        plan.path, plan.original_text, plan.new_text, plan.path
+    )
+
+
+def _write_planned_manifest(
+    plan: ManifestRewritePlan,
+    workspace_root: Path,
+    progress: _ManifestRewriteProgress,
+    write_status: AtomicWriteStatus,
+) -> None:
+    """Atomically write one plan, reporting write failures with progress."""
     try:
-        if write_callbacks is not None and write_callbacks.before_write is not None:
-            write_status = write_callbacks.before_write(
-                plan.path, plan.original_text, plan.new_text, plan.path
-            )
         write_atomic_text(
             plan.path,
             plan.new_text,
@@ -188,22 +208,31 @@ def _write_manifest_plan(
             planned_writes=progress.planned,
             failed_path=plan.path,
         ) from exc
-    if write_callbacks is not None and write_callbacks.after_write is not None:
-        try:
-            write_callbacks.after_write(plan.path)
-        except (OSError, UnicodeError) as exc:
-            completed_writes = progress.completed + 1
-            message = (
-                f"Manifest rewrite target {plan.path} was written, but its "
-                f"completion callback failed after {completed_writes} of "
-                f"{progress.planned} write(s): {exc}"
-            )
-            raise ManifestRewriteWriteError(
-                message,
-                completed_writes=completed_writes,
-                planned_writes=progress.planned,
-                failed_path=plan.path,
-            ) from exc
+
+
+def _complete_manifest_write(
+    plan: ManifestRewritePlan,
+    progress: _ManifestRewriteProgress,
+    write_callbacks: _ManifestRewriteWriteCallbacks | None,
+) -> None:
+    """Run the optional post-write callback, reporting its failure as a write."""
+    if write_callbacks is None or write_callbacks.after_write is None:
+        return
+    try:
+        write_callbacks.after_write(plan.path)
+    except (OSError, UnicodeError) as exc:
+        completed_writes = progress.completed + 1
+        message = (
+            f"Manifest rewrite target {plan.path} was written, but its "
+            f"completion callback failed after {completed_writes} of "
+            f"{progress.planned} write(s): {exc}"
+        )
+        raise ManifestRewriteWriteError(
+            message,
+            completed_writes=completed_writes,
+            planned_writes=progress.planned,
+            failed_path=plan.path,
+        ) from exc
 
 
 def _manifest_write_failure_message(

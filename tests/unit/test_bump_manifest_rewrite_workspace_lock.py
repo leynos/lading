@@ -55,6 +55,125 @@ def _workspace_lock_contention(workspace_root: Path) -> BaseException | None:
     return outcomes[0]
 
 
+def _observe_lock_contention(
+    lock_attempts: list[tuple[str, BaseException | None]],
+    stage: str,
+    workspace_root: Path,
+) -> None:
+    """Record whether another thread can take the workspace lock."""
+    lock_attempts.append((stage, _workspace_lock_contention(workspace_root)))
+
+
+def _lock_observing_validator(
+    lock_attempts: list[tuple[str, BaseException | None]],
+    lock_root: Path,
+    original_validate: cabc.Callable[[_BumpContext, _ManifestRewriteStage, str], None],
+) -> cabc.Callable[[_BumpContext, _ManifestRewriteStage, str], None]:
+    """Return a post-bump validator that probes the lock on its second call."""
+    validation_count = 0
+
+    def validate_under_lock(
+        context: _BumpContext,
+        stage: _ManifestRewriteStage,
+        target_version: str,
+    ) -> None:
+        """Check the second post-bump validation still owns the lock."""
+        nonlocal validation_count
+        validation_count += 1
+        original_validate(context, stage, target_version)
+        if validation_count == 2:
+            _observe_lock_contention(lock_attempts, "version recheck", lock_root)
+
+    return validate_under_lock
+
+
+def _lock_observing_applier(
+    lock_attempts: list[tuple[str, BaseException | None]],
+    lock_root: Path,
+    original_apply: cabc.Callable[..., tuple[Path, ...]],
+) -> cabc.Callable[..., tuple[Path, ...]]:
+    """Return an applier that probes the lock before writing fixtures."""
+
+    def apply_with_lock_observer(
+        plans: cabc.Sequence[bump_manifest_rewrite_application.ManifestRewritePlan],
+        *,
+        workspace_root: Path,
+        dry_run: bool,
+        write_callbacks: _ManifestRewriteWriteCallbacks | None = None,
+    ) -> tuple[Path, ...]:
+        """Check the workspace lock remains held while fixture writes run."""
+        _observe_lock_contention(lock_attempts, "fixture rewrites", lock_root)
+        return original_apply(
+            plans,
+            workspace_root=workspace_root,
+            dry_run=dry_run,
+            write_callbacks=write_callbacks,
+        )
+
+    return apply_with_lock_observer
+
+
+def _failing_lock_observing_applier(
+    lock_attempts: list[tuple[str, BaseException | None]],
+    lock_root: Path,
+) -> cabc.Callable[..., tuple[Path, ...]]:
+    """Return an applier that probes the lock and then fails the stage."""
+
+    def fail_under_lock(
+        plans: cabc.Sequence[bump_manifest_rewrite_application.ManifestRewritePlan],
+        *,
+        workspace_root: Path,
+        dry_run: bool,
+        write_callbacks: _ManifestRewriteWriteCallbacks | None = None,
+    ) -> tuple[Path, ...]:
+        """Check the lock is held, then fail the configured rewrite stage."""
+        _observe_lock_contention(lock_attempts, "application", lock_root)
+        raise ManifestRewriteError(REWRITE_FAILURE_MESSAGE)
+
+    return fail_under_lock
+
+
+def _lock_observing_planner(
+    lock_attempts: list[tuple[str, BaseException | None]],
+    lock_root: Path,
+    original_plan: cabc.Callable[[_BumpContext, str], _ManifestRewriteStage],
+) -> cabc.Callable[[_BumpContext, str], _ManifestRewriteStage]:
+    """Return a planner that probes the lock before reading sources."""
+
+    def plan_with_lock_observer(
+        context: _BumpContext,
+        target_version: str,
+    ) -> _ManifestRewriteStage:
+        """Check the run lock is held before rewrite planning reads sources."""
+        _observe_lock_contention(lock_attempts, "planning", lock_root)
+        return original_plan(context, target_version)
+
+    return plan_with_lock_observer
+
+
+def _lock_observing_restorer(
+    lock_attempts: list[tuple[str, BaseException | None]],
+    lock_root: Path,
+    original_restore: cabc.Callable[..., ManifestRewriteWriteError | None],
+) -> cabc.Callable[..., ManifestRewriteWriteError | None]:
+    """Return a restorer that probes the run lock before rollback writes."""
+
+    def restore_with_lock_observer(
+        stage: _ManifestRewriteStage,
+        changed_manifests: cabc.Collection[Path],
+        failure: BaseException,
+        *,
+        workspace_root: Path,
+    ) -> ManifestRewriteWriteError | None:
+        """Check the run lock still covers rollback of earlier member writes."""
+        _observe_lock_contention(lock_attempts, "rollback", lock_root)
+        return original_restore(
+            stage, changed_manifests, failure, workspace_root=workspace_root
+        )
+
+    return restore_with_lock_observer
+
+
 @pytest.fixture(autouse=True)
 def isolate_workspace_write_lock_directory(
     tmp_path: Path,
@@ -75,51 +194,18 @@ def test_workspace_lock_covers_version_recheck_and_fixture_rewrites(
     """A cooperating writer is refused through validation and application."""
     case = _make_partial_write_failure_case(tmp_path)
     lock_attempts: list[tuple[str, BaseException | None]] = []
+    lock_root = case.root.resolve()
     original_apply = bump_manifest_rewrite_application.apply_manifest_rewrites
     original_validate = bump_pipeline_manifest_sources._validate_post_bump_versions
-    validation_count = 0
-
-    def observe_lock_contention(stage: str) -> None:
-        """Try the same advisory lock from another thread and record its result."""
-        lock_attempts.append((stage, _workspace_lock_contention(case.root.resolve())))
-
-    def validate_under_lock(
-        context: _BumpContext,
-        stage: _ManifestRewriteStage,
-        target_version: str,
-    ) -> None:
-        """Check the second post-bump validation still owns the lock."""
-        nonlocal validation_count
-        validation_count += 1
-        original_validate(context, stage, target_version)
-        if validation_count == 2:
-            observe_lock_contention("version recheck")
-
-    def apply_with_lock_observer(
-        plans: cabc.Sequence[bump_manifest_rewrite_application.ManifestRewritePlan],
-        *,
-        workspace_root: Path,
-        dry_run: bool,
-        write_callbacks: _ManifestRewriteWriteCallbacks | None = None,
-    ) -> tuple[Path, ...]:
-        """Check the workspace lock remains held while fixture writes run."""
-        observe_lock_contention("fixture rewrites")
-        return original_apply(
-            plans,
-            workspace_root=workspace_root,
-            dry_run=dry_run,
-            write_callbacks=write_callbacks,
-        )
-
     monkeypatch.setattr(
         bump_pipeline_manifest_sources,
         "_validate_post_bump_versions",
-        validate_under_lock,
+        _lock_observing_validator(lock_attempts, lock_root, original_validate),
     )
     monkeypatch.setattr(
         bump_manifest_rewrite_application,
         "apply_manifest_rewrites",
-        apply_with_lock_observer,
+        _lock_observing_applier(lock_attempts, lock_root, original_apply),
     )
     bump.run(
         case.root,
@@ -225,64 +311,23 @@ def test_bump_run_holds_workspace_lock_across_planning_and_rollback(
     case = _make_partial_write_failure_case(tmp_path)
     workspace_originals = {path: path.read_bytes() for path in case.workspace_manifests}
     lock_attempts: list[tuple[str, BaseException | None]] = []
+    lock_root = case.root.resolve()
     original_plan = bump_pipeline_manifest_rewrites._plan_non_member_manifest_rewrites
     original_restore = bump_pipeline_manifest_recovery.restore_changed_manifests
-
-    def plan_with_lock_observer(
-        context: _BumpContext,
-        target_version: str,
-    ) -> _ManifestRewriteStage:
-        """Check the run lock is held before rewrite planning reads sources."""
-        lock_attempts.append((
-            "planning",
-            _workspace_lock_contention(case.root.resolve()),
-        ))
-        return original_plan(context, target_version)
-
-    def fail_under_lock(
-        plans: cabc.Sequence[bump_manifest_rewrite_application.ManifestRewritePlan],
-        *,
-        workspace_root: Path,
-        dry_run: bool,
-        write_callbacks: _ManifestRewriteWriteCallbacks | None = None,
-    ) -> tuple[Path, ...]:
-        """Check the lock is held, then fail the configured rewrite stage."""
-        lock_attempts.append((
-            "application",
-            _workspace_lock_contention(case.root.resolve()),
-        ))
-        raise ManifestRewriteError(REWRITE_FAILURE_MESSAGE)
-
-    def restore_with_lock_observer(
-        stage: _ManifestRewriteStage,
-        changed_manifests: cabc.Collection[Path],
-        failure: BaseException,
-        *,
-        workspace_root: Path,
-    ) -> ManifestRewriteWriteError | None:
-        """Check the run lock still covers rollback of earlier member writes."""
-        lock_attempts.append((
-            "rollback",
-            _workspace_lock_contention(case.root.resolve()),
-        ))
-        return original_restore(
-            stage, changed_manifests, failure, workspace_root=workspace_root
-        )
-
     monkeypatch.setattr(
         bump_pipeline_manifest_rewrites,
         "_plan_non_member_manifest_rewrites",
-        plan_with_lock_observer,
+        _lock_observing_planner(lock_attempts, lock_root, original_plan),
     )
     monkeypatch.setattr(
         bump_manifest_rewrite_application,
         "apply_manifest_rewrites",
-        fail_under_lock,
+        _failing_lock_observing_applier(lock_attempts, lock_root),
     )
     monkeypatch.setattr(
         bump_pipeline_manifest_recovery,
         "restore_changed_manifests",
-        restore_with_lock_observer,
+        _lock_observing_restorer(lock_attempts, lock_root, original_restore),
     )
 
     with pytest.raises(ManifestRewriteError, match=REWRITE_FAILURE_MESSAGE):

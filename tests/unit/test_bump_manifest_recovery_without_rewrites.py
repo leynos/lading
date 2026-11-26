@@ -107,42 +107,14 @@ def _make_root_package_workspace(root: Path) -> tuple[WorkspaceGraph, Path]:
     return graph, root_manifest
 
 
-def test_member_failure_restores_writes_without_rewrite_configuration(
-    tmp_path: Path,
-) -> None:
-    """An unconfigured stage still records outputs needed for rollback."""
+def _assert_member_failure_rolls_back(
+    root: Path,
+    workspace: WorkspaceGraph,
+    root_manifest: Path,
+) -> tuple[Path, ...]:
+    """Fail the beta update and assert root and member manifests all roll back."""
     if not bump_toml_files._supports_bounded_directory_operations():
         pytest.skip("the bounded atomic writer is unavailable")
-    workspace = _make_workspace(tmp_path)
-    member_manifests = _manifest_paths_by_name(workspace)
-    manifest_paths = (tmp_path / "Cargo.toml", *member_manifests.values())
-    original_contents = {path: path.read_bytes() for path in manifest_paths}
-    configuration = config_module.LadingConfig(
-        bump=config_module.BumpConfig(rebuild_lockfiles=False)
-    )
-
-    completed_updates = _run_bump_with_member_failure(
-        tmp_path,
-        workspace,
-        configuration,
-        member_manifests["beta"],
-    )
-
-    assert member_manifests["alpha"] in completed_updates, (
-        "the test must complete an earlier member update before failing beta"
-    )
-    assert {path: path.read_bytes() for path in manifest_paths} == original_contents, (
-        "rollback should restore member writes without rewrite configuration"
-    )
-
-
-def test_root_package_rollback_keeps_first_manifest_baseline(
-    tmp_path: Path,
-) -> None:
-    """The package pass cannot replace the earlier workspace baseline."""
-    if not bump_toml_files._supports_bounded_directory_operations():
-        pytest.skip("the bounded atomic writer is unavailable")
-    workspace, root_manifest = _make_root_package_workspace(tmp_path)
     member_manifests = _manifest_paths_by_name(workspace)
     manifest_paths = (root_manifest, *member_manifests.values())
     original_contents = {path: path.read_bytes() for path in manifest_paths}
@@ -150,17 +122,45 @@ def test_root_package_rollback_keeps_first_manifest_baseline(
         bump=config_module.BumpConfig(rebuild_lockfiles=False)
     )
     completed_updates = _run_bump_with_member_failure(
-        tmp_path,
+        root,
         workspace,
         configuration,
         member_manifests["beta"],
     )
+    assert {path: path.read_bytes() for path in manifest_paths} == original_contents, (
+        "rollback must restore every workspace and member manifest"
+    )
+    return completed_updates
+
+
+def test_member_failure_restores_writes_without_rewrite_configuration(
+    tmp_path: Path,
+) -> None:
+    """An unconfigured stage still records outputs needed for rollback."""
+    workspace = _make_workspace(tmp_path)
+    member_manifests = _manifest_paths_by_name(workspace)
+
+    completed_updates = _assert_member_failure_rolls_back(
+        tmp_path, workspace, tmp_path / "Cargo.toml"
+    )
+
+    assert member_manifests["alpha"] in completed_updates, (
+        "the test must complete an earlier member update before failing beta"
+    )
+
+
+def test_root_package_rollback_keeps_first_manifest_baseline(
+    tmp_path: Path,
+) -> None:
+    """The package pass cannot replace the earlier workspace baseline."""
+    workspace, root_manifest = _make_root_package_workspace(tmp_path)
+
+    completed_updates = _assert_member_failure_rolls_back(
+        tmp_path, workspace, root_manifest
+    )
 
     assert completed_updates.count(root_manifest) == 2, (
         "workspace and package passes must both update the same root manifest"
-    )
-    assert {path: path.read_bytes() for path in manifest_paths} == original_contents, (
-        "rollback must restore the first text captured for the shared manifest"
     )
 
 

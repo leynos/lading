@@ -140,27 +140,52 @@ def write_atomic_text(
     ...     destination.read_text(encoding="utf-8")
     "version = '1.0.0'"
     """  # ruff: ignore[docstring-extraneous-exception]  # filesystem calls propagate OSError
-    if write_options is None:
-        write_options = bump_toml_write_options.AtomicWriteOptions()
-    write_status = write_options.status
-    if write_status is not None:
-        write_status.replacement_completed = False
-        write_status.replacement_identity = None
-    workspace_root = write_options.workspace_root
-    expected_current_text = write_options.expected_current_text
-    expected_current_identity = write_options.expected_current_identity
-    if workspace_root is None and expected_current_text is not None:
-        message = "expected_current_text requires workspace_root"
-        raise ValueError(message)
-    if workspace_root is None and expected_current_identity is not None:
-        message = "expected_current_identity requires workspace_root"
-        raise ValueError(message)
-    if workspace_root is None:
-        _write_path_based_atomic_text(file_path, content, write_status)
+    options = _validated_atomic_write_options(write_options)
+    _reset_replacement_status(options.status)
+    if options.workspace_root is None:
+        _write_path_based_atomic_text(file_path, content, options.status)
         return
     _write_workspace_bounded_atomic_text(
-        file_path, content, workspace_root, write_options
+        file_path, content, options.workspace_root, options
     )
+
+
+def _validated_atomic_write_options(
+    write_options: bump_toml_write_options.AtomicWriteOptions | None,
+) -> bump_toml_write_options.AtomicWriteOptions:
+    """Return write options that are consistent with the destination boundary.
+
+    Returns
+    -------
+    AtomicWriteOptions
+        Options carrying the workspace boundary and conditional evidence.
+
+    Raises
+    ------
+    ValueError
+        If conditional evidence is supplied without a workspace boundary.
+    """
+    options = (
+        bump_toml_write_options.AtomicWriteOptions()
+        if write_options is None
+        else write_options
+    )
+    if options.workspace_root is None and options.expected_current_text is not None:
+        message = "expected_current_text requires workspace_root"
+        raise ValueError(message)
+    if options.workspace_root is None and options.expected_current_identity is not None:
+        message = "expected_current_identity requires workspace_root"
+        raise ValueError(message)
+    return options
+
+
+def _reset_replacement_status(
+    status: bump_toml_write_options.AtomicWriteStatus | None,
+) -> None:
+    """Clear replacement evidence before a new atomic write attempt."""
+    if status is not None:
+        status.replacement_completed = False
+        status.replacement_identity = None
 
 
 def _write_workspace_bounded_atomic_text(
@@ -336,10 +361,7 @@ def _write_bounded_atomic_text(
     write_options: bump_toml_write_options.AtomicWriteOptions,
 ) -> None:
     """Replace an in-workspace file relative to its opened parent directory."""
-    workspace_identity = write_options.workspace_identity
-    if workspace_identity is None:
-        message = "Workspace-bounded atomic write is missing its lock identity"
-        raise PermissionError(message)
+    workspace_identity = _require_workspace_identity(write_options)
     relative_path = file_path.relative_to(workspace_root)
     directory_fd = _open_workspace_parent_directory(
         workspace_root, relative_path.parent, workspace_identity
@@ -354,29 +376,15 @@ def _write_bounded_atomic_text(
         replacement_identity = _write_temporary_content(
             temporary_fd, content, existing_mode
         )
-        has_expected_current_state = (
-            write_options.expected_current_text is not None
-            or write_options.expected_current_identity is not None
-        )
-        if has_expected_current_state:
-            bump_toml_bounded_filesystem._validate_expected_bounded_text(
-                directory_fd,
-                file_path.name,
-                write_options.expected_current_text,
-                write_options.expected_current_identity,
-            )
-        if write_options.status is not None:
-            # Publish the temporary's identity before rename. Recovery can
-            # then recognize a rename that completed just before interruption.
-            write_options.status.replacement_identity = replacement_identity
+        _validate_bounded_replacement(directory_fd, file_path.name, write_options)
+        _record_replacement(write_options.status, identity=replacement_identity)
         os.rename(
             temporary_name,
             relative_path.name,
             src_dir_fd=directory_fd,
             dst_dir_fd=directory_fd,
         )
-        if write_options.status is not None:
-            write_options.status.replacement_completed = True
+        _record_replacement(write_options.status, completed=True)
         temporary_name = None
     except BaseException as error:
         primary_error = error
@@ -389,3 +397,68 @@ def _write_bounded_atomic_text(
                 )
         finally:
             _close_descriptor(directory_fd, primary_error)
+
+
+def _require_workspace_identity(
+    write_options: bump_toml_write_options.AtomicWriteOptions,
+) -> bump_toml_write_options.AtomicWriteIdentity:
+    """Return the lock identity that a bounded write must verify.
+
+    Returns
+    -------
+    AtomicWriteIdentity
+        Device and inode captured when the workspace lock was acquired.
+
+    Raises
+    ------
+    PermissionError
+        If the caller did not supply the identity captured with the lock.
+    """
+    workspace_identity = write_options.workspace_identity
+    if workspace_identity is None:
+        message = "Workspace-bounded atomic write is missing its lock identity"
+        raise PermissionError(message)
+    return workspace_identity
+
+
+def _validate_bounded_replacement(
+    directory_fd: int,
+    filename: str,
+    write_options: bump_toml_write_options.AtomicWriteOptions,
+) -> None:
+    """Validate conditional evidence immediately before the rename."""
+    if (
+        write_options.expected_current_text is None
+        and write_options.expected_current_identity is None
+    ):
+        return
+    bump_toml_bounded_filesystem._validate_expected_bounded_text(
+        directory_fd,
+        filename,
+        write_options.expected_current_text,
+        write_options.expected_current_identity,
+    )
+
+
+def _record_replacement(
+    status: bump_toml_write_options.AtomicWriteStatus | None,
+    *,
+    identity: bump_toml_write_options.AtomicWriteIdentity | None = None,
+    completed: bool = False,
+) -> None:
+    """Record replacement evidence before or after the rename."""
+    if status is not None:
+        _update_replacement_status(status, identity, completed=completed)
+
+
+def _update_replacement_status(
+    status: bump_toml_write_options.AtomicWriteStatus,
+    identity: bump_toml_write_options.AtomicWriteIdentity | None,
+    *,
+    completed: bool,
+) -> None:
+    """Apply the identity and completion evidence to one write status."""
+    if identity is not None:
+        status.replacement_identity = identity
+    if completed:
+        status.replacement_completed = True

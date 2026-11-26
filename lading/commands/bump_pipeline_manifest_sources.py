@@ -1,6 +1,7 @@
 """Read and validate manifest snapshots used by rewrite planning."""
 
 import collections.abc as cabc
+import dataclasses as dc
 import typing as typ
 from pathlib import Path
 
@@ -178,33 +179,30 @@ def _version_at_selector(
     return selector, version
 
 
+def _current_manifest_snapshots(
+    context: _BumpContext,
+) -> tuple[tuple[Path, str], ...]:
+    """Read the workspace and member manifests as they stand now."""
+    return _read_workspace_manifest_snapshots(
+        context.workspace_manifest,
+        tuple(crate.manifest_path for crate in context.workspace.crates),
+    )
+
+
 def _validate_pre_bump_versions(
     context: _BumpContext,
     stage: _ManifestRewriteStage,
 ) -> None:
     """Ensure source versions used by fixture plans remain current before writes."""
-    current_snapshots = _read_workspace_manifest_snapshots(
-        context.workspace_manifest,
-        tuple(crate.manifest_path for crate in context.workspace.crates),
+    current_versions = _manifest_versions_from_snapshots(
+        context, _current_manifest_snapshots(context)
     )
-    current_versions = _manifest_versions_from_snapshots(context, current_snapshots)
-    if current_versions == stage.pre_bump_versions:
-        return
-    changed_crate = next(
-        name
-        for name, expected in stage.pre_bump_versions.items()
-        if current_versions.get(name) != expected
+    _require_matching_versions(
+        context,
+        current_versions,
+        stage.pre_bump_versions,
+        "Workspace crate version changed after manifest rewrite planning",
     )
-    manifest_path = next(
-        crate.manifest_path
-        for crate in context.workspace.crates
-        if crate.name == changed_crate
-    )
-    message = (
-        "Workspace crate version changed after manifest rewrite planning: "
-        f"{manifest_path}"
-    )
-    raise ManifestRewriteError(message, failed_path=manifest_path)
 
 
 def _validate_post_bump_versions(
@@ -214,47 +212,24 @@ def _validate_post_bump_versions(
 ) -> None:
     """Confirm member package versions before applying cached fixture plans."""
     _validate_workspace_manifest_entry(context)
-    current_snapshots = _read_workspace_manifest_snapshots(
-        context.workspace_manifest,
-        tuple(crate.manifest_path for crate in context.workspace.crates),
+    current_versions = _manifest_versions_from_snapshots(
+        context, _current_manifest_snapshots(context)
     )
-    current_versions = _manifest_versions_from_snapshots(context, current_snapshots)
-    original_text_by_path = dict(stage.workspace_manifest_snapshots)
-    workspace_version_is_updated = any(
-        selector == ("workspace", "package")
-        for selector, _version in stage.expected_version_values.get(
-            context.workspace_manifest, ()
-        )
+    _require_matching_versions(
+        context,
+        current_versions,
+        _expected_post_bump_versions(context, stage, target_version),
+        "Workspace crate version changed after member manifest updates",
     )
-    should_apply_version_updates = not context.base_options.dry_run
-    expected_versions: dict[str, str] = {}
-    for crate in context.workspace.crates:
-        document = _parse_manifest_snapshot(
-            crate.manifest_path,
-            original_text_by_path[crate.manifest_path],
-        )
-        package = document.get("package")
-        version = package.get("version") if isinstance(package, cabc.Mapping) else None
-        direct_version_is_updated = (
-            should_apply_version_updates
-            and isinstance(package, cabc.Mapping)
-            and (version is None or isinstance(version, str))
-            and (
-                crate.manifest_path == context.workspace_manifest
-                or crate.name in context.updated_crate_names
-            )
-        )
-        inherited_version_is_updated = (
-            should_apply_version_updates
-            and isinstance(version, cabc.Mapping)
-            and version.get("workspace") is True
-            and workspace_version_is_updated
-        )
-        expected_versions[crate.name] = (
-            target_version
-            if direct_version_is_updated or inherited_version_is_updated
-            else stage.pre_bump_versions[crate.name]
-        )
+
+
+def _require_matching_versions(
+    context: _BumpContext,
+    current_versions: dict[str, str],
+    expected_versions: dict[str, str],
+    message: str,
+) -> None:
+    """Raise naming the first member whose current version is unexpected."""
     if current_versions == expected_versions:
         return
     changed_crate = next(
@@ -267,11 +242,111 @@ def _validate_post_bump_versions(
         for crate in context.workspace.crates
         if crate.name == changed_crate
     )
-    message = (
-        "Workspace crate version changed after member manifest updates: "
-        f"{manifest_path}"
+    description = f"{message}: {manifest_path}"
+    raise ManifestRewriteError(description, failed_path=manifest_path)
+
+
+@dc.dataclass(frozen=True, slots=True)
+class _MemberVersionExpectation:
+    """Version evidence for one member after the member manifest stage."""
+
+    pre_bump_version: str
+    direct_is_updated: bool
+    inherited_is_updated: bool
+
+
+def _expected_post_bump_versions(
+    context: _BumpContext,
+    stage: _ManifestRewriteStage,
+    target_version: str,
+) -> dict[str, str]:
+    """Return the version each member manifest must hold after member writes."""
+    original_text_by_path = dict(stage.workspace_manifest_snapshots)
+    return {
+        crate.name: _expected_member_version(
+            _member_version_expectation(context, stage, crate, original_text_by_path),
+            target_version,
+        )
+        for crate in context.workspace.crates
+    }
+
+
+def _member_version_expectation(
+    context: _BumpContext,
+    stage: _ManifestRewriteStage,
+    crate: WorkspaceCrate,
+    original_text_by_path: dict[Path, str],
+) -> _MemberVersionExpectation:
+    """Derive whether one member's direct or inherited version was updated."""
+    document = _parse_manifest_snapshot(
+        crate.manifest_path, original_text_by_path[crate.manifest_path]
     )
-    raise ManifestRewriteError(message, failed_path=manifest_path)
+    package = document.get("package")
+    version = _package_version_value(package)
+    should_apply = not context.base_options.dry_run
+    return _MemberVersionExpectation(
+        pre_bump_version=stage.pre_bump_versions[crate.name],
+        direct_is_updated=should_apply
+        and _direct_version_is_updated(context, crate, package, version),
+        inherited_is_updated=should_apply
+        and _inherited_version_is_updated(context, stage, version),
+    )
+
+
+def _package_version_value(package: object) -> object:
+    """Return a package mapping's version value, or ``None`` without one."""
+    return package.get("version") if isinstance(package, cabc.Mapping) else None
+
+
+def _direct_version_is_updated(
+    context: _BumpContext,
+    crate: WorkspaceCrate,
+    package: object,
+    version: object,
+) -> bool:
+    """Return whether the member stage rewrites this crate's direct version."""
+    return (
+        isinstance(package, cabc.Mapping)
+        and (version is None or isinstance(version, str))
+        and (
+            crate.manifest_path == context.workspace_manifest
+            or crate.name in context.updated_crate_names
+        )
+    )
+
+
+def _inherited_version_is_updated(
+    context: _BumpContext,
+    stage: _ManifestRewriteStage,
+    version: object,
+) -> bool:
+    """Return whether the workspace version inherited by this member changed."""
+    if not isinstance(version, cabc.Mapping) or version.get("workspace") is not True:
+        return False
+    return _workspace_version_is_updated(context, stage)
+
+
+def _workspace_version_is_updated(
+    context: _BumpContext,
+    stage: _ManifestRewriteStage,
+) -> bool:
+    """Return whether the workspace manifest's package version was updated."""
+    return any(
+        selector == ("workspace", "package")
+        for selector, _version in stage.expected_version_values.get(
+            context.workspace_manifest, ()
+        )
+    )
+
+
+def _expected_member_version(
+    expectation: _MemberVersionExpectation,
+    target_version: str,
+) -> str:
+    """Return the target version when the member stage updated this crate."""
+    if expectation.direct_is_updated or expectation.inherited_is_updated:
+        return target_version
+    return expectation.pre_bump_version
 
 
 def _validate_workspace_manifest_entry(context: _BumpContext) -> None:

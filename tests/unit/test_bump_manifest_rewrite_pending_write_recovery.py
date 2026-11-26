@@ -29,6 +29,72 @@ RECOVERY_INTERRUPT_MESSAGE = "recover interrupted replacement"
 pytestmark = pytest.mark.usefixtures("reset_process_metrics")
 
 
+def _interrupt_after_rename(
+    monkeypatch: pytest.MonkeyPatch,
+    manifest_path: Path,
+    pending_text: str,
+    status: AtomicWriteStatus,
+) -> None:
+    """Write a manifest and interrupt immediately after the first rename."""
+    original_rename = os.rename
+    interrupt_once = True
+
+    def rename_then_interrupt(
+        source: str | bytes,
+        destination: str | bytes,
+        *,
+        src_dir_fd: int | None = None,
+        dst_dir_fd: int | None = None,
+    ) -> None:
+        """Interrupt after the real rename, before the writer status advances."""
+        nonlocal interrupt_once
+        original_rename(
+            source,
+            destination,
+            src_dir_fd=src_dir_fd,
+            dst_dir_fd=dst_dir_fd,
+        )
+        if interrupt_once:
+            interrupt_once = False
+            raise KeyboardInterrupt(RENAME_INTERRUPT_MESSAGE)
+
+    monkeypatch.setattr(bump_toml_files.os, "rename", rename_then_interrupt)
+    monkeypatch.setattr(
+        bump_toml_files.os,
+        "supports_dir_fd",
+        os.supports_dir_fd | {rename_then_interrupt},
+    )
+    with pytest.raises(KeyboardInterrupt, match=RENAME_INTERRUPT_MESSAGE):
+        bump_toml_files.write_atomic_text(
+            manifest_path,
+            pending_text,
+            AtomicWriteOptions(
+                workspace_root=manifest_path.parent,
+                status=status,
+            ),
+        )
+
+
+def _pending_recovery_stage(
+    manifest_path: Path,
+    original_text: str,
+    pending_text: str,
+    status: AtomicWriteStatus,
+) -> bump_pipeline_manifest_rewrites._ManifestRewriteStage:
+    """Build the stage entry left by a replacement that preceded its callback."""
+    plan = bump_manifest_rewrites.ManifestRewritePlan(
+        manifest_path, original_text, pending_text
+    )
+    return bump_pipeline_manifest_rewrites._ManifestRewriteStage(
+        workspace_root=manifest_path.parent,
+        plans=(plan,),
+        rollback_baselines={manifest_path: original_text},
+        pending_manifest_contents={manifest_path: pending_text},
+        pending_write_statuses={manifest_path: status},
+        written_manifest_destinations={manifest_path: manifest_path},
+    )
+
+
 @pytest.mark.parametrize(
     ("current_text", "expected_note"),
     [
@@ -133,43 +199,8 @@ def test_recovery_owns_rename_completed_before_status_flag(
     pending_text = 'version = "2.0.0"\n'
     manifest_path.write_text(original_text, encoding="utf-8", newline="")
     status = AtomicWriteStatus()
-    original_rename = os.rename
-    interrupt_once = True
 
-    def rename_then_interrupt(
-        source: str | bytes,
-        destination: str | bytes,
-        *,
-        src_dir_fd: int | None = None,
-        dst_dir_fd: int | None = None,
-    ) -> None:
-        """Interrupt after the first real rename, before writer status advances."""
-        nonlocal interrupt_once
-        original_rename(
-            source,
-            destination,
-            src_dir_fd=src_dir_fd,
-            dst_dir_fd=dst_dir_fd,
-        )
-        if interrupt_once:
-            interrupt_once = False
-            raise KeyboardInterrupt(RENAME_INTERRUPT_MESSAGE)
-
-    monkeypatch.setattr(bump_toml_files.os, "rename", rename_then_interrupt)
-    monkeypatch.setattr(
-        bump_toml_files.os,
-        "supports_dir_fd",
-        os.supports_dir_fd | {rename_then_interrupt},
-    )
-    with pytest.raises(KeyboardInterrupt, match=RENAME_INTERRUPT_MESSAGE):
-        bump_toml_files.write_atomic_text(
-            manifest_path,
-            pending_text,
-            AtomicWriteOptions(
-                workspace_root=tmp_path,
-                status=status,
-            ),
-        )
+    _interrupt_after_rename(monkeypatch, manifest_path, pending_text, status)
 
     assert status.replacement_identity is not None, (
         "the temporary identity must be published before rename"
@@ -177,17 +208,7 @@ def test_recovery_owns_rename_completed_before_status_flag(
     assert not status.replacement_completed, (
         "the injected interrupt must land before the completion flag"
     )
-    plan = bump_manifest_rewrites.ManifestRewritePlan(
-        manifest_path, original_text, pending_text
-    )
-    stage = bump_pipeline_manifest_rewrites._ManifestRewriteStage(
-        workspace_root=tmp_path,
-        plans=(plan,),
-        rollback_baselines={manifest_path: original_text},
-        pending_manifest_contents={manifest_path: pending_text},
-        pending_write_statuses={manifest_path: status},
-        written_manifest_destinations={manifest_path: manifest_path},
-    )
+    stage = _pending_recovery_stage(manifest_path, original_text, pending_text, status)
     failure = KeyboardInterrupt(RECOVERY_INTERRUPT_MESSAGE)
     changed_manifests: set[Path] = set()
 
