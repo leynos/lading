@@ -860,24 +860,27 @@ Each group accepts these fields:
   table are visited. A missing table or field and a non-string value are no-ops.
 
 The default template is `"{crate}-{version}"`. It may use only `{crate}` and
-`{version}`, and must include `{version}`. Format specifications, conversions,
-positional fields, and unknown placeholders are configuration errors. Before
-rewriting, lading snapshots the root and member manifests. It reads old
-versions from literal member `[package].version` entries or resolves
-`version.workspace = true` through `[workspace.package].version`. The workspace
-graph version is a fallback only when a member has no literal or inherited
-version. The new version is the requested bump version. A template starting with
-`{crate}` requires a crate-name boundary before the match; one starting with
-`{version}` requires a boundary before the version that rejects letters,
-digits, and periods while allowing plus signs and hyphens. A plus sign that
-starts SemVer build metadata is not treated as a boundary, so versions anywhere
-in that metadata remain unchanged, including `9.0.0+build-1.2.3`. A template
-ending with `{crate}` requires a crate-name boundary after the match; one
-ending with `{version}` requires a boundary after the match that rejects
-letters, digits, periods, plus signs, and hyphens. An adjacent `.crate`
-extension or `-extra` suffix therefore blocks the match. Versions nested in
-another SemVer prerelease, such as `9.0.0-1.0.0` or `9.0.0-rc.alpha-1.0.0`,
-also remain unchanged. These rules keep `rstest-bdd` from matching inside
+`{version}`, and must include exactly one `{version}` field. A repeated
+`{version}` field is rejected because one occurrence can fall inside protected
+SemVer text, and leaving that occurrence unchanged would otherwise suppress a
+sibling rewrite. Format specifications, conversions, positional fields, and
+unknown placeholders are configuration errors. Before rewriting, lading
+snapshots the root and member manifests. It reads old versions from literal
+member `[package].version` entries or resolves `version.workspace = true`
+through `[workspace.package].version`. The workspace graph version is a
+fallback only when a member has no literal or inherited version. The new
+version is the requested bump version. A template starting with `{crate}`
+requires a crate-name boundary before the match; one starting with `{version}`
+requires a boundary before the version that rejects letters, digits, and
+periods while allowing plus signs and hyphens. A plus sign that starts SemVer
+build metadata is not treated as a boundary, so versions anywhere in that
+metadata remain unchanged, including `9.0.0+build-1.2.3`. A template ending with
+`{crate}` requires a crate-name boundary after the match; one ending with
+`{version}` requires a boundary after the match that rejects letters, digits,
+periods, plus signs, and hyphens. An adjacent `.crate` extension or `-extra`
+suffix therefore blocks the match. Versions nested in another SemVer
+prerelease, such as `9.0.0-1.0.0` or `9.0.0-rc.alpha-1.0.0`, also remain
+unchanged. These rules keep `rstest-bdd` from matching inside
 `rstest-bdd-harness` and prevent `0.6.0-beta4` matching the prefix of
 `0.6.0-beta40`. SemVer protection applies only when the complete configured
 rendering consists of SemVer identifier characters; a slash in a staged path
