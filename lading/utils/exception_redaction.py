@@ -187,7 +187,31 @@ def sanitize_exception(exc: Exception, redact: Redact) -> Exception:
         ``exc`` itself when everything it renders is clean, otherwise a
         redacted ``LadingError`` carrying its type name.
     """
-    return typ.cast("Exception", _clean(exc, redact, {}))
+    memo: Memo = {}
+    result = _clean(exc, redact, memo)
+    _relink(result, memo, set())
+    return typ.cast("Exception", result)
+
+
+def _relink(exc: BaseException, memo: Memo, seen: set[int]) -> None:
+    """Point every chain link at its final exception, not a provisional original.
+
+    While a cycle is being cleaned, a link can be recorded against an exception
+    that is replaced later; this walks the finished chain and corrects those.
+    """
+    if id(exc) in seen:
+        return
+    seen.add(id(exc))
+    suppress = exc.__suppress_context__
+    for name in ("__cause__", "__context__"):
+        link = getattr(exc, name)
+        if link is None:
+            continue
+        final = typ.cast("BaseException", memo.get(id(link), link))
+        if final is not link:
+            setattr(exc, name, final)
+        _relink(final, memo, seen)
+    exc.__suppress_context__ = suppress
 
 
 def scrub_value(value: object, redact: Redact) -> object:

@@ -1,5 +1,6 @@
 """Tests for keeping registry credentials out of subprocess output."""
 
+import itertools
 import json
 import logging
 import sys
@@ -7,6 +8,8 @@ import traceback
 import typing as typ
 
 import pytest
+from hypothesis import given
+from hypothesis import strategies as st
 
 from lading.commands.publish_cargo_config import CargoEnvironment
 from lading.commands.publish_errors import PublishPreflightError
@@ -17,10 +20,12 @@ from lading.utils.process import append_detail, command_detail, with_detail
 from lading.utils.redaction import (
     REDACTED,
     SecretRedactor,
+    redact_text,
     registry_token_values,
     use_secrets,
 )
 from lading.workspace.metadata import CargoMetadataInvocationError
+from tests.helpers.hypothesis_settings import filesystem_property_settings
 from tests.helpers.publish_digests import PublishRig
 
 if typ.TYPE_CHECKING:
@@ -212,3 +217,53 @@ def test_failure_formatters_hide_active_secrets_in_one_place() -> None:
     assert _LEAK in command_detail("", f"boom {_LEAK}"), (
         "outside a digest-checked run nothing is altered"
     )
+
+
+# A small alphabet, disjoint from the placeholder, so secrets overlap in prefixes
+# and suffixes and "no secret remains" can be checked by plain containment.
+_TEXTS = st.text(alphabet="xyzq", max_size=60)
+_SECRETS = st.lists(
+    st.text(alphabet="xyz", min_size=1, max_size=6), min_size=1, max_size=4
+)
+_CUTS = st.lists(st.integers(min_value=0, max_value=60), max_size=10)
+
+
+def _chunks(text: str, cuts: list[int]) -> list[str]:
+    """Split ``text`` at the given cut points."""
+    points = sorted({min(cut, len(text)) for cut in cuts} | {0, len(text)})
+    return [text[start:stop] for start, stop in itertools.pairwise(points)]
+
+
+@given(text=_TEXTS, secrets=_SECRETS, cuts=_CUTS)
+@filesystem_property_settings(max_examples=300)
+def test_streaming_redaction_equals_redacting_the_whole(
+    text: str, secrets: list[str], cuts: list[int]
+) -> None:
+    """Every chunking gives exactly ``redact_text`` of the whole input."""
+    redactor = SecretRedactor(secrets)
+
+    streamed = "".join(redactor.feed(chunk) for chunk in _chunks(text, cuts))
+    streamed += redactor.flush()
+
+    assert streamed == redact_text(text, secrets), "streaming must match the whole"
+    assert all(secret not in streamed for secret in secrets), "no secret may remain"
+
+
+@given(text=_TEXTS, secrets=_SECRETS)
+@filesystem_property_settings(max_examples=200)
+def test_redaction_does_not_depend_on_the_order_of_secrets(
+    text: str, secrets: list[str]
+) -> None:
+    """The longest match wins at each position, whatever order secrets arrive in."""
+    assert redact_text(text, secrets) == redact_text(text, list(reversed(secrets))), (
+        "the secrets' order must not change the result"
+    )
+
+
+def test_a_longer_secret_that_completes_later_beats_a_shorter_prefix() -> None:
+    """A chunk ending in a shorter secret waits to see if a longer one completes."""
+    redactor = SecretRedactor(("abc", "abcdef"))
+
+    streamed = redactor.feed("abc") + redactor.feed("def") + redactor.flush()
+
+    assert streamed == REDACTED, "the longer secret must be replaced whole"

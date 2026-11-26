@@ -52,8 +52,22 @@ _ACTIVE: contextvars.ContextVar[tuple[str, ...]] = contextvars.ContextVar(
 )
 
 
-def _longest_first(values: cabc.Iterable[str]) -> tuple[str, ...]:
-    """Return the distinct non-empty ``values``, longest first then alphabetical."""
+def ordered_secrets(values: cabc.Iterable[str]) -> tuple[str, ...]:
+    """Return the distinct non-empty ``values``, longest first then alphabetical.
+
+    Combine every group of secrets through this before replacing, so the longest
+    value wins wherever one contains another.
+
+    Returns
+    -------
+    tuple[str, ...]
+        The ordered, deduplicated values.
+
+    Examples
+    --------
+    >>> ordered_secrets(["ab", "", "abc", "ab"])
+    ('abc', 'ab')
+    """
     return tuple(
         sorted({v for v in values if v}, key=lambda value: (-len(value), value))
     )
@@ -73,27 +87,40 @@ def registry_token_values(environ: cabc.Mapping[str, object]) -> tuple[str, ...]
         The distinct token values, longest first (then alphabetically) so a
         value that contains another is replaced whole.
     """
-    return _longest_first(
+    return ordered_secrets(
         str(value) for key, value in environ.items() if _TOKEN_VARIABLE.fullmatch(key)
     )
+
+
+@functools.lru_cache(maxsize=64)
+def _pattern(secrets: tuple[str, ...]) -> re.Pattern[str] | None:
+    """Return one pattern matching any of ``secrets``, longest alternative first."""
+    ordered = ordered_secrets(secrets)
+    return re.compile("|".join(map(re.escape, ordered))) if ordered else None
 
 
 def redact_text(text: str, secrets: cabc.Sequence[str]) -> str:
     """Return ``text`` with every exact secret value replaced.
 
+    Scans left to right and, at each position, replaces the longest secret that
+    starts there. That definition does not depend on the order secrets are
+    given in, and a stream can reproduce it chunk by chunk
+    (:class:`SecretRedactor`).
+
     Returns
     -------
     str
-        ``text`` with each of ``secrets`` replaced by a placeholder.
+        ``text`` with each match replaced by a placeholder.
 
     Examples
     --------
     >>> redact_text("--token hunter2", ("hunter2",))
     '--token <redacted>'
+    >>> redact_text("abcdef", ("abc", "abcdef"))
+    '<redacted>'
     """
-    for secret in secrets:
-        text = text.replace(secret, REDACTED)
-    return text
+    pattern = _pattern(tuple(secrets))
+    return text if pattern is None else pattern.sub(REDACTED, text)
 
 
 class RedactingFilter(logging.Filter):
@@ -269,7 +296,7 @@ def use_secrets(secrets: cabc.Iterable[str]) -> cabc.Generator[None]:
     any. An exception that propagates out of the block is sanitized first (see
     :func:`~lading.utils.exception_redaction.sanitize_exception`).
     """
-    combined = _longest_first((*_ACTIVE.get(), *secrets))
+    combined = ordered_secrets((*_ACTIVE.get(), *secrets))
     token = _ACTIVE.set(combined)
     redaction = RedactingFilter(combined)
     for handler in logging.getLogger().handlers:
@@ -319,21 +346,25 @@ def redact_active(text: str) -> str:
 class SecretRedactor:
     """Replace exact secret values in a stream of text chunks.
 
-    One instance serves one stream, because it carries the held-back tail
-    between chunks: a value can straddle two reads, so the final
-    ``len(longest) - 1`` characters wait for the next chunk to prove they do
-    not begin a secret.
+    The output is identical to :func:`redact_text` on the whole input, whatever
+    the chunking. To achieve that it keeps the last ``len(longest) - 1``
+    characters raw until later input shows whether they begin a longer match;
+    replacement only ever runs on text that no later chunk can change.
+
+    One instance serves one stream, because it carries that held-back text.
 
     Parameters
     ----------
     secrets : cabc.Sequence[str]
-        The values to replace, longest first.
+        The values to replace, in any order.
     """
 
     def __init__(self, secrets: cabc.Sequence[str]) -> None:
         """Remember ``secrets`` and start with nothing held back."""
         self._secrets = tuple(secrets)
-        self._hold = max((len(secret) for secret in self._secrets), default=1) - 1
+        self._pattern = _pattern(self._secrets)
+        longest = max((len(secret) for secret in secrets), default=0)
+        self._hold = max(longest - 1, 0)
         self._pending = ""
 
     def feed(self, text: str) -> str:
@@ -342,12 +373,23 @@ class SecretRedactor:
         Returns
         -------
         str
-            Redacted text, excluding a tail that might begin a secret.
+            Redacted text, excluding a raw tail that might begin a match.
         """
-        combined = redact_text(self._pending + text, self._secrets)
-        keep = min(self._hold, len(combined))
-        self._pending = combined[len(combined) - keep :]
-        return combined[: len(combined) - keep]
+        buffer = self._pending + text
+        if self._pattern is None:
+            self._pending = ""
+            return buffer
+        limit = len(buffer) - self._hold
+        shown: list[str] = []
+        consumed = 0
+        for match in self._pattern.finditer(buffer):
+            if match.start() >= limit:
+                break
+            shown += [buffer[consumed : match.start()], REDACTED]
+            consumed = match.end()
+        shown.append(buffer[consumed : max(consumed, limit)])
+        self._pending = buffer[max(consumed, limit) :]
+        return "".join(shown)
 
     def flush(self) -> str:
         """Return whatever is still held back, once the stream has ended.
@@ -355,7 +397,7 @@ class SecretRedactor:
         Returns
         -------
         str
-            The remaining redacted text.
+            The remaining text, redacted.
         """
         remainder, self._pending = self._pending, ""
-        return remainder
+        return redact_text(remainder, self._secrets)

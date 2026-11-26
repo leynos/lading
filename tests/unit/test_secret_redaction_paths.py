@@ -8,6 +8,7 @@ from pathlib import Path
 from lading import cli, cli_environment
 from lading.commands import publish, publish_digest_run, publish_pipeline
 from lading.commands.publish_cargo_config import CargoEnvironment
+from lading.commands.publish_preflight import _AuxBuildContext
 from lading.runtime import subprocess_runner
 from lading.runtime.credentials import credential_file_tokens
 from lading.runtime.redacting_runner import redacting_runner
@@ -177,3 +178,39 @@ def test_redacting_and_plain_runners_log_the_same_command(
         "the command line must be logged"
     )
     assert _FROM_OVERRIDE not in "".join(redacted), "the environment stays masked"
+
+
+def test_longest_secret_wins_when_groups_are_combined(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A token in ``env`` that contains a known secret is replaced whole."""
+    context = _AuxBuildContext(
+        runner=redacting_runner(()),
+        env={"CARGO_REGISTRY_TOKEN": "abcdef"},
+        secrets=("abc",),
+    )
+
+    redacting_runner(("abc",))(
+        _echoing("abcdef"), env={"CARGO_REGISTRY_TOKEN": "abcdef"}
+    )
+
+    assert context.hidden() == ("abcdef", "abc"), "longest first, deduplicated"
+    assert capsys.readouterr().out == f"{REDACTED}\n", "the whole token is hidden"
+
+
+def test_the_logged_working_directory_hides_the_secret(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A token in the working directory's path is scrubbed from the log only."""
+    caplog.set_level(logging.INFO, logger="lading.runtime.subprocess_runner")
+    workdir = tmp_path / f"work-{_FROM_NAMED}"
+    workdir.mkdir()
+    script = [sys.executable, "-c", "import os;print(os.getcwd())"]
+
+    _code, stdout, _stderr = redacting_runner((_FROM_NAMED,))(
+        script, cwd=workdir, echo_stdout=False
+    )
+
+    assert _FROM_NAMED not in caplog.text, "the logged cwd must be scrubbed"
+    assert "Running external command" in caplog.text, "the command must still be logged"
+    assert str(workdir.resolve()) in stdout, "the process must have run in the real cwd"

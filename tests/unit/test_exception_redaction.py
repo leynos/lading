@@ -392,3 +392,24 @@ def test_rendered_objects_in_extra_fields_are_redacted() -> None:
     assert _LEAK not in seen[0], "the rendered Path must not show the token"
     assert "<unrenderable>" in seen[0], "an object that cannot render is replaced"
     assert REDACTED in seen[0], "the redaction must show"
+
+
+def test_a_replaced_exception_in_a_cycle_is_never_reached_through_its_original() -> (
+    None
+):
+    """Chain links resolve to final replacements, not provisional originals."""
+    dirty = _StubbornError()
+    clean = ValueError("clean")
+    dirty.__cause__ = clean
+    clean.__cause__ = dirty
+
+    safe = sanitize_exception(dirty, _redact)
+
+    seen: list[BaseException] = []
+    link: BaseException | None = safe
+    while link is not None and link not in seen:
+        seen.append(link)
+        link = link.__cause__
+    assert isinstance(safe, LadingError), "the dirty exception is replaced"
+    assert all(item is not dirty for item in seen), "the original must be unreachable"
+    assert _LEAK not in "".join(traceback.format_exception(safe)), "no token remains"

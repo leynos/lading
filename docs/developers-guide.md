@@ -1897,7 +1897,11 @@ registry-token values out of what lading shows, never out of what it parses.
 `lading.cli` collects the values from the environment and the credentials file
 (`runtime.credentials`) for a digest-checked run only; `_select_runner` then
 returns `redacting_runner`, while a run without the option always gets the plain
-`subprocess_runner`. The runner captures each stream raw and filters only the
+`subprocess_runner`. `redact_text` replaces, left to right, the longest secret
+starting at each position, so the result does not depend on the order secrets
+are given in, and `SecretRedactor` reproduces it exactly for any chunking by
+keeping the tail raw until later input settles it (a Hypothesis property checks
+the equivalence). The runner captures each stream raw and filters only the
 mirrored text (`stream_relay.relay_decoded` with a `RelayCapture`). Messages
 built from captured output are redacted centrally: `use_secrets` activates the
 values for the run and `command_detail` and `append_detail` (and so

@@ -23,7 +23,7 @@ import typing as typ
 from pathlib import Path
 
 from lading.runtime.subprocess_runner import SubprocessContext, run_logged
-from lading.utils.redaction import registry_token_values
+from lading.utils.redaction import ordered_secrets, registry_token_values
 
 if typ.TYPE_CHECKING:
     from lading.runtime.runner import CommandRunner
@@ -55,7 +55,7 @@ def redacting_runner(secrets: cabc.Sequence[str]) -> CommandRunner:
         echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
         """Execute ``command`` through the subprocess adapter."""
-        hidden = (*secrets, *registry_token_values(env or {}))
+        hidden = ordered_secrets((*secrets, *registry_token_values(env or {})))
         context = SubprocessContext(
             cwd=cwd, env=env, echo_stdout=echo_stdout, secrets=hidden
         )

@@ -128,7 +128,14 @@ def run_logged(
     """
     # An argument can carry a credential too, so the logged line is scrubbed.
     shown = [redact_text(argument, context.secrets) for argument in command]
-    log_command_invocation(_LOGGER, shown, context.cwd)
+    # The working directory is shown too, so it is scrubbed; the process still
+    # runs in the real one.
+    cwd = (
+        None
+        if context.cwd is None
+        else Path(redact_text(str(context.cwd), context.secrets))
+    )
+    log_command_invocation(_LOGGER, shown, cwd)
     program, args = split_command(command)
     return invoke_via_subprocess(program, args, context)
 
