@@ -9,12 +9,12 @@ for the publish summary lives in :mod:`lading.commands.publish_digest_run`.
 
 The publish pipeline calls it at these points in a crate's life:
 
-1. :meth:`~ArchiveVerifier.resolve_published` before packaging, to skip a
-   version whose identical archive is already on crates.io and to refuse one
-   whose archive differs. It is two methods: the read-only query
-   :meth:`~ArchiveVerifier.fetch_published_digest`, and the command
-   :meth:`~ArchiveVerifier.settle_published`, which decides, records and may
-   raise. Their separation lets a caller look without side effects;
+1. before packaging, to skip a version whose identical archive is already on
+   crates.io and to refuse one whose archive differs: the read-only query
+   :meth:`~ArchiveVerifier.fetch_published_digest` looks without side effects,
+   and the command :meth:`~ArchiveVerifier.settle_published` decides, records
+   and may raise (:meth:`~ArchiveVerifier.is_already_published` reads what it
+   decided);
 2. :meth:`~ArchiveVerifier.check_archive` after ``cargo package`` writes the
    archive, after ``cargo publish --dry-run`` packages again, and after a live
    ``cargo publish`` (a difference there cannot undo the upload but fails the
