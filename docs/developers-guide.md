@@ -1882,7 +1882,10 @@ check missed), `check_archive` with `PACKAGED` after `cargo package`,
 `UPLOADED` after a successful live publish. It asks `cargo metadata --no-deps`
 for the target directory once per crate root, through the command runner, and
 records one `CrateOutcome` per crate for the summary and the
-`publish.archive_check` counter.
+`publish.archive_check` counter. `publish_digest_run` holds the digest-specific
+steps of `run()`: the runner choice (`command_runner`, `discovery_runner`), the
+pre-flight validation (`digest_checks`), and `refuse_staged_defaults`, which
+repeats the registry check from the staged paths.
 `publish_cargo_config.effective_default_registry` follows Cargo's own order
 (`CARGO_REGISTRY_DEFAULT`, then `.cargo/config` or `.cargo/config.toml`, the
 extensionless file winning, from a start directory up through its ancestors,

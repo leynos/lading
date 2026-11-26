@@ -152,9 +152,29 @@ def refuse_alternate_default(
     ExpectedDigestsError
         Naming the registry and where it applies, for the first directory whose
         effective default is not crates.io.
-    """
+    """  # ruff: ignore[docstring-extraneous-exception] -- raised by refuse_alternate_default_at
     starts = [("the workspace", workspace_root)]
     starts += [(f"crate {crate.name}", crate.root_path) for crate in plan.publishable]
+    refuse_alternate_default_at(starts, environment)
+
+
+def refuse_alternate_default_at(
+    starts: cabc.Iterable[tuple[str, Path]], environment: CargoEnvironment
+) -> None:
+    """Refuse when Cargo run in any of ``starts`` would use another default.
+
+    Parameters
+    ----------
+    starts : cabc.Iterable[tuple[str, Path]]
+        ``(label, directory)`` pairs; the label names the place in the error.
+    environment : CargoEnvironment
+        The caller-resolved Cargo environment.
+
+    Raises
+    ------
+    ExpectedDigestsError
+        For the first directory whose effective default is not crates.io.
+    """
     for label, start in starts:
         default = effective_default_registry(
             start,

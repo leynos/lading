@@ -18,10 +18,10 @@ All notable changes to `lading` are recorded here. The format follows
   and workspace discovery with `--locked`; per-crate outcomes appear in the log
   and the publish summary, and the `publish.archive_check` metric counts them.
   Only crates.io is supported, and a default registry set in Cargo
-  configuration is refused. The archive `cargo publish --dry-run` packages is
-  compared too, and exact registry token values (from the environment,
-  pre-flight overrides and Cargo's credentials file) are hidden from relayed
-  subprocess output
+  configuration, at the checkout or the staged paths, is refused. The archive
+  `cargo publish --dry-run` packages is compared too, and exact registry token
+  values (from the environment, pre-flight overrides and Cargo's credentials
+  file) are hidden from relayed subprocess output
   ([#419](https://github.com/leynos/lading/issues/419); [ADR-013](docs/adrs/adr-0013-verify-archives-against-expected-digests.md)).
 - `WorkspaceCrate.registries` carries the registries named by a manifest's
   `publish` key, or `None` when the key does not restrict them.

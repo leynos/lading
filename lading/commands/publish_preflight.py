@@ -46,6 +46,7 @@ from lading.commands.publish_errors import PublishPreflightError
 from lading.commands.publish_execution import _invoke
 from lading.commands.publish_lockfile_preflight import _validate_lockfile_freshness
 from lading.commands.publish_skip import SkipPreflightDecision, resolve_skip_preflight
+from lading.runtime.redaction import redact_text, registry_token_values
 from lading.utils import metrics
 from lading.utils.process import append_detail, command_detail, with_detail
 
@@ -78,18 +79,41 @@ def _build_preflight_environment(
     return env
 
 
+@dc.dataclass(frozen=True, slots=True)
+class _AuxBuildContext:
+    """How auxiliary builds run, and which values must stay out of their errors."""
+
+    runner: CommandRunner
+    env: cabc.Mapping[str, str] | None
+    secrets: tuple[str, ...] = ()
+
+    def hidden(self) -> tuple[str, ...]:
+        """Return the known secrets plus any registry tokens in ``env``."""
+        return (*self.secrets, *registry_token_values(self.env or {}))
+
+
 def _run_aux_build_commands(
     workspace_root: Path,
     commands: tuple[tuple[str, ...], ...],
     *,
-    runner: CommandRunner,
-    env: cabc.Mapping[str, str] | None,
+    context: _AuxBuildContext,
 ) -> None:
-    """Execute auxiliary build commands prior to cargo pre-flight runs."""
+    """Execute auxiliary build commands prior to cargo pre-flight runs.
+
+    A failed command's own arguments appear in the error and the log, so both
+    are scrubbed of known secrets before either is emitted.
+
+    Raises
+    ------
+    PublishPreflightError
+        If an auxiliary command exits non-zero.
+    """
     for command in commands:
-        exit_code, stdout, stderr = runner(command, cwd=workspace_root, env=env)
+        exit_code, stdout, stderr = context.runner(
+            command, cwd=workspace_root, env=context.env
+        )
         if exit_code != 0:
-            rendered = " ".join(command)
+            rendered = redact_text(" ".join(command), context.hidden())
             message = with_detail(
                 f"Auxiliary build command failed with exit code {exit_code}: "
                 f"{rendered}",
@@ -232,6 +256,9 @@ class PreflightRequest:
         Optional explicit decision, with its provenance, about skipping the
         auxiliary builds and the cargo check/test pair. When ``None`` the
         ``[preflight] skip`` setting decides.
+    secrets:
+        Known secret values to keep out of failure messages that quote a
+        command's arguments.
 
     Examples
     --------
@@ -245,6 +272,7 @@ class PreflightRequest:
     runner: CommandRunner | None = None
     clock: cabc.Callable[[], float] = time.perf_counter
     skip: SkipPreflightDecision | None = None
+    secrets: tuple[str, ...] = ()
 
 
 def _run_preflight_checks(
@@ -296,8 +324,7 @@ def _run_preflight_checks(
         _run_aux_build_commands(
             workspace_root,
             preflight_config.aux_build,
-            runner=command_runner,
-            env=base_env,
+            context=_AuxBuildContext(command_runner, base_env, request.secrets),
         )
         _validate_lockfile_freshness(
             workspace_root,

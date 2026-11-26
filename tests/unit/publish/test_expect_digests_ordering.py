@@ -5,8 +5,11 @@ the registry pin on both cargo commands, the published-version check before
 packaging, validation before the pre-flight, and what a failed run reports.
 """
 
+import collections.abc as cabc
 import dataclasses as dc
 import logging
+import sys
+import typing as typ
 
 import pytest
 
@@ -18,6 +21,8 @@ from lading.commands.publish_errors import (
     ExpectedDigestsError,
     PublishedArchiveConflictError,
 )
+from lading.runtime import redacting_runner as redacting_runner_module
+from lading.workspace.metadata import CargoMetadataInvocationError
 from tests.helpers.publish_digests import (
     OTHER_ARCHIVE,
     PLAIN_ARCHIVE,
@@ -26,6 +31,9 @@ from tests.helpers.publish_digests import (
 )
 
 from .index_missing_outputs import INDEX_MISSING_STDERR_BETA
+
+if typ.TYPE_CHECKING:
+    from lading.runtime.subprocess_runner import SubprocessContext
 
 _ALREADY_EXISTS = "error: crate alpha@0.1.0 already exists on crates.io index"
 
@@ -273,3 +281,46 @@ def test_unfetched_workspace_is_discovered_locked_when_digests_are_expected(
     assert seen == [{"locked": True}, {}], (
         "discovery must be locked exactly when digests are expected"
     )
+
+
+def test_programmatic_discovery_runs_through_the_redacting_runner(
+    digest_rig: PublishRig,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """With no workspace supplied, ``cargo metadata`` output is redacted too."""
+    leak = "metadata-credential-0f1e2d3c4b5a"
+    caplog.set_level(logging.DEBUG)
+
+    def child_prints_the_token(
+        command: cabc.Sequence[str], context: SubprocessContext
+    ) -> tuple[int, str, str]:
+        """Run a child that fails printing the token, whatever was asked."""
+        del command
+        script = f"import sys; print({leak!r}, file=sys.stderr); sys.exit(1)"
+        return real_run_logged([sys.executable, "-c", script], context)
+
+    real_run_logged = redacting_runner_module.run_logged
+    monkeypatch.setattr(redacting_runner_module, "run_logged", child_prints_the_token)
+    monkeypatch.setattr(
+        publish_preflight, "_run_preflight_checks", lambda *_a, **_k: None
+    )
+    options = publish.PublishOptions(
+        build_directory=digest_rig.build_directory,
+        expect_digests=digest_rig.digests_file(),
+        cargo_environment=CargoEnvironment(None, None, (leak,)),
+    )
+
+    with pytest.raises(CargoMetadataInvocationError) as excinfo:
+        publish.run(
+            digest_rig.root,
+            config_module.LadingConfig(
+                publish=config_module.PublishConfig(strip_patches="all")
+            ),
+            None,
+            options=options,
+        )
+
+    assert leak not in str(excinfo.value), "the discovery error must not show it"
+    assert "<redacted>" in str(excinfo.value), "the error must show the redaction"
+    assert leak not in caplog.text, "no log record may carry it"

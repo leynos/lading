@@ -858,13 +858,15 @@ the directory Cargo runs in and each ancestor, nearest first, then
 `config.toml` in `$CARGO_HOME` (default `~/.cargo`). Publication runs from each
 crate's own directory, so the search starts from the workspace root and from
 every publishable crate's root, and a member's own `.cargo/config.toml` counts.
-Where a directory holds both `.cargo/config` and `.cargo/config.toml`, Cargo
-reads only the extensionless `config`, and so does lading. It also refuses when
-a publishable crate's `publish` key lists registries without `crates-io`. A
-configuration file that exists but cannot be read is an error, not a guess. As
-defence in depth, lading also passes `--registry crates-io` to both
-`cargo package` and `cargo publish`, so nothing it failed to see can send the
-upload elsewhere.
+The same check runs again from the staged workspace and each staged crate root
+after staging and before anything is packaged, because their parent directories
+differ from the checkout's. Where a directory holds both `.cargo/config` and
+`.cargo/config.toml`, Cargo reads only the extensionless `config`, and so does
+lading. It also refuses when a publishable crate's `publish` key lists
+registries without `crates-io`. A configuration file that exists but cannot be
+read is an error, not a guess. As defence in depth, lading also passes
+`--registry crates-io` to both `cargo package` and `cargo publish`, so nothing
+it failed to see can send the upload elsewhere.
 
 Workspace discovery runs `cargo metadata --locked` for the same reason as the
 `--locked` flags above, so a stale `Cargo.lock` stops the run before anything
@@ -878,8 +880,10 @@ own archive under the staged workspace's target directory for comparison.
 
 With `--expect-digests`, lading always hides the exact values of
 `CARGO_REGISTRY_TOKEN` and `CARGO_REGISTRIES_<NAME>_TOKEN` from everything it
-relays or captures from a subprocess, including the command line it logs. The
-values come from lading's environment, from the same variables in a pre-flight
+relays or captures from a subprocess, including the command line it logs, the
+arguments quoted in a failed auxiliary pre-flight command's error, and the
+output of the workspace discovery a programmatic caller triggers. The values
+come from lading's environment, from the same variables in a pre-flight
 `env_overrides` entry, and from the `registry.token` and
 `registries.<name>.token` keys of `$CARGO_HOME/credentials.toml` (or the legacy
 `credentials`). If the pre-flight builds, a build script, or Cargo print one,

@@ -11,27 +11,27 @@ per-crate execution to :mod:`lading.commands.publish_pipeline`; the latter uses
 import dataclasses as dc
 import logging
 import typing as typ
+from contextlib import nullcontext
 from functools import partial
 from pathlib import Path
 
 from lading import config as config_module
 from lading.commands import (
-    publish_cargo_config,
-    publish_digests,
+    publish_digest_run,
     publish_pipeline,
     publish_preflight,
     publish_registry,
     publish_staging,
 )
-from lading.commands.publish_archive_check import ArchiveVerifier
 from lading.commands.publish_errors import ExpectedDigestsError, PublishPreflightError
-from lading.commands.publish_execution import redacting_invoke
 from lading.commands.publish_manifest import _apply_strip_patch_strategy
 from lading.commands.publish_plan import PublishPlan, format_plan, plan_publication
 from lading.commands.publish_plan import PublishPlanError as PublishPlanError
 from lading.utils.path import normalize_workspace_root
+from lading.workspace import metadata as metadata_module
 
 if typ.TYPE_CHECKING:
+    from lading.commands.publish_archive_check import ArchiveVerifier
     from lading.commands.publish_cargo_config import CargoEnvironment
     from lading.commands.publish_skip import SkipPreflightDecision
     from lading.runtime import CommandRunner
@@ -181,77 +181,10 @@ def _preflight_request(
         configuration=configuration,
         runner=runner,
         skip=options.skip_preflight,
+        secrets=()
+        if options.cargo_environment is None
+        else options.cargo_environment.secrets,
     )
-
-
-def _command_runner(options: PublishOptions) -> CommandRunner:
-    """Return the injected runner, or the default one.
-
-    With digests expected the default runner hides the caller's registry
-    tokens from subprocess output, so a programmatic caller gets the same
-    protection as the command line.
-
-    Returns
-    -------
-    CommandRunner
-        The runner for this publish.
-    """
-    if options.command_runner is not None:
-        return options.command_runner
-    if options.cargo_environment is not None and options.expect_digests is not None:
-        return redacting_invoke(options.cargo_environment.secrets)
-    return publish_pipeline._invoke
-
-
-def _digest_checks(
-    options: PublishOptions,
-    planning: _Planning,
-    runner: CommandRunner,
-    workspace_root: Path,
-) -> tuple[PublishPlan | None, ArchiveVerifier | None]:
-    """Validate the digests and registry before the pre-flight, if they are used.
-
-    Returns
-    -------
-    tuple[PublishPlan | None, ArchiveVerifier | None]
-        The plan and verifier when digests are expected, otherwise ``(None,
-        None)`` and the caller plans later.
-    """
-    # Read before the pre-flight, which builds the workspace: a typo in the
-    # digest file should cost seconds, not a verify build.
-    expected = _load_expected_digests(options, workspace_root)
-    if expected is None or options.cargo_environment is None:
-        return None, None
-    plan = planning.plan()
-    publish_cargo_config.refuse_alternate_default(
-        plan, workspace_root, options.cargo_environment
-    )
-    return plan, _archive_verifier(expected, plan, options, runner)
-
-
-def _load_expected_digests(
-    options: PublishOptions, workspace_root: Path
-) -> publish_digests.ExpectedDigests | None:
-    """Read the ``--expect-digests`` file, if one was given, before any work."""
-    if options.expect_digests is None:
-        return None
-    return publish_digests.load_expected_digests(
-        workspace_root / options.expect_digests
-    )
-
-
-def _archive_verifier(
-    expected: publish_digests.ExpectedDigests,
-    plan: PublishPlan,
-    options: PublishOptions,
-    runner: CommandRunner,
-) -> ArchiveVerifier:
-    """Check the digests against the plan and build the run's verifier."""
-    publish_digests.validate_against_plan(expected, plan)
-    publish_digests.require_crates_io_crates(plan)
-    if options.published_digest_fetcher is None:
-        return ArchiveVerifier(expected, runner)
-    return ArchiveVerifier(expected, runner, options.published_digest_fetcher)
 
 
 def _execution_options(
@@ -301,12 +234,21 @@ class _Planning:
     workspace_root: Path
     # Discovery must not update Cargo.lock when digests are expected.
     locked: bool = False
+    # Runs workspace discovery when this plan has to discover it, so metadata
+    # output passes through the same redaction as every other command.
+    runner: CommandRunner | None = None
 
     def plan(self) -> PublishPlan:
         """Plan publication for the workspace (discovering it when needed)."""
-        workspace = _ensure_workspace(
-            self.workspace, self.workspace_root, locked=self.locked
+        scope = (
+            nullcontext()
+            if self.runner is None
+            else metadata_module.use_command_runner(self.runner)
         )
+        with scope:
+            workspace = _ensure_workspace(
+                self.workspace, self.workspace_root, locked=self.locked
+            )
         return plan_publication(
             workspace, self.configuration, workspace_root=self.workspace_root
         )
@@ -367,17 +309,18 @@ def run(
     active_configuration = _ensure_configuration(
         configuration or effective_options.configuration, root_path
     )
-    command_runner = _command_runner(effective_options)
+    command_runner = publish_digest_run.command_runner(effective_options)
     planning = _Planning(
         workspace or effective_options.workspace,
         active_configuration,
         root_path,
         locked=effective_options.expect_digests is not None,
+        runner=publish_digest_run.discovery_runner(effective_options),
     )
     # With digests, the plan is needed to validate them, and that must happen
     # before the pre-flight, whose auxiliary builds can package crates.
-    plan, verifier = _digest_checks(
-        effective_options, planning, command_runner, root_path
+    plan, verifier = publish_digest_run.digest_checks(
+        effective_options, planning.plan, command_runner, root_path
     )
     publish_preflight._run_preflight_checks(
         root_path,
@@ -389,6 +332,9 @@ def run(
     with publish_staging.staged_workspace(plan, options=effective_options) as staged:
         _apply_strip_patch_strategy(
             staged.staging_root, plan, active_configuration.publish.strip_patches
+        )
+        publish_digest_run.refuse_staged_defaults(
+            plan, staged.staging_root, effective_options
         )
         _dispatch_reporting(
             plan,

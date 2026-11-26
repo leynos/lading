@@ -6,7 +6,7 @@ import typing as typ
 from pathlib import Path
 
 from lading import cli
-from lading.commands import publish, publish_pipeline
+from lading.commands import publish, publish_digest_run, publish_pipeline
 from lading.commands.publish_cargo_config import CargoEnvironment
 from lading.runtime import subprocess_runner
 from lading.runtime.credentials import credential_file_tokens
@@ -139,12 +139,12 @@ def test_programmatic_default_runner_redacts_when_digests_are_expected(
         expect_digests=tmp_path / "digests.txt", cargo_environment=environment
     )
 
-    _code, stdout, _stderr = publish._command_runner(checked)(
+    _code, stdout, _stderr = publish_digest_run.command_runner(checked)(
         _echoing(_FROM_NAMED), echo_stdout=False
     )
 
     assert _FROM_NAMED not in stdout, "the default runner must hide the secret"
-    assert publish._command_runner(publish.PublishOptions()) is (
+    assert publish_digest_run.command_runner(publish.PublishOptions()) is (
         publish_pipeline._invoke
     ), "without digests the default runner is unchanged"
 

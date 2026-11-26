@@ -193,3 +193,23 @@ def test_digests_without_a_resolved_cargo_environment_are_refused(
 
     assert not digest_rig.cargo.calls, "nothing may run on a guess"
     assert not digest_rig.build_directory.exists(), "nothing may be staged"
+
+
+def test_alternate_default_only_above_the_staging_root_is_refused_after_staging(
+    digest_rig: PublishRig,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path_factory: pytest.TempPathFactory,
+) -> None:
+    """Cargo runs from the staged paths, so configuration above them counts."""
+    staging_parent = tmp_path_factory.mktemp("staging-parent")
+    _write_config(staging_parent, _default("internal"))
+
+    with pytest.raises(ExpectedDigestsError, match=r"staged.*'internal'"):
+        digest_rig.run(
+            monkeypatch,
+            live=True,
+            expect_digests=digest_rig.digests_file(),
+            build_directory=staging_parent / "build",
+        )
+
+    assert not digest_rig.cargo.calls, "nothing may be packaged or published"

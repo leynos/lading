@@ -88,9 +88,10 @@ with one `<64 hex digits>  <name>-<version>.crate` entry per line.
   (`CARGO_REGISTRY_DEFAULT`, then `.cargo/config` or `.cargo/config.toml`, the
   extensionless file winning when both exist, from the workspace root and from
   each publishable crate's root upward, then Cargo home) and refused before
-  staging when it is not crates.io. The caller resolves these inputs into a
-  `CargoEnvironment`, which `publish.run` requires with digests rather than
-  reading the ambient environment. Both cargo commands also receive
+  staging when it is not crates.io, and again from the staged paths, whose
+  ancestors differ, before anything is packaged. The caller resolves these
+  inputs into a `CargoEnvironment`, which `publish.run` requires with digests
+  rather than reading the ambient environment. Both cargo commands also receive
   `--registry crates-io` as defence in depth.
 - **Dry-run publish.** `cargo publish --dry-run` packages again, so its
   archive is compared too and a difference is a mismatch.

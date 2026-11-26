@@ -3,6 +3,7 @@
 import collections.abc as cabc
 import dataclasses as dc
 import logging
+import time
 import typing as typ
 from pathlib import Path
 
@@ -120,7 +121,7 @@ def _run_preflight(
         configuration=configuration,
         runner=scenario.runner or _recording_runner(calls),
         skip=scenario.override,
-        **({} if scenario.clock is None else {"clock": scenario.clock}),
+        clock=time.perf_counter if scenario.clock is None else scenario.clock,
     )
     publish_preflight._run_preflight_checks(root, request)
     return calls

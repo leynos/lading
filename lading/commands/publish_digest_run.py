@@ -1,0 +1,135 @@
+"""Digest-related steps of the ``lading publish`` workflow.
+
+``--expect-digests`` adds work around the main publish sequence: choosing a
+runner that hides registry credentials, validating the digest file and the
+registry before the pre-flight, and refusing an alternate default registry at
+the staged paths. They live here so :mod:`lading.commands.publish` stays the
+readable outline of the run, and so this module can be tested apart from it.
+"""
+
+import collections.abc as cabc
+import typing as typ
+
+from lading.commands import publish_cargo_config, publish_digests, publish_pipeline
+from lading.commands.publish_archive_check import ArchiveVerifier
+from lading.commands.publish_execution import redacting_invoke
+from lading.commands.publish_staging import _resolve_staged_crate_root
+from lading.runtime.redacting_runner import redacting_runner
+
+if typ.TYPE_CHECKING:
+    import pathlib
+
+    from lading.commands.publish import PublishOptions
+    from lading.commands.publish_plan import PublishPlan
+    from lading.runtime import CommandRunner
+
+
+def discovery_runner(options: PublishOptions) -> CommandRunner | None:
+    """Return the runner for workspace discovery, only when digests are expected.
+
+    Without digests discovery keeps its ambient runner, so behaviour is as
+    before. With them it uses the injected runner, or one that hides the
+    caller's registry tokens, so ``cargo metadata`` output cannot leak one.
+
+    Returns
+    -------
+    CommandRunner | None
+        The runner to install around discovery, or ``None`` for the ambient one.
+    """
+    environment = options.cargo_environment
+    if options.expect_digests is None or environment is None:
+        return None
+    return options.command_runner or redacting_runner(environment.secrets)
+
+
+def refuse_staged_defaults(
+    plan: PublishPlan, staging_root: pathlib.Path, options: PublishOptions
+) -> None:
+    """Refuse an alternate default registry that only the staged paths see.
+
+    Cargo runs from the staged crate roots, whose ancestors (the staging
+    directory's parents) differ from the checkout's, so configuration there is
+    invisible to the check made before staging. This runs after staging and
+    before anything is packaged.
+    """
+    if options.expect_digests is None or options.cargo_environment is None:
+        return
+    starts = [("the staged workspace", staging_root)]
+    starts += [
+        (
+            f"staged crate {crate.name}",
+            _resolve_staged_crate_root(crate, plan, staging_root),
+        )
+        for crate in plan.publishable
+    ]
+    publish_cargo_config.refuse_alternate_default_at(starts, options.cargo_environment)
+
+
+def command_runner(options: PublishOptions) -> CommandRunner:
+    """Return the injected runner, or the default one.
+
+    With digests expected the default runner hides the caller's registry
+    tokens from subprocess output, so a programmatic caller gets the same
+    protection as the command line.
+
+    Returns
+    -------
+    CommandRunner
+        The runner for this publish.
+    """
+    if options.command_runner is not None:
+        return options.command_runner
+    if options.cargo_environment is not None and options.expect_digests is not None:
+        return redacting_invoke(options.cargo_environment.secrets)
+    return publish_pipeline._invoke
+
+
+def digest_checks(
+    options: PublishOptions,
+    plan_for: cabc.Callable[[], PublishPlan],
+    runner: CommandRunner,
+    workspace_root: pathlib.Path,
+) -> tuple[PublishPlan | None, ArchiveVerifier | None]:
+    """Validate the digests and registry before the pre-flight, if they are used.
+
+    Returns
+    -------
+    tuple[PublishPlan | None, ArchiveVerifier | None]
+        The plan and verifier when digests are expected, otherwise ``(None,
+        None)`` and the caller plans later.
+    """
+    # Read before the pre-flight, which builds the workspace: a typo in the
+    # digest file should cost seconds, not a verify build.
+    expected = load_expected_digests(options, workspace_root)
+    if expected is None or options.cargo_environment is None:
+        return None, None
+    plan = plan_for()
+    publish_cargo_config.refuse_alternate_default(
+        plan, workspace_root, options.cargo_environment
+    )
+    return plan, archive_verifier(expected, plan, options, runner)
+
+
+def load_expected_digests(
+    options: PublishOptions, workspace_root: pathlib.Path
+) -> publish_digests.ExpectedDigests | None:
+    """Read the ``--expect-digests`` file, if one was given, before any work."""
+    if options.expect_digests is None:
+        return None
+    return publish_digests.load_expected_digests(
+        workspace_root / options.expect_digests
+    )
+
+
+def archive_verifier(
+    expected: publish_digests.ExpectedDigests,
+    plan: PublishPlan,
+    options: PublishOptions,
+    runner: CommandRunner,
+) -> ArchiveVerifier:
+    """Check the digests against the plan and build the run's verifier."""
+    publish_digests.validate_against_plan(expected, plan)
+    publish_digests.require_crates_io_crates(plan)
+    if options.published_digest_fetcher is None:
+        return ArchiveVerifier(expected, runner)
+    return ArchiveVerifier(expected, runner, options.published_digest_fetcher)
