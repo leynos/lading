@@ -24,13 +24,15 @@ from lading.commands import (
     publish_staging,
 )
 from lading.commands.publish_archive_check import ArchiveVerifier
-from lading.commands.publish_errors import PublishPreflightError
+from lading.commands.publish_errors import ExpectedDigestsError, PublishPreflightError
+from lading.commands.publish_execution import redacting_invoke
 from lading.commands.publish_manifest import _apply_strip_patch_strategy
 from lading.commands.publish_plan import PublishPlan, format_plan, plan_publication
 from lading.commands.publish_plan import PublishPlanError as PublishPlanError
 from lading.utils.path import normalize_workspace_root
 
 if typ.TYPE_CHECKING:
+    from lading.commands.publish_cargo_config import CargoEnvironment
     from lading.commands.publish_skip import SkipPreflightDecision
     from lading.runtime import CommandRunner
     from lading.workspace import WorkspaceGraph
@@ -80,14 +82,12 @@ class PublishOptions:
         (``--expect-digests``). A relative path resolves against the workspace
         root. When set, every archive is checked against it before upload,
         ``--locked`` is passed to cargo, and the run is limited to crates.io.
-    default_registry : str | None
-        Registry Cargo publishes to when a crate names none, as read from
-        ``CARGO_REGISTRY_DEFAULT`` by the command-line entry point. Only
-        consulted with ``expect_digests``, which supports crates.io alone.
-    cargo_home : Path | None
-        Cargo's home directory, whose ``config.toml`` can also set the default
-        registry. Resolved by the command-line entry point; only consulted with
-        ``expect_digests``.
+    cargo_environment : CargoEnvironment | None
+        The Cargo environment resolved by the caller: ``CARGO_REGISTRY_DEFAULT``,
+        Cargo's home directory, and the registry token values to hide from
+        subprocess output. Required with ``expect_digests``, which refuses to
+        run when it is missing rather than guess from less information;
+        ``publish.run`` never reads the ambient environment itself.
     published_digest_fetcher : PublishedDigestFetcher | None
         Optional replacement for the crates.io archive download, so tests
         never reach the network. Only used with ``expect_digests``.
@@ -106,8 +106,7 @@ class PublishOptions:
     sccache_stats_json: Path | None = None
     skip_preflight: SkipPreflightDecision | None = None
     expect_digests: Path | None = None
-    default_registry: str | None = None
-    cargo_home: Path | None = None
+    cargo_environment: CargoEnvironment | None = None
     published_digest_fetcher: publish_registry.PublishedDigestFetcher | None = None
 
 
@@ -157,6 +156,14 @@ def _validate_publication_options(options: PublishOptions) -> None:
         )
         LOGGER.error(message)
         raise PublishPreflightError(message)
+    if options.expect_digests is not None and options.cargo_environment is None:
+        message = (
+            "--expect-digests needs the Cargo environment resolved by the "
+            "caller: pass PublishOptions.cargo_environment (the command line "
+            "does this). Lading does not read the ambient environment here, and "
+            "guessing could miss an alternate default registry."
+        )
+        raise ExpectedDigestsError(message)
     if options.allow_unpublished_workspace_deps:
         LOGGER.info(
             "Allowing unpublished workspace dependencies during dry-run publish"
@@ -177,16 +184,49 @@ def _preflight_request(
     )
 
 
-def _require_crates_io(options: PublishOptions, workspace_root: Path) -> None:
-    """Refuse digests when Cargo's effective default registry is not crates.io."""
-    if options.expect_digests is not None:
-        publish_digests.require_crates_io_default(
-            publish_cargo_config.effective_default_registry(
-                workspace_root,
-                cargo_home=options.cargo_home,
-                env_default=options.default_registry,
-            )
-        )
+def _command_runner(options: PublishOptions) -> CommandRunner:
+    """Return the injected runner, or the default one.
+
+    With digests expected the default runner hides the caller's registry
+    tokens from subprocess output, so a programmatic caller gets the same
+    protection as the command line.
+
+    Returns
+    -------
+    CommandRunner
+        The runner for this publish.
+    """
+    if options.command_runner is not None:
+        return options.command_runner
+    if options.cargo_environment is not None and options.expect_digests is not None:
+        return redacting_invoke(options.cargo_environment.secrets)
+    return publish_pipeline._invoke
+
+
+def _digest_checks(
+    options: PublishOptions,
+    planning: _Planning,
+    runner: CommandRunner,
+    workspace_root: Path,
+) -> tuple[PublishPlan | None, ArchiveVerifier | None]:
+    """Validate the digests and registry before the pre-flight, if they are used.
+
+    Returns
+    -------
+    tuple[PublishPlan | None, ArchiveVerifier | None]
+        The plan and verifier when digests are expected, otherwise ``(None,
+        None)`` and the caller plans later.
+    """
+    # Read before the pre-flight, which builds the workspace: a typo in the
+    # digest file should cost seconds, not a verify build.
+    expected = _load_expected_digests(options, workspace_root)
+    if expected is None or options.cargo_environment is None:
+        return None, None
+    plan = planning.plan()
+    publish_cargo_config.refuse_alternate_default(
+        plan, workspace_root, options.cargo_environment
+    )
+    return plan, _archive_verifier(expected, plan, options, runner)
 
 
 def _load_expected_digests(
@@ -201,19 +241,17 @@ def _load_expected_digests(
 
 
 def _archive_verifier(
-    expected: publish_digests.ExpectedDigests | None,
-    plan: PublishPlan | None,
+    expected: publish_digests.ExpectedDigests,
+    plan: PublishPlan,
     options: PublishOptions,
     runner: CommandRunner,
-) -> ArchiveVerifier | None:
+) -> ArchiveVerifier:
     """Check the digests against the plan and build the run's verifier."""
-    if expected is not None and plan is not None:
-        publish_digests.validate_against_plan(expected, plan)
-        publish_digests.require_crates_io_crates(plan)
-        if options.published_digest_fetcher is None:
-            return ArchiveVerifier(expected, runner)
-        return ArchiveVerifier(expected, runner, options.published_digest_fetcher)
-    return None
+    publish_digests.validate_against_plan(expected, plan)
+    publish_digests.require_crates_io_crates(plan)
+    if options.published_digest_fetcher is None:
+        return ArchiveVerifier(expected, runner)
+    return ArchiveVerifier(expected, runner, options.published_digest_fetcher)
 
 
 def _execution_options(
@@ -326,25 +364,20 @@ def run(
     LOGGER.info("Starting publish workflow for workspace %s", root_path)
     effective_options = PublishOptions() if options is None else options
     _validate_publication_options(effective_options)
-    _require_crates_io(effective_options, root_path)
     active_configuration = _ensure_configuration(
         configuration or effective_options.configuration, root_path
     )
-    command_runner = effective_options.command_runner or publish_pipeline._invoke
-    # Read before the pre-flight, which builds the workspace: a typo in the
-    # digest file should cost seconds, not a verify build.
-    expected_digests = _load_expected_digests(effective_options, root_path)
+    command_runner = _command_runner(effective_options)
     planning = _Planning(
         workspace or effective_options.workspace,
         active_configuration,
         root_path,
-        locked=expected_digests is not None,
+        locked=effective_options.expect_digests is not None,
     )
     # With digests, the plan is needed to validate them, and that must happen
     # before the pre-flight, whose auxiliary builds can package crates.
-    plan = None if expected_digests is None else planning.plan()
-    verifier = _archive_verifier(
-        expected_digests, plan, effective_options, command_runner
+    plan, verifier = _digest_checks(
+        effective_options, planning, command_runner, root_path
     )
     publish_preflight._run_preflight_checks(
         root_path,

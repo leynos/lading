@@ -1606,9 +1606,10 @@ defaults are:
   Setting it turns on archive verification, `--locked --registry crates-io` for
   both cargo commands, locked workspace discovery, and the crates.io-only
   restriction (issue #419).
-- `default_registry=None` — the value of `CARGO_REGISTRY_DEFAULT`, read once by
-  `lading.cli` so the publish command stays free of ambient state. It is only
-  consulted with `expect_digests`.
+- `cargo_environment=None` — a `CargoEnvironment` (the `CARGO_REGISTRY_DEFAULT`
+  value, Cargo's home, and the registry token values to hide) resolved once by
+  `lading.cli` so the publish command stays free of ambient state. It is
+  required with `expect_digests`, which refuses to run without it.
 - `published_digest_fetcher=None` — replaces the crates.io download used to
   compare an already-published version. Tests pass a fake so nothing reaches
   the network.
@@ -1883,14 +1884,19 @@ for the target directory once per crate root, through the command runner, and
 records one `CrateOutcome` per crate for the summary and the
 `publish.archive_check` counter.
 `publish_cargo_config.effective_default_registry` follows Cargo's own order
-(`CARGO_REGISTRY_DEFAULT`, `.cargo/config.toml` from the workspace root up
-through its ancestors, then Cargo home) so `run()` can refuse an alternate
-default before anything is staged; the environment value and Cargo home arrive
-as `PublishOptions.default_registry` and `cargo_home`, resolved by `lading.cli`.
-`lading.runtime.redaction` and `redacting_runner` keep exact registry-token
-values out of relayed and captured output: `lading.cli._select_runner` collects
-them from the environment and, only when there are any, returns a runner whose
-pipes are wrapped in `RedactingReader`; `env_redaction` is the older key-based
+(`CARGO_REGISTRY_DEFAULT`, then `.cargo/config` or `.cargo/config.toml`, the
+extensionless file winning, from a start directory up through its ancestors,
+then Cargo home); `refuse_alternate_default` applies it to the workspace root
+and to each publishable crate's root before anything is staged. The inputs
+arrive as `PublishOptions.cargo_environment`, a `CargoEnvironment` resolved by
+`lading.cli`. `lading.runtime.redaction` and `redacting_runner` keep exact
+registry-token values out of relayed and captured output:
+`lading.cli._select_runner` collects them from the environment (and, with
+digests, the credentials file via `runtime.credentials`) and returns a runner
+whose pipes are wrapped in `RedactingReader`, always for a digest-checked run
+and otherwise only when a token is set. Every runner logs through
+`subprocess_runner.run_logged`, so the `Running external command` line is
+identical with or without redaction; `env_redaction` is the older key-based
 masking for logged environment overrides. `publish_registry` is the injectable
 `PublishedDigestFetcher` port; `fetch_crates_io_digest` streams the archive from
 `static.crates.io` through a size cap and bounded retries, and tests

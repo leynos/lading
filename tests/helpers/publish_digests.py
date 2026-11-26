@@ -22,6 +22,7 @@ from pathlib import Path
 
 from lading import config as config_module
 from lading.commands import publish, publish_preflight
+from lading.commands.publish_cargo_config import CargoEnvironment
 from lading.workspace import WorkspaceCrate, WorkspaceDependency, WorkspaceGraph
 
 if typ.TYPE_CHECKING:
@@ -268,6 +269,7 @@ class PublishRig:
         monkeypatch: pytest.MonkeyPatch,
         *,
         preflight: cabc.Callable[..., None] | None = None,
+        environment: CargoEnvironment | None = None,
         **overrides: object,
     ) -> str:
         """Run ``lading publish`` in process and return its summary.
@@ -292,6 +294,12 @@ class PublishRig:
             command_runner=self.cargo,
             published_digest_fetcher=self.registry,
         )
+        if "expect_digests" in overrides and "cargo_environment" not in overrides:
+            # A digest-checked run must be handed a resolved Cargo environment;
+            # ``environment`` stands in for what the command line resolves.
+            overrides["cargo_environment"] = environment or CargoEnvironment(
+                None, self.root.parent / "no-cargo-home"
+            )
         options = dc.replace(wired, **overrides)
         return publish.run(
             self.root,

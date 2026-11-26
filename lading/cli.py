@@ -89,7 +89,9 @@ from .cli_options import (
     WorkspaceRootOption as WorkspaceRootOption,
 )
 from .commands import publish_staging as publish_staging
+from .commands.publish_cargo_config import CargoEnvironment
 from .runtime import CommandRunner, subprocess_runner
+from .runtime.credentials import credential_file_tokens
 from .runtime.redacting_runner import redacting_runner
 from .runtime.redaction import registry_token_values
 from .utils import normalize_workspace_root
@@ -118,8 +120,29 @@ _CMD_MOX_TRUTHY_VALUES = frozenset({"1", "true", "yes", "on"})
 app = _shared_app if __name__ == "lading.cli" else create_app()
 
 
-def _select_runner() -> CommandRunner:
-    """Return the command runner selected for this CLI invocation."""
+def _select_runner(secrets: cabc.Sequence[str] | None = None) -> CommandRunner:
+    """Return the command runner selected for this CLI invocation.
+
+    Parameters
+    ----------
+    secrets : cabc.Sequence[str] | None
+        ``None`` hides only the registry tokens already in the process
+        environment, and only when there are any, so an ordinary run is
+        unchanged. A sequence, even an empty one, always selects the redacting
+        runner and adds its values, which is what ``--expect-digests`` needs:
+        tokens can also arrive later, through a call's environment overrides.
+
+    Returns
+    -------
+    CommandRunner
+        The cmd-mox runner under test, else a (possibly redacting) subprocess
+        runner.
+
+    Raises
+    ------
+    SystemExit
+        If the cmd-mox runner is requested but cannot be imported.
+    """
     stub_value = os.environ.get(_CMD_MOX_STUB_ENV, "")
     if stub_value.lower() in _CMD_MOX_TRUTHY_VALUES:
         try:
@@ -134,8 +157,10 @@ def _select_runner() -> CommandRunner:
         return typ.cast("CommandRunner", module.cmd_mox_runner)
     # Read here, at the composition root, so no other module touches the
     # ambient environment. Without a token the plain runner is used unchanged.
-    secrets = registry_token_values(os.environ)
-    return redacting_runner(secrets) if secrets else subprocess_runner
+    hidden = (*registry_token_values(os.environ), *(secrets or ()))
+    if secrets is None and not hidden:
+        return subprocess_runner
+    return redacting_runner(hidden)
 
 
 type WorkspaceLoader = cabc.Callable[[Path], WorkspaceGraph]
@@ -150,7 +175,7 @@ def _run_with_context(
     *,
     command_runner: CommandRunner | None = None,
     workspace_loader: WorkspaceLoader | None = None,
-    locked: bool = False,
+    environment: CargoEnvironment | None = None,
 ) -> str:
     """Execute ``runner`` with configuration and workspace data.
 
@@ -165,17 +190,19 @@ def _run_with_context(
     workspace_loader : WorkspaceLoader | None
         Workspace discovery function. ``None`` uses :func:`load_workspace`;
         bump passes the confined, read-only loader.
-    locked : bool
-        Makes the default discovery run ``cargo metadata --locked`` so a stale
-        lockfile fails rather than being updated before a command that depends
-        on a fixed lockfile (``publish --expect-digests``) begins.
+    environment : CargoEnvironment | None
+        Given only for a digest-checked publish, which both makes the default
+        discovery run ``cargo metadata --locked`` (so a stale lockfile fails
+        rather than being updated before the publish begins) and always hides
+        ``environment.secrets``.
 
     Returns
     -------
     str
         The command's rendered summary.
     """
-    active_runner = command_runner or _select_runner()
+    secrets = None if environment is None else environment.secrets
+    active_runner = command_runner or _select_runner(secrets)
     configuration_scope: AbstractContextManager[object] = nullcontext()
     try:
         configuration = config.current_configuration()
@@ -185,7 +212,7 @@ def _run_with_context(
         configuration = config.load_configuration(workspace_root)
         configuration_scope = config.use_configuration(configuration)
     loader = (
-        partial(load_workspace, locked=locked)
+        partial(load_workspace, locked=environment is not None)
         if workspace_loader is None
         else workspace_loader
     )
@@ -340,15 +367,19 @@ def publish(
     True
     """
     resolved = normalize_workspace_root(workspace_root)
+    is_checked = flags.expect_digests is not None
+    # Resolved only when digests are expected, so an ordinary publish neither
+    # reads Cargo's credentials file nor changes behaviour.
+    environment = _cargo_environment(os.environ) if is_checked else None
     return _run_with_context(
         resolved,
         lambda root, configuration, workspace, command_runner: commands.publish.run(
             root,
             configuration,
             workspace,
-            options=_publish_options(flags, command_runner),
+            options=_publish_options(flags, command_runner, environment),
         ),
-        locked=flags.expect_digests is not None,
+        environment=environment,
     )
 
 
@@ -358,8 +389,31 @@ def _cargo_home(environment: cabc.Mapping[str, str]) -> Path:
     return Path(configured) if configured else Path.home() / ".cargo"
 
 
+def _cargo_environment(environment: cabc.Mapping[str, str]) -> CargoEnvironment:
+    """Resolve the Cargo environment a digest-checked publish depends on.
+
+    Read here, at the composition root, so no other module touches the ambient
+    environment: the default registry, Cargo's home, and every registry token
+    value from the environment or the credentials file.
+
+    Returns
+    -------
+    CargoEnvironment
+        The resolved environment.
+    """
+    cargo_home = _cargo_home(environment)
+    secrets = {*registry_token_values(environment), *credential_file_tokens(cargo_home)}
+    return CargoEnvironment(
+        default_registry=environment.get(CARGO_REGISTRY_DEFAULT_ENV_VAR),
+        cargo_home=cargo_home,
+        secrets=tuple(sorted(secrets, key=lambda value: (-len(value), value))),
+    )
+
+
 def _publish_options(
-    flags: PublishFlags, command_runner: CommandRunner
+    flags: PublishFlags,
+    command_runner: CommandRunner,
+    environment: CargoEnvironment | None = None,
 ) -> commands.publish.PublishOptions:
     """Translate the CLI flag bundle into the publish command's options."""
     return commands.publish.PublishOptions(
@@ -385,8 +439,7 @@ def _publish_options(
         expect_digests=flags.expect_digests,
         # Read here, at the composition root, so the publish command stays
         # free of ambient state. Only an expectation run consults it.
-        default_registry=os.environ.get(CARGO_REGISTRY_DEFAULT_ENV_VAR),
-        cargo_home=_cargo_home(os.environ),
+        cargo_environment=environment,
         command_runner=command_runner,
     )
 

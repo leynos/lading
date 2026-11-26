@@ -85,15 +85,22 @@ with one `<64 hex digits>  <name>-<version>.crate` entry per line.
   `CARGO_REGISTRY_DEFAULT` names another registry or a publishable crate's
   `publish` key omits `crates-io`; `WorkspaceCrate.registries` carries that
   key. The effective default registry is found in Cargo's own order
-  (`CARGO_REGISTRY_DEFAULT`, `.cargo/config.toml` in the workspace root and its
-  ancestors, then Cargo home) and refused before staging when it is not
-  crates.io. Both cargo commands also receive `--registry crates-io` as defence
-  in depth.
+  (`CARGO_REGISTRY_DEFAULT`, then `.cargo/config` or `.cargo/config.toml`, the
+  extensionless file winning when both exist, from the workspace root and from
+  each publishable crate's root upward, then Cargo home) and refused before
+  staging when it is not crates.io. The caller resolves these inputs into a
+  `CargoEnvironment`, which `publish.run` requires with digests rather than
+  reading the ambient environment. Both cargo commands also receive
+  `--registry crates-io` as defence in depth.
 - **Dry-run publish.** `cargo publish --dry-run` packages again, so its
   archive is compared too and a difference is a mismatch.
-- **Credentials.** Exact values of `CARGO_REGISTRY_TOKEN` and
-  `CARGO_REGISTRIES_<NAME>_TOKEN` are replaced in subprocess output where it is
-  relayed, so logs and errors built from it stay clean.
+- **Credentials.** With digests, exact values of `CARGO_REGISTRY_TOKEN`,
+  `CARGO_REGISTRIES_<NAME>_TOKEN` (from the environment or a pre-flight
+  override) and the tokens in Cargo's credentials file are replaced in
+  subprocess output where it is read and in the logged command line, so logs
+  and errors built from it stay clean. The limit: credentials an external Cargo
+  credential provider supplies never pass through lading, so they cannot be
+  redacted, and only exact values are replaced.
 
 The verifier rides on `_PublishExecutionOptions` rather than on the pipeline
 state, so `--locked` follows from its presence and the helper signatures keep

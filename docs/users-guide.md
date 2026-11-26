@@ -854,9 +854,13 @@ it. Lading refuses `--expect-digests` early, with a clear error and before it
 stages anything, when the effective default registry is not `crates-io`. It
 follows Cargo's own order to find it: `CARGO_REGISTRY_DEFAULT`, then
 `[registry] default` in `.cargo/config.toml` (or the legacy `.cargo/config`) in
-the workspace root and each ancestor directory, nearest first, then
-`config.toml` in `$CARGO_HOME` (default `~/.cargo`). It also refuses when a
-publishable crate's `publish` key lists registries without `crates-io`. A
+the directory Cargo runs in and each ancestor, nearest first, then
+`config.toml` in `$CARGO_HOME` (default `~/.cargo`). Publication runs from each
+crate's own directory, so the search starts from the workspace root and from
+every publishable crate's root, and a member's own `.cargo/config.toml` counts.
+Where a directory holds both `.cargo/config` and `.cargo/config.toml`, Cargo
+reads only the extensionless `config`, and so does lading. It also refuses when
+a publishable crate's `publish` key lists registries without `crates-io`. A
 configuration file that exists but cannot be read is an error, not a guess. As
 defence in depth, lading also passes `--registry crates-io` to both
 `cargo package` and `cargo publish`, so nothing it failed to see can send the
@@ -872,13 +876,24 @@ does not promise it: if they differ, the run stops at the first crate with the
 mismatch error rather than uploading either. `--keep-staging` retains lading's
 own archive under the staged workspace's target directory for comparison.
 
-Lading hides the exact values of `CARGO_REGISTRY_TOKEN` and of any
-`CARGO_REGISTRIES_<NAME>_TOKEN` it was started with from everything it relays
-or captures from a subprocess. If the pre-flight builds, a build script, or
-Cargo print one, it appears as `<redacted>` on the console, in the logs, and in
-error messages. Only those exact values are replaced, not patterns, so a
+With `--expect-digests`, lading always hides the exact values of
+`CARGO_REGISTRY_TOKEN` and `CARGO_REGISTRIES_<NAME>_TOKEN` from everything it
+relays or captures from a subprocess, including the command line it logs. The
+values come from lading's environment, from the same variables in a pre-flight
+`env_overrides` entry, and from the `registry.token` and
+`registries.<name>.token` keys of `$CARGO_HOME/credentials.toml` (or the legacy
+`credentials`). If the pre-flight builds, a build script, or Cargo print one,
+it appears as `<redacted>` on the console, in the logs, and in error messages.
+An unreadable credentials file adds no values and logs a warning that does not
+quote it.
+
+The limits are plain. Only those exact values are replaced, not patterns, so a
 credential that reaches the output in a changed form, such as encoded, is not
-caught.
+caught. Credentials that an external Cargo credential provider supplies never
+pass through lading, so lading cannot know them and cannot redact them. A
+programmatic caller of `publish.run` must pass
+`PublishOptions.cargo_environment` (lading refuses to run with digests without
+it), and its default runner then hides the same values.
 
 A workflow that records digests in one job and publishes in another:
 

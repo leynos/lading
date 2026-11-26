@@ -6,6 +6,7 @@ import msgspec
 import pytest
 
 from lading.commands import publish_digests
+from lading.commands.publish_cargo_config import CargoEnvironment
 from lading.commands.publish_errors import ArchiveMismatchError, ExpectedDigestsError
 from lading.commands.publish_plan import plan_publication
 from tests.helpers.publish_digests import (
@@ -93,7 +94,7 @@ def test_another_default_registry_is_refused_before_anything_runs(
         digest_rig.run(
             monkeypatch,
             expect_digests=digest_rig.digests_file(),
-            default_registry="internal",
+            environment=CargoEnvironment("internal", None),
         )
 
     assert digest_rig.cargo.calls == [], (
@@ -108,15 +109,8 @@ def test_crates_io_named_explicitly_is_accepted(
     digest_rig.run(
         monkeypatch,
         expect_digests=digest_rig.digests_file(),
-        default_registry="crates-io",
+        environment=CargoEnvironment("crates-io", None),
     )
-
-
-def test_default_registry_is_ignored_without_digests(
-    digest_rig: PublishRig, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Behaviour without the option is unchanged, whatever the registry."""
-    digest_rig.run(monkeypatch, default_registry="internal")
 
 
 def _workspace_limiting_beta_to(

@@ -313,42 +313,6 @@ def validate_against_plan(expected: ExpectedDigests, plan: PublishPlan) -> None:
 _CRATES_IO = "crates-io"
 
 
-def require_crates_io_default(default_registry: str | None) -> None:
-    """Refuse a default registry other than crates.io.
-
-    ``--expect-digests`` compares published archives by downloading them from
-    crates.io, so a run that would publish elsewhere cannot be checked.
-
-    Parameters
-    ----------
-    default_registry : str | None
-        The value of ``CARGO_REGISTRY_DEFAULT``, or ``None`` when unset.
-
-    Raises
-    ------
-    ExpectedDigestsError
-        If a registry other than crates.io is the default.
-
-    Examples
-    --------
-    >>> require_crates_io_default(None)
-    >>> require_crates_io_default("crates-io")
-    >>> try:
-    ...     require_crates_io_default("internal")
-    ... except ExpectedDigestsError as exc:
-    ...     print("'internal'" in str(exc))
-    True
-    """
-    if default_registry in {None, "", _CRATES_IO}:
-        return
-    message = (
-        f"--expect-digests supports crates.io only, but the default registry is "
-        f"{default_registry!r}. Unset CARGO_REGISTRY_DEFAULT or drop "
-        "--expect-digests"
-    )
-    raise ExpectedDigestsError(message)
-
-
 def require_crates_io_crates(plan: PublishPlan) -> None:
     """Refuse a plan holding a crate whose manifest cannot publish to crates.io.
 

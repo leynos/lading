@@ -17,11 +17,7 @@ import typing as typ
 from pathlib import Path
 
 from lading.runtime.redaction import registry_token_values
-from lading.runtime.subprocess_runner import (
-    SubprocessContext,
-    invoke_via_subprocess,
-    split_command,
-)
+from lading.runtime.subprocess_runner import SubprocessContext, run_logged
 
 if typ.TYPE_CHECKING:
     from lading.runtime.runner import CommandRunner
@@ -51,11 +47,10 @@ def redacting_runner(secrets: cabc.Sequence[str]) -> CommandRunner:
         echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
         """Execute ``command`` through the subprocess adapter."""
-        program, args = split_command(command)
         hidden = (*secrets, *registry_token_values(env or {}))
         context = SubprocessContext(
             cwd=cwd, env=env, echo_stdout=echo_stdout, secrets=hidden
         )
-        return invoke_via_subprocess(program, args, context)
+        return run_logged(command, context)
 
     return run

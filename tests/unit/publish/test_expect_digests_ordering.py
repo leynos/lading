@@ -12,6 +12,7 @@ import pytest
 
 from lading import config as config_module
 from lading.commands import publish, publish_preflight
+from lading.commands.publish_cargo_config import CargoEnvironment
 from lading.commands.publish_errors import (
     ArchiveMismatchError,
     ExpectedDigestsError,
@@ -253,6 +254,7 @@ def test_unfetched_workspace_is_discovered_locked_when_digests_are_expected(
                 build_directory=digest_rig.build_directory,
                 command_runner=digest_rig.cargo,
                 published_digest_fetcher=digest_rig.registry,
+                cargo_environment=CargoEnvironment(None, None),
             ),
             **option_fields,
         )

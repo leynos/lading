@@ -5,7 +5,11 @@ from pathlib import Path
 
 import pytest
 
-from lading.commands.publish_cargo_config import effective_default_registry
+from lading.commands import publish
+from lading.commands.publish_cargo_config import (
+    CargoEnvironment,
+    effective_default_registry,
+)
 from lading.commands.publish_errors import ExpectedDigestsError
 
 if typ.TYPE_CHECKING:
@@ -114,7 +118,7 @@ def test_configured_alternate_default_is_refused_before_anything_runs(
             monkeypatch,
             live=True,
             expect_digests=digest_rig.digests_file(),
-            cargo_home=cargo_home,
+            environment=CargoEnvironment(None, cargo_home),
         )
 
     assert not digest_rig.cargo.calls, "nothing may be packaged or published"
@@ -131,9 +135,61 @@ def test_configured_crates_io_default_proceeds(
         monkeypatch,
         live=True,
         expect_digests=digest_rig.digests_file(),
-        cargo_home=tmp_path / "absent-cargo-home",
+        environment=CargoEnvironment(None, tmp_path / "absent-cargo-home"),
     )
 
     assert digest_rig.cargo.crates_run("publish") == ["alpha", "beta", "gamma"], (
         "the run must proceed"
     )
+
+
+def test_member_level_alternate_default_is_refused(
+    digest_rig: PublishRig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A member crate's own configuration can set a default, so it is checked."""
+    _write_config(digest_rig.root / "beta", _default("internal"))
+
+    with pytest.raises(ExpectedDigestsError, match=r"crate beta.*'internal'"):
+        digest_rig.run(monkeypatch, live=True, expect_digests=digest_rig.digests_file())
+
+    assert not digest_rig.cargo.calls, "nothing may be packaged or published"
+    assert not digest_rig.build_directory.exists(), "nothing may be staged"
+
+
+def test_extensionless_config_wins_when_both_files_exist(tmp_path: Path) -> None:
+    """Cargo reads only ``config`` when ``config.toml`` sits beside it."""
+    _write_config(tmp_path, _default("internal"), name="config")
+    _write_config(tmp_path, _default("crates-io"), name="config.toml")
+
+    assert effective_default_registry(tmp_path, cargo_home=None, env_default=None) == (
+        "internal"
+    ), "the extensionless file must be the one that is read"
+
+
+def test_toml_config_is_ignored_when_the_extensionless_file_exists(
+    tmp_path: Path,
+) -> None:
+    """An alternate default in the shadowed ``config.toml`` does not apply."""
+    _write_config(tmp_path, "[build]\njobs = 1\n", name="config")
+    _write_config(tmp_path, _default("internal"), name="config.toml")
+
+    assert (
+        effective_default_registry(tmp_path, cargo_home=None, env_default=None) is None
+    ), "Cargo would not read the shadowed file, so neither does lading"
+
+
+def test_digests_without_a_resolved_cargo_environment_are_refused(
+    digest_rig: PublishRig,
+) -> None:
+    """A programmatic caller must say what Cargo's environment is."""
+    options = publish.PublishOptions(
+        build_directory=digest_rig.build_directory,
+        command_runner=digest_rig.cargo,
+        expect_digests=digest_rig.digests_file(),
+    )
+
+    with pytest.raises(ExpectedDigestsError, match="cargo_environment"):
+        publish.run(digest_rig.root, None, digest_rig.workspace(), options=options)
+
+    assert not digest_rig.cargo.calls, "nothing may run on a guess"
+    assert not digest_rig.build_directory.exists(), "nothing may be staged"

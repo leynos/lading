@@ -22,6 +22,7 @@ from pathlib import Path
 
 from lading.commands.publish_errors import PublishPreflightError
 from lading.runtime import CommandSpawnError
+from lading.runtime.redacting_runner import redacting_runner
 from lading.runtime.subprocess_runner import (
     subprocess_runner as _default_subprocess_runner,
 )
@@ -42,6 +43,27 @@ def _publish_error(message: str) -> PublishPreflightError:
     return PublishPreflightError(message)
 
 
+def _map_errors(runner: CommandRunner) -> CommandRunner:
+    """Wrap ``runner`` so argument and spawn failures become publish errors."""
+
+    def invoke(
+        command: cabc.Sequence[str],
+        *,
+        cwd: Path | None = None,
+        env: cabc.Mapping[str, str] | None = None,
+        echo_stdout: bool = True,
+    ) -> tuple[int, str, str]:
+        """Execute ``command`` and return the exit status and decoded streams."""
+        try:
+            return runner(command, cwd=cwd, env=env, echo_stdout=echo_stdout)
+        except ValueError as exc:
+            raise _publish_error(str(exc)) from exc
+        except CommandSpawnError as exc:
+            raise _publish_error(str(exc)) from exc
+
+    return invoke
+
+
 def _invoke(
     command: cabc.Sequence[str],
     *,
@@ -50,14 +72,22 @@ def _invoke(
     echo_stdout: bool = True,
 ) -> tuple[int, str, str]:
     """Execute ``command`` and return the exit status and decoded streams."""
-    try:
-        return _default_subprocess_runner(
-            command, cwd=cwd, env=env, echo_stdout=echo_stdout
-        )
-    except ValueError as exc:
-        raise _publish_error(str(exc)) from exc
-    except CommandSpawnError as exc:
-        raise _publish_error(str(exc)) from exc
+    return _map_errors(_default_subprocess_runner)(
+        command, cwd=cwd, env=env, echo_stdout=echo_stdout
+    )
+
+
+def redacting_invoke(secrets: cabc.Sequence[str]) -> CommandRunner:
+    """Return the default publish runner with ``secrets`` hidden from its output.
+
+    Returns
+    -------
+    CommandRunner
+        Behaves like :func:`_invoke`, with the same error mapping, but the
+        exact ``secrets`` (and registry tokens in a call's ``env``) never
+        appear in what it relays or captures.
+    """
+    return _map_errors(redacting_runner(secrets))
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -128,4 +158,5 @@ __all__ = [
     "_TimedCargoResult",
     "_invoke",
     "_run_timed_cargo",
+    "redacting_invoke",
 ]

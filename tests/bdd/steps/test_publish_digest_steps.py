@@ -15,6 +15,7 @@ import typing as typ
 import pytest
 from pytest_bdd import given, parsers, then, when
 
+from lading.commands.publish_cargo_config import CargoEnvironment
 from lading.commands.publish_errors import PublishPreflightError
 from tests.helpers.publish_digests import (
     CRATE_NAMES,
@@ -131,7 +132,7 @@ def _run(
     overrides: dict[str, typ.Any] = {"live": live}
     if expecting:
         overrides["expect_digests"] = scenario.rig.digests_file(scenario.recorded)
-        overrides["default_registry"] = scenario.default_registry
+        overrides["environment"] = CargoEnvironment(scenario.default_registry, None)
     if not live:
         overrides["allow_unpublished_workspace_deps"] = True
     try:

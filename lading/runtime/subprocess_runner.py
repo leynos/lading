@@ -14,7 +14,7 @@ from lading.exceptions import LadingError
 from lading.utils.process import c_locale_env, log_command_invocation
 
 from .env_redaction import redact_environment
-from .redaction import guard_stream
+from .redaction import guard_stream, redact_text
 from .stream_relay import TextSink as _TextSink
 from .stream_relay import format_thread_name as _format_thread_name
 from .stream_relay import write_to_relay_sink as _write_to_relay_sink
@@ -87,9 +87,34 @@ def subprocess_runner(
     >>> subprocess_runner(["echo", "hello"])  # doctest: +SKIP
     (0, 'hello\n', '')
     """
-    log_command_invocation(_LOGGER, command, cwd)
-    program, args = split_command(command)
     context = SubprocessContext(cwd=cwd, env=env, echo_stdout=echo_stdout)
+    return run_logged(command, context)
+
+
+def run_logged(
+    command: cabc.Sequence[str], context: SubprocessContext
+) -> tuple[int, str, str]:
+    """Log ``command`` as an external invocation, then run it under ``context``.
+
+    This is the one place the ``Running external command`` line is emitted, so
+    every runner built on it (including the redacting one) logs identically.
+
+    Returns
+    -------
+    tuple[int, str, str]
+        Exit code, captured stdout, and captured stderr.
+
+    Raises
+    ------
+    ValueError
+        If ``command`` is empty.
+    CommandSpawnError
+        If the program cannot be spawned.
+    """
+    # An argument can carry a credential too, so the logged line is scrubbed.
+    shown = [redact_text(argument, context.secrets) for argument in command]
+    log_command_invocation(_LOGGER, shown, context.cwd)
+    program, args = split_command(command)
     return invoke_via_subprocess(program, args, context)
 
 

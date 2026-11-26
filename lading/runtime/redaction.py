@@ -55,6 +55,24 @@ def registry_token_values(environ: cabc.Mapping[str, object]) -> tuple[str, ...]
     return tuple(sorted(values, key=lambda value: (-len(value), value)))
 
 
+def redact_text(text: str, secrets: cabc.Sequence[str]) -> str:
+    """Return ``text`` with every exact secret value replaced.
+
+    Returns
+    -------
+    str
+        ``text`` with each of ``secrets`` replaced by a placeholder.
+
+    Examples
+    --------
+    >>> redact_text("--token hunter2", ("hunter2",))
+    '--token <redacted>'
+    """
+    for secret in secrets:
+        text = text.replace(secret, REDACTED)
+    return text
+
+
 class RedactingReader:
     """A binary reader that replaces exact secret values as it reads.
 

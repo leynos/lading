@@ -10,6 +10,7 @@ from lading import cli
 from lading.commands import publish as publish_command
 
 if typ.TYPE_CHECKING:
+    from lading.commands.publish_cargo_config import CargoEnvironment
     from lading.workspace import WorkspaceCrate, WorkspaceGraph
 
 
@@ -49,6 +50,15 @@ def _publish(tmp_path: Path, *extra_args: str) -> int:
     return cli.main(["--workspace-root", str(tmp_path), "publish", *extra_args])
 
 
+def _environment(
+    captured: dict[str, publish_command.PublishOptions],
+) -> CargoEnvironment:
+    """Return the Cargo environment the CLI resolved, which must be present."""
+    resolved = captured["options"].cargo_environment
+    assert resolved is not None, "digests require a resolved Cargo environment"
+    return resolved
+
+
 def test_expect_digests_path_reaches_the_publish_options(
     tmp_path: Path, captured_options: dict[str, publish_command.PublishOptions]
 ) -> None:
@@ -85,7 +95,7 @@ def test_default_registry_is_read_from_the_cargo_variable(
         "publish must succeed with the stubbed run"
     )
 
-    assert captured_options["options"].default_registry == "internal", (
+    assert _environment(captured_options).default_registry == "internal", (
         "the default registry must come from the environment"
     )
 
@@ -141,7 +151,9 @@ def test_discovery_is_locked_only_when_digests_are_expected(
     """A stale lockfile stops discovery instead of being updated first."""
     extra_args, is_locked = case
     commands: list[tuple[str, ...]] = []
-    monkeypatch.setattr(cli, "_select_runner", lambda: _stale_lockfile_runner(commands))
+    monkeypatch.setattr(
+        cli, "_select_runner", lambda *_secrets: _stale_lockfile_runner(commands)
+    )
 
     assert _publish(tmp_path, *extra_args) == 1, "discovery must fail in both cases"
 
@@ -170,7 +182,7 @@ def test_cargo_home_is_read_from_the_environment(
         "publish must succeed with the stubbed run"
     )
 
-    assert captured_options["options"].cargo_home == tmp_path / "cargo-home", (
+    assert _environment(captured_options).cargo_home == tmp_path / "cargo-home", (
         "CARGO_HOME must name Cargo's home"
     )
 
@@ -188,7 +200,7 @@ def test_cargo_home_defaults_to_the_dot_cargo_directory(
         "publish must succeed with the stubbed run"
     )
 
-    assert captured_options["options"].cargo_home == tmp_path / "home" / ".cargo", (
+    assert _environment(captured_options).cargo_home == tmp_path / "home" / ".cargo", (
         "the default Cargo home is ~/.cargo"
     )
 
