@@ -294,10 +294,16 @@ def _parse_config_records[Record](
 
 
 def _validate_rewrite_template(template: str, field_name: str) -> None:
-    """Allow only crate/version placeholders and require a version field."""
+    """Allow only crate/version placeholders and require one version field."""
     fields = _rewrite_template_fields(template, field_name)
-    if "version" not in fields:
+    version_fields = fields.count("version")
+    if version_fields == 0:
         message = f"{field_name} must contain {{version}}."
+        raise ConfigurationError(message)
+    if version_fields > 1:
+        # A protected SemVer occurrence would suppress a sibling version field,
+        # leaving part of the rendering at its old value. Reject the ambiguity.
+        message = f"{field_name} must contain exactly one {{version}} field."
         raise ConfigurationError(message)
 
 

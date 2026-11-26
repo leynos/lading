@@ -300,7 +300,7 @@ def _is_blank_container_line(line: str) -> bool:
     """Return whether a physical line is blank after Markdown container marks."""
     if not line.strip(" \t\r"):
         return True
-    return re.fullmatch(r"(?: {0,3}>[ \t]?)+[ \t\r]*", line) is not None
+    return re.fullmatch(r"(?:[ \t]*>[ \t]?)+[ \t\r]*", line) is not None
 
 
 def _require_language(info: str, fence_start: int, document_name: str) -> str:

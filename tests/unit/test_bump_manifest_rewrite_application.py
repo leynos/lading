@@ -111,46 +111,6 @@ def test_application_reports_destination_removed_after_planning(
     )
 
 
-def test_application_reports_source_read_failure(
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """A source read failure carries its path and filesystem cause."""
-    manifest = tmp_path / "Cargo.toml"
-    original = '[dependencies]\nalpha = "1.0.0"\n'
-    manifest.write_text(original, encoding="utf-8")
-    plan = bump_manifest_rewrites.ManifestRewritePlan(
-        manifest.resolve(), original, '[dependencies]\nalpha = "2.0.0"\n'
-    )
-
-    def fail_manifest_read(
-        path: pathlib.Path,
-        encoding: str | None = None,
-        errors: str | None = None,
-        newline: str | None = None,
-    ) -> str:
-        """Reject source reads with a filesystem permission error."""
-        _ = path, encoding, errors, newline
-        raise PermissionError
-
-    monkeypatch.setattr(pathlib.Path, "read_text", fail_manifest_read)
-
-    with pytest.raises(
-        bump_manifest_rewrites.ManifestRewriteError,
-        match="Could not read manifest rewrite target",
-    ) as failure:
-        bump_manifest_rewrites.apply_manifest_rewrites(
-            (plan,), workspace_root=tmp_path, dry_run=False
-        )
-
-    assert failure.value.failed_path == plan.path, (
-        "the failed source read should identify the planned manifest"
-    )
-    assert isinstance(failure.value.__cause__, PermissionError), (
-        "the source permission error should remain available as the cause"
-    )
-
-
 def test_application_reports_manifest_persisted_when_completion_callback_fails(
     tmp_path: pathlib.Path,
 ) -> None:

@@ -628,6 +628,14 @@ reason = "Keep the manifest resolver and PEP 723 formatter presence probes separ
 [[tool.duplication_gate.allow]]
 members = ["lading/commands/bump_manifest_rewrite_application.py", "lading/commands/bump_pipeline_manifest_restore.py"]
 reason = "These separate application and recovery contracts each import the atomic writer and its options; extracting an import-only helper would add indirection and couple distinct ownership boundaries."
+[[tool.duplication_gate.allow]]
+members = [
+    "lading/commands/bump_pipeline_pending_reconciliation.py",
+    "lading/commands/bump_pipeline_manifest_sources.py",
+    "lading/commands/publish_plan.py",
+    "lading/testing/toml_utils.py",
+]
+reason = "Type-checking-only import blocks share the syntax forced by deferred annotations. Each block names its own module's collaborators, and extracting or merging them would couple unrelated module boundaries. NOTE: this family-wide exception suppresses future executable duplication in these files, so review them manually."
 [tool.df12_skylos]
 roots = ["lading"]
 python = "3.14"

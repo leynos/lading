@@ -287,6 +287,12 @@ def test_bump_config_rejects_invalid_manifest_rewrites(
             id="missing_version",
         ),
         pytest.param(
+            "{crate}-{version}-{version}",
+            "bump.manifest_rewrites[0].string_values[0].template must contain "
+            "exactly one {version} field.",
+            id="repeated_version",
+        ),
+        pytest.param(
             "{crate}-{version:>8}",
             "bump.manifest_rewrites[0].string_values[0].template does not support "
             "format specs or conversions.",

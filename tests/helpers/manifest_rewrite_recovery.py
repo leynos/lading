@@ -1,9 +1,7 @@
 """Shared setup for configured manifest rewrite recovery tests."""
 
-import collections.abc as cabc
 import dataclasses as dc
 import typing as typ
-from pathlib import Path
 from unittest import mock
 
 import pytest
@@ -12,6 +10,8 @@ from lading import config as config_module
 from lading.commands import (
     bump,
     bump_manifest_rewrite_application,
+    bump_manifest_rewrites,
+    bump_pipeline_manifest_rewrites,
     bump_toml_files,
 )
 from lading.commands.bump_manifest_rewrites import ManifestRewriteError
@@ -19,7 +19,13 @@ from lading.config import ManifestRewriteConfig, StringValueRewriteConfig
 from tests.helpers.workspace_builders import _make_workspace
 
 if typ.TYPE_CHECKING:
-    from lading.commands.bump_toml_write_options import AtomicWriteOptions
+    import collections.abc as cabc
+    from pathlib import Path
+
+    from lading.commands.bump_toml_write_options import (
+        AtomicWriteOptions,
+        AtomicWriteStatus,
+    )
     from lading.workspace import WorkspaceGraph
 
 
@@ -148,3 +154,23 @@ def _run_partial_write_failure(
             ),
         )
     return failure.value
+
+
+def _pending_recovery_stage(
+    manifest_path: Path,
+    original_text: str,
+    pending_text: str,
+    status: AtomicWriteStatus,
+) -> bump_pipeline_manifest_rewrites._ManifestRewriteStage:
+    """Build the stage entry left by a replacement that preceded its callback."""
+    plan = bump_manifest_rewrites.ManifestRewritePlan(
+        manifest_path, original_text, pending_text
+    )
+    return bump_pipeline_manifest_rewrites._ManifestRewriteStage(
+        workspace_root=manifest_path.parent,
+        plans=(plan,),
+        rollback_baselines={manifest_path: original_text},
+        pending_manifest_contents={manifest_path: pending_text},
+        pending_write_statuses={manifest_path: status},
+        written_manifest_destinations={manifest_path: manifest_path},
+    )

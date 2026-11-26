@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from lading.commands import bump, bump_pipeline
+from lading.commands import bump, bump_pipeline, bump_toml_files
 from lading.commands.bump_manifest_rewrites import ManifestRewriteError
 from lading.exceptions import LadingError
 from tests.helpers.manifest_rewrite_recovery import _make_partial_write_failure_case
@@ -23,6 +23,8 @@ def test_member_destination_is_pinned_to_workspace_discovery(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A member symlink retargeted after discovery is rejected before writing."""
+    if not bump_toml_files._supports_bounded_directory_operations():
+        pytest.skip("the bounded atomic writer is unavailable")
     case = _make_partial_write_failure_case(tmp_path)
     alpha_manifest = tmp_path / "crates/alpha/Cargo.toml"
     redirected_manifest = tmp_path / "crates/redirected/Cargo.toml"
@@ -62,6 +64,8 @@ def test_root_manifest_entry_is_rechecked_before_fixture_application(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A root manifest alias cannot redirect cached fixture version plans."""
+    if not bump_toml_files._supports_bounded_directory_operations():
+        pytest.skip("the bounded atomic writer is unavailable")
     case = _make_partial_write_failure_case(tmp_path)
     root_entry = case.root / "Cargo.toml"
     canonical_manifest = case.root / "workspace-original.toml"

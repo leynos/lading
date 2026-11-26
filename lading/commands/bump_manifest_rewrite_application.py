@@ -9,6 +9,7 @@ from lading.commands.bump_manifest_rewrite_model import (
     ManifestRewritePlan,
     ManifestRewriteWriteError,
 )
+from lading.commands.bump_toml_bounded_filesystem import _read_bounded_regular_text
 from lading.commands.bump_toml_files import write_atomic_text
 from lading.commands.bump_toml_write_options import (
     AtomicWriteOptions,
@@ -87,7 +88,7 @@ def _apply_manifest_rewrite(
 ) -> None:
     """Check one plan's source before atomically persisting its replacement."""
     _validate_plan_destination(plan, progress)
-    current_text = _read_current_text(plan, progress)
+    current_text = _read_current_text(plan, workspace_root, progress)
     if current_text != plan.original_text:
         message = f"Manifest rewrite target changed after planning: {plan.path}"
         raise ManifestRewriteError(
@@ -132,11 +133,12 @@ def _validate_plan_destination(
 
 def _read_current_text(
     plan: ManifestRewritePlan,
+    workspace_root: Path,
     progress: _ManifestRewriteProgress,
 ) -> str:
     """Read a plan source or raise a progress-aware rewrite error."""
     try:
-        return plan.path.read_text(encoding="utf-8", newline="")
+        current_text, _identity = _read_bounded_regular_text(plan.path, workspace_root)
     except (OSError, UnicodeError) as exc:
         message = (
             f"Could not read manifest rewrite target {plan.path} before writing: {exc}"
@@ -147,6 +149,7 @@ def _read_current_text(
             planned_writes=progress.planned,
             failed_path=plan.path,
         ) from exc
+    return current_text
 
 
 def _write_manifest_plan(

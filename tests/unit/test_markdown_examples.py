@@ -143,6 +143,46 @@ def test_loader_extracts_marked_fences_inside_blockquotes(tmp_path: Path) -> Non
     ], "a blockquote fence must retain its marker and source"
 
 
+def test_loader_accepts_list_indented_blank_container_lines(tmp_path: Path) -> None:
+    """A deeply indented blank container line separates marker and fence."""
+    document = _write_document(
+        tmp_path,
+        """- Example:
+
+  > <!-- tested-example: nested-quote -->
+    >
+  > ```python
+  > print('nested')
+  > ```
+""",
+    )
+
+    (example,) = load_markdown_examples(document)
+
+    assert (example.identifier, example.source) == (
+        "nested-quote",
+        "print('nested')",
+    ), "an indented blank container line must not hide the marker"
+
+
+def test_loader_rejects_text_after_a_blank_container_line(tmp_path: Path) -> None:
+    """A container line with trailing text is not treated as blank."""
+    document = _write_document(
+        tmp_path,
+        """- Example:
+
+  > <!-- tested-example: nested-quote -->
+    > unexpected text
+  > ```python
+  > print('nested')
+  > ```
+""",
+    )
+
+    with pytest.raises(MarkdownExampleError, match="fenced example is unmarked"):
+        load_markdown_examples(document)
+
+
 def test_loader_rejects_marker_from_a_different_blockquote(tmp_path: Path) -> None:
     """A separate blockquote cannot reuse an earlier quote's marker."""
     document = _write_document(

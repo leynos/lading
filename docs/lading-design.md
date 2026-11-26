@@ -455,17 +455,22 @@ lading bump <new_version> [--dry-run]
 - `bump_pipeline_manifest_rewrites` owns planning and applying the configured
   rewrite stage. It restores manifests changed by those stages if a configured
   rewrite fails, but only while their content still matches the text written by
-  this run. Pending writes are reconciled after ordinary failures as well as
-  interrupts. Restoration writes use the same workspace-root boundary as
-  forward writes, using the destination resolved before the member write so a
-  changed symlink cannot redirect rollback outside the workspace. It reports
-  and preserves concurrent edits. `bump_pipeline` owns overall timing, metrics,
-  and stage ordering; it plans every selected manifest before the workspace
-  manifest stage writes, then applies plans after member manifests and before
-  documentation, README transposition, and lockfile work. It supplies
-  `_ManifestUpdateContext` with the workspace boundary; member updates retain
-  their resolved write destination for bounded rollback and verify the alias
-  still resolves to that destination before writing.
+  this run. `bump_pipeline_manifest_recovery` owns callback registration,
+  member-manifest revalidation, and rollback orchestration.
+  `bump_pipeline_pending_reconciliation` decides whether a prepared replacement
+  reached disk before its completion callback and therefore belongs to this
+  run. Application reads planned sources through the bounded, non-blocking
+  reader, so a FIFO destination cannot stall the workspace lock. Restoration
+  writes use the same workspace-root boundary as forward writes, using the
+  destination resolved before the member write so a changed symlink cannot
+  redirect rollback outside the workspace. It reports and preserves concurrent
+  edits. `bump_pipeline` owns overall timing, metrics, and stage ordering; it
+  plans every selected manifest before the workspace manifest stage writes,
+  then applies plans after member manifests and before documentation, README
+  transposition, and lockfile work. It supplies `_ManifestUpdateContext` with
+  the workspace boundary; member updates retain their resolved write
+  destination for bounded rollback and verify the alias still resolves to that
+  destination before writing.
 - `bump_workspace_write_lock.workspace_write_lock` provides a per-workspace
   advisory lock for bounded Lading replacements and complete live bump runs. A
   live run holds it from rewrite planning until the last pipeline stage,

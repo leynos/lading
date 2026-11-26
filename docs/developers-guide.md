@@ -1208,36 +1208,41 @@ former identity. It performs no writes.
 pipeline stage. It plans the rewrites before the first write, then applies them
 after member manifests. If application fails, it restores a workspace or member
 manifest only while its current filesystem identity and contents still match
-the latest output written by this run. Pending writes are reconciled after
+the latest output written by this run. `bump_pipeline_manifest_recovery` owns
+callback registration, member-manifest revalidation, and rollback orchestration.
+`bump_pipeline_pending_reconciliation` reconciles pending writes after
 ordinary failures as well as interrupts, so a replacement that completed before
-its callback can be restored. The atomic writer records the temporary file
-identity at replacement in `AtomicWriteStatus`, so matching text without
-replacement evidence is never claimed as this process's write. A changed file
-is preserved and reported. Inspect and repair every reported recovery path
-before retrying. Recovery uses `bump_toml_files` for conditional atomic
-restoration writes. Before applying fixture plans, the pipeline repeats its
-post-bump version validation while holding the workspace lock through every
-configured non-member rewrite. A live bump holds that lock from rewrite
-planning until the last pipeline stage finishes, including rollback after a
-failed stage; dry runs write nothing and take no lock. A concurrent Lading bump
-or write therefore fails before changing a manifest instead of interleaving
-with this run. `bump_workspace_write_lock` coordinates workspace-bounded writes
-from Lading processes running as the same operating-system user, using a
-per-workspace advisory lock in a stable per-user state directory derived from
-the account's passwd entry rather than `HOME`. A POSIX host must provide a
-passwd entry for that account. Processes running as another user, editors and
-tools that ignore the lock are outside its guarantee. Nested atomic writes on
-the same thread reuse the outer lock, and bounded writers verify that the
-opened workspace directory still matches the identity used to select the lock.
-The lock identity is independent of process-specific `HOME` and
-`XDG_CACHE_HOME` values. External tools may ignore that lock and race the final
-comparison. Workspace-bounded writes require directory-relative no-follow
-operations. Non-dry-run `lading bump` checks this capability at command entry
-and fails with `LadingError` before loading Cargo workspace metadata when it is
-unavailable. Windows currently lacks the required operations; dry runs remain
-available. The atomic writer repeats the check before replacement and never
-uses an unpinned path fallback. The module derives pre-bump crate versions from
-the snapshots, so string matching does not rely on a stale `WorkspaceGraph`.
+its callback can be restored without claiming an edit this run did not make.
+The atomic writer records the temporary file identity at replacement in
+`AtomicWriteStatus`, so matching text without replacement evidence is never
+claimed as this process's write. Application reads each planned source through
+the bounded, non-blocking reader, so a destination replaced by a FIFO cannot
+block the workspace lock before the writer rejects it. A changed file is
+preserved and reported. Inspect and repair every reported recovery path before
+retrying. Recovery uses `bump_toml_files` for conditional atomic restoration
+writes. Before applying fixture plans, the pipeline repeats its post-bump
+version validation while holding the workspace lock through every configured
+non-member rewrite. A live bump holds that lock from rewrite planning until the
+last pipeline stage finishes, including rollback after a failed stage; dry runs
+write nothing and take no lock. A concurrent Lading bump or write therefore
+fails before changing a manifest instead of interleaving with this run.
+`bump_workspace_write_lock` coordinates workspace-bounded writes from Lading
+processes running as the same operating-system user, using a per-workspace
+advisory lock in a stable per-user state directory derived from the account's
+passwd entry rather than `HOME`. A POSIX host must provide a passwd entry for
+that account. Processes running as another user, editors and tools that ignore
+the lock are outside its guarantee. Nested atomic writes on the same thread
+reuse the outer lock, and bounded writers verify that the opened workspace
+directory still matches the identity used to select the lock. The lock identity
+is independent of process-specific `HOME` and `XDG_CACHE_HOME` values. External
+tools may ignore that lock and race the final comparison. Workspace-bounded
+writes require directory-relative no-follow operations. Non-dry-run
+`lading bump` checks this capability at command entry and fails with
+`LadingError` before loading Cargo workspace metadata when it is unavailable.
+Windows currently lacks the required operations; dry runs remain available. The
+atomic writer repeats the check before replacement and never uses an unpinned
+path fallback. The module derives pre-bump crate versions from the snapshots,
+so string matching does not rely on a stale `WorkspaceGraph`.
 `lading.commands.bump_pipeline` owns the overall pipeline order. Rewrite
 duration sums the planning and application intervals, including recovery on
 failure and excluding intervening stages. `BumpOptions.clock` supplies the
@@ -2114,6 +2119,10 @@ responsibilities live in dedicated modules, imported by their original homes:
   manifests, documentation, readmes, and lockfiles (imported by `bump`).
 - `lading.commands.bump_pipeline_manifest_rewrites` — planning, application,
   and workspace-manifest recovery for configured non-member rewrites.
+- `lading.commands.bump_pipeline_manifest_recovery` — callback registration,
+  member-manifest revalidation, and rollback orchestration for those rewrites.
+- `lading.commands.bump_pipeline_pending_reconciliation` — decides whether a
+  prepared replacement reached disk before its completion callback.
 - `lading.commands.publish_pipeline` — per-crate package and publish execution,
   result handling, and live/dry-run dispatch (imported by `publish`).
 - `lading.commands.publish_staging` — workspace copy preparation, cleanup, and
