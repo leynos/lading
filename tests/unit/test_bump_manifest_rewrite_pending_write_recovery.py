@@ -17,6 +17,7 @@ from lading.commands import (
 )
 from lading.commands.bump_manifest_rewrites import ManifestRewriteWriteError
 from lading.commands.bump_toml_write_options import (
+    AtomicWriteIdentity,
     AtomicWriteOptions,
     AtomicWriteStatus,
 )
@@ -403,4 +404,50 @@ def test_post_replace_oserror_restores_pending_manifest_write(
         path: path.read_bytes() for path in case.workspace_manifests
     } == case.workspace_manifests, (
         "workspace manifests written earlier must also be restored"
+    )
+
+
+@pytest.mark.parametrize(
+    ("current_text", "expected_note"),
+    [
+        pytest.param(
+            "planned replacement",
+            "identity changed while a rewrite was pending",
+            id="matching-text",
+        ),
+        pytest.param(
+            "concurrent edit",
+            "Manifest changed while a rewrite was pending",
+            id="unexpected-text",
+        ),
+    ],
+)
+def test_pending_recovery_reports_mismatched_replacement_evidence(
+    tmp_path: Path,
+    current_text: str,
+    expected_note: str,
+) -> None:
+    """Pending evidence that no longer matches the file is reported."""
+    manifest_path = tmp_path / "Cargo.toml"
+    manifest_path.write_text(current_text, encoding="utf-8")
+    pending_text = "planned replacement"
+    status = AtomicWriteStatus(
+        replacement_identity=AtomicWriteIdentity(device=1, inode=2)
+    )
+    stage = bump_pipeline_manifest_rewrites._ManifestRewriteStage(
+        rollback_baselines={manifest_path: "original text"},
+        pending_manifest_contents={manifest_path: pending_text},
+        pending_write_statuses={manifest_path: status},
+    )
+    failure = OSError("injected write failure")
+
+    bump_pipeline_manifest_recovery.reconcile_pending_manifest_rewrites(
+        stage, set(), failure
+    )
+
+    assert any(expected_note in note for note in failure.__notes__), (
+        "a pending write with mismatched evidence must be reported"
+    )
+    assert manifest_path.read_text(encoding="utf-8") == current_text, (
+        "the current manifest contents must remain in place"
     )

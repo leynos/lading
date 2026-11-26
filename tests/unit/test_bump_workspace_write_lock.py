@@ -86,6 +86,115 @@ def test_lock_directory_requires_a_passwd_entry(
         bump_workspace_write_lock._workspace_lock_directory()
 
 
+def test_lock_directory_must_be_private(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A group-accessible lock directory is refused."""
+    if os.name == "nt":
+        pytest.skip("Windows does not validate POSIX directory permissions")
+    lock_directory = tmp_path / "locks"
+    lock_directory.mkdir()
+    lock_directory.chmod(0o755)
+    monkeypatch.setattr(
+        bump_workspace_write_lock,
+        "_workspace_lock_directory",
+        lambda: lock_directory,
+    )
+    workspace_root = tmp_path / "workspace"
+    workspace_root.mkdir()
+
+    with (
+        pytest.raises(PermissionError, match="not private"),
+        bump_workspace_write_lock.workspace_write_lock(workspace_root),
+    ):
+        pass
+
+
+def test_lock_directory_must_not_be_a_symlink(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A symbolic link is not accepted as the private lock directory."""
+    if os.name == "nt":
+        pytest.skip("Windows does not validate POSIX directory permissions")
+    target = tmp_path / "target"
+    target.mkdir()
+    lock_directory = tmp_path / "locks"
+    try:
+        lock_directory.symlink_to(target, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(f"symbolic links are unavailable: {exc}")
+    monkeypatch.setattr(
+        bump_workspace_write_lock,
+        "_workspace_lock_directory",
+        lambda: lock_directory,
+    )
+    workspace_root = tmp_path / "workspace"
+    workspace_root.mkdir()
+
+    with (
+        pytest.raises(PermissionError, match="not private"),
+        bump_workspace_write_lock.workspace_write_lock(workspace_root),
+    ):
+        pass
+
+
+def test_workspace_lock_requires_a_directory_root(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A file cannot stand in for the workspace lock root."""
+    monkeypatch.setattr(
+        bump_workspace_write_lock,
+        "_workspace_lock_directory",
+        lambda: tmp_path / "locks",
+    )
+    workspace_root = tmp_path / "workspace"
+    workspace_root.write_text("not a directory", encoding="utf-8")
+
+    with (
+        pytest.raises(PermissionError, match="not a directory"),
+        bump_workspace_write_lock.workspace_write_lock(workspace_root),
+    ):
+        pass
+
+
+def test_lock_directory_rejects_a_relative_account_home(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A relative passwd home cannot anchor the lock directory."""
+    if os.name == "nt":
+        pytest.skip("Windows resolves its state directory from Path.home()")
+
+    class _RelativeAccount:
+        """Expose the passwd fields used by the lock directory lookup."""
+
+        pw_dir = "relative/home"
+
+    monkeypatch.setattr(pwd, "getpwuid", lambda _user_id: _RelativeAccount())
+
+    with pytest.raises(PermissionError, match="stable per-user"):
+        bump_workspace_write_lock._workspace_lock_directory()
+
+
+def test_lock_directory_reports_account_lookup_io_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An account lookup I/O failure becomes an actionable permission error."""
+    if os.name == "nt":
+        pytest.skip("Windows resolves its state directory from Path.home()")
+
+    def fail_lookup(_user_id: int) -> None:
+        """Simulate an unavailable password database."""
+        raise OSError(HOME_UNAVAILABLE)
+
+    monkeypatch.setattr(pwd, "getpwuid", fail_lookup)
+
+    with pytest.raises(PermissionError, match="stable per-user"):
+        bump_workspace_write_lock._workspace_lock_directory()
+
+
 def test_workspace_lock_key_uses_filesystem_identity(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

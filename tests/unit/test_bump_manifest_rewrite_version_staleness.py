@@ -5,12 +5,14 @@ from pathlib import Path
 from unittest import mock
 
 import pytest
+from tomlkit import parse as parse_toml
 
 from lading.commands import (
     bump,
     bump_manifests,
     bump_pipeline,
     bump_pipeline_manifest_rewrites,
+    bump_pipeline_manifest_sources,
 )
 from lading.commands.bump_manifest_rewrites import ManifestRewriteError
 from lading.exceptions import LadingError
@@ -368,3 +370,81 @@ def test_member_version_is_rechecked_before_fixture_rewrite(
         "fixture rewrites must not use a stale post-bump member version"
     )
     assert not repository.regenerated, "stale members must stop lockfile work"
+
+
+def test_unreadable_snapshot_is_reported_before_planning(
+    tmp_path: Path,
+) -> None:
+    """A snapshot that cannot be read stops planning with its path."""
+    manifest = tmp_path / "Cargo.toml"
+    manifest.write_text("[workspace]\nmembers = []\n", encoding="utf-8")
+    manifest.chmod(0o000)
+    try:
+        with pytest.raises(
+            ManifestRewriteError,
+            match="Could not snapshot workspace manifest",
+        ) as failure:
+            bump_pipeline_manifest_sources._read_workspace_manifest_snapshots(
+                manifest, ()
+            )
+    finally:
+        manifest.chmod(0o600)
+
+    assert failure.value.failed_path == manifest, (
+        "the unreadable manifest must be named in the failure"
+    )
+
+
+def test_inherited_version_requires_a_workspace_version(tmp_path: Path) -> None:
+    """An inherited package version without a workspace value is rejected."""
+    workspace_manifest = tmp_path / "Cargo.toml"
+    document = parse_toml("[package]\nversion.workspace = true\n")
+
+    with pytest.raises(
+        ManifestRewriteError, match="Workspace-inherited package version"
+    ):
+        bump_pipeline_manifest_sources._crate_manifest_version(
+            document, None, workspace_manifest
+        )
+
+
+def test_unparseable_snapshot_is_reported(tmp_path: Path) -> None:
+    """A malformed captured manifest stops planning with its path."""
+    manifest = tmp_path / "Cargo.toml"
+
+    with pytest.raises(ManifestRewriteError, match="Could not parse manifest snapshot"):
+        bump_pipeline_manifest_sources._parse_manifest_snapshot(
+            manifest, "[package\nname = broken\n"
+        )
+
+
+def test_unresolvable_root_manifest_is_reported(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A root manifest that cannot be resolved is reported."""
+    case = _make_partial_write_failure_case(tmp_path)
+    root_manifest = case.root / "Cargo.toml"
+    context = bump._initialize_bump_context(
+        case.root,
+        bump.BumpOptions(configuration=case.configuration, workspace=case.workspace),
+    )
+    original_resolve = Path.resolve
+
+    def reject_root_resolution(path: Path, *, strict: bool = False) -> Path:
+        """Fail resolution only for the workspace root manifest entry."""
+        if path == root_manifest:
+            message = "resolution failed"
+            raise OSError(message)
+        return original_resolve(path, strict=strict)
+
+    monkeypatch.setattr(Path, "resolve", reject_root_resolution)
+
+    with pytest.raises(
+        ManifestRewriteError, match="Could not resolve workspace root manifest"
+    ) as failure:
+        bump_pipeline_manifest_sources._validate_workspace_manifest_entry(context)
+
+    assert failure.value.failed_path == root_manifest, (
+        "the unresolved manifest entry must be named in the failure"
+    )

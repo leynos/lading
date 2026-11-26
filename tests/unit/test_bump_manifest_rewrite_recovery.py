@@ -1,5 +1,6 @@
 """Recovery behavior after partial configured manifest rewrite failures."""
 
+import os
 from pathlib import Path
 from unittest import mock
 
@@ -10,8 +11,10 @@ from lading.commands import (
     bump,
     bump_manifests,
     bump_pipeline,
+    bump_pipeline_manifest_recovery,
     bump_pipeline_manifest_rewrites,
     bump_toml_files,
+    bump_toml_write_options,
 )
 from lading.commands.bump_manifest_rewrites import (
     ManifestRewriteError,
@@ -411,3 +414,89 @@ def test_reused_workspace_graph_rejects_versions_changed_after_discovery(
     assert {path: path.read_bytes() for path in case.fixtures} == bumped_fixtures, (
         "a stale graph must not plan fixture strings from another source version"
     )
+
+
+def test_member_manifest_verification_reports_an_unreadable_file(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A member manifest that cannot be re-read is reported with its path."""
+    manifest_path = tmp_path / "Cargo.toml"
+    manifest_path.write_text("written text", encoding="utf-8")
+    stage = bump_pipeline_manifest_rewrites._ManifestRewriteStage(
+        workspace_root=tmp_path,
+        written_manifest_contents={manifest_path: "written text"},
+        written_manifest_identities={
+            manifest_path: bump_toml_write_options.AtomicWriteIdentity(1, 2)
+        },
+    )
+
+    def reject_read(*_args: object, **_kwargs: object) -> tuple[str, object]:
+        """Simulate an unreadable manifest during revalidation."""
+        message = "read failed"
+        raise OSError(message)
+
+    monkeypatch.setattr(
+        bump_pipeline_manifest_recovery, "_read_bounded_regular_text", reject_read
+    )
+
+    with pytest.raises(
+        bump_pipeline_manifest_recovery.ManifestRewriteError,
+        match="Could not verify manifest after an earlier bump pass",
+    ):
+        bump_pipeline_manifest_recovery.validate_member_manifest_before_update(
+            manifest_path, stage
+        )
+
+
+def test_member_manifest_verification_reports_a_changed_identity(
+    tmp_path: Path,
+) -> None:
+    """A member manifest replaced since the bump's write is reported."""
+    manifest_path = tmp_path / "Cargo.toml"
+    manifest_path.write_text("written text", encoding="utf-8")
+    stage = bump_pipeline_manifest_rewrites._ManifestRewriteStage(
+        workspace_root=tmp_path,
+        written_manifest_contents={manifest_path: "written text"},
+        written_manifest_identities={
+            manifest_path: bump_toml_write_options.AtomicWriteIdentity(1, 2)
+        },
+    )
+
+    with pytest.raises(
+        bump_pipeline_manifest_recovery.ManifestRewriteError,
+        match="replacement identity changed",
+    ):
+        bump_pipeline_manifest_recovery.validate_member_manifest_before_update(
+            manifest_path, stage
+        )
+    assert manifest_path.read_text(encoding="utf-8") == "written text", (
+        "verification must not alter the changed manifest"
+    )
+
+
+def test_member_manifest_verification_reports_changed_contents(
+    tmp_path: Path,
+) -> None:
+    """A member manifest edited since the bump's write is reported."""
+    manifest_path = tmp_path / "Cargo.toml"
+    manifest_path.write_text("edited text", encoding="utf-8")
+    with manifest_path.open("rb") as handle:
+        metadata = os.fstat(handle.fileno())
+    stage = bump_pipeline_manifest_rewrites._ManifestRewriteStage(
+        workspace_root=tmp_path,
+        written_manifest_contents={manifest_path: "written text"},
+        written_manifest_identities={
+            manifest_path: bump_toml_write_options.AtomicWriteIdentity(
+                metadata.st_dev, metadata.st_ino
+            )
+        },
+    )
+
+    with pytest.raises(
+        bump_pipeline_manifest_recovery.ManifestRewriteError,
+        match="Manifest changed after an earlier bump pass",
+    ):
+        bump_pipeline_manifest_recovery.validate_member_manifest_before_update(
+            manifest_path, stage
+        )

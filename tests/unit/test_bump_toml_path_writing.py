@@ -7,7 +7,12 @@ from unittest import mock
 
 import pytest
 
-from lading.commands import bump_toml_files, bump_toml_write_options
+from lading.commands import (
+    bump_toml_bounded_filesystem,
+    bump_toml_files,
+    bump_toml_write_options,
+)
+from lading.exceptions import LadingError
 
 
 class _ReadOnlyTemporaryFilesystem:
@@ -118,6 +123,167 @@ def test_path_fallback_pins_resolved_parent_before_reading_mode(
     assert stat.S_IMODE(first_destination.stat().st_mode) == 0o640, (
         "permissions must come from the destination that is replaced"
     )
+
+
+def test_unbounded_write_records_replacement_status(tmp_path: Path) -> None:
+    """An unbounded replacement publishes its identity and completion."""
+    destination = tmp_path / "Cargo.toml"
+    destination.write_text("original", encoding="utf-8")
+    status = bump_toml_write_options.AtomicWriteStatus()
+
+    bump_toml_files.write_atomic_text(
+        destination,
+        "replacement",
+        bump_toml_write_options.AtomicWriteOptions(status=status),
+    )
+
+    assert status.replacement_completed is True, (
+        "a completed path replacement must record completion"
+    )
+    assert status.replacement_identity is not None, (
+        "a path replacement must publish the installed temporary identity"
+    )
+
+
+@pytest.mark.parametrize(
+    ("write_options", "message"),
+    [
+        pytest.param(
+            bump_toml_write_options.AtomicWriteOptions(
+                expected_current_text="original"
+            ),
+            "expected_current_text",
+            id="text",
+        ),
+        pytest.param(
+            bump_toml_write_options.AtomicWriteOptions(
+                expected_current_identity=bump_toml_write_options.AtomicWriteIdentity(
+                    1, 2
+                )
+            ),
+            "expected_current_identity",
+            id="identity",
+        ),
+    ],
+)
+def test_conditional_evidence_requires_a_workspace_boundary(
+    tmp_path: Path,
+    write_options: bump_toml_write_options.AtomicWriteOptions,
+    message: str,
+) -> None:
+    """Conditional evidence without a workspace boundary is rejected."""
+    with pytest.raises(ValueError, match=message):
+        bump_toml_files.write_atomic_text(
+            tmp_path / "Cargo.toml",
+            "replacement",
+            write_options,
+        )
+
+
+def test_path_fallback_tolerates_an_unavailable_parent_descriptor(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A rejected parent-directory open falls back to path-based cleanup."""
+    destination = tmp_path / "Cargo.toml"
+    destination.write_text("original", encoding="utf-8")
+    original_open = os.open
+
+    def reject_directory_open(
+        path: str | os.PathLike[str],
+        flags: int,
+        mode: int = 0o777,
+        *,
+        dir_fd: int | None = None,
+    ) -> int:
+        """Refuse only the pinned parent-directory open."""
+        if Path(path) == destination.parent.resolve():
+            message = "directory open rejected"
+            raise OSError(message)
+        return original_open(path, flags, mode, dir_fd=dir_fd)
+
+    monkeypatch.setattr(
+        bump_toml_files, "_supports_stable_temporary_cleanup", lambda: True
+    )
+    monkeypatch.setattr(os, "open", reject_directory_open)
+
+    bump_toml_files.write_atomic_text(destination, "replacement")
+
+    assert destination.read_text(encoding="utf-8") == "replacement", (
+        "a failed directory pin must still replace through the path fallback"
+    )
+
+
+def test_bounded_target_rejects_an_escaping_destination(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A destination resolver failure becomes a permission error."""
+    destination = tmp_path / "Cargo.toml"
+
+    def reject_resolution(*_args: object, **_kwargs: object) -> Path:
+        """Reject the containment check for the planned destination."""
+        message = "outside the workspace"
+        raise LadingError(message)
+
+    monkeypatch.setattr(
+        bump_toml_files.manifest_paths, "resolve_workspace_path", reject_resolution
+    )
+
+    with pytest.raises(PermissionError, match="must stay within the workspace"):
+        bump_toml_files._resolve_bounded_write_target(destination, tmp_path)
+
+
+def test_bounded_target_rejects_a_changed_resolution(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A destination that resolves elsewhere is refused as a changed target."""
+    destination = tmp_path / "Cargo.toml"
+    other = tmp_path / "other.toml"
+
+    monkeypatch.setattr(
+        bump_toml_files.manifest_paths,
+        "resolve_workspace_path",
+        lambda *_args, **_kwargs: other,
+    )
+
+    with pytest.raises(PermissionError, match="no longer resolves to its planned path"):
+        bump_toml_files._resolve_bounded_write_target(destination, tmp_path)
+
+
+@pytest.mark.parametrize(
+    ("path_parts", "message"),
+    [
+        pytest.param(None, "Manifest must stay within the workspace", id="outside"),
+        pytest.param(
+            ("sub", "..", "Cargo.toml"),
+            "Manifest must stay within the workspace",
+            id="parent-segment",
+        ),
+    ],
+)
+def test_bounded_read_rejects_escaping_paths(
+    tmp_path: Path,
+    path_parts: tuple[str, ...] | None,
+    message: str,
+) -> None:
+    """A bounded read rejects escaping paths and lexical parent traversal."""
+    if not bump_toml_files._supports_bounded_directory_operations():
+        pytest.skip("descriptor-relative replacement is unavailable on this platform")
+    workspace_root = tmp_path / "workspace"
+    workspace_root.mkdir()
+    if path_parts is None:
+        candidate = tmp_path / "outside.toml"
+        candidate.write_text("outside", encoding="utf-8")
+    else:
+        (workspace_root / "sub").mkdir()
+        candidate = workspace_root.joinpath(*path_parts)
+
+    with pytest.raises(PermissionError, match=message):
+        bump_toml_bounded_filesystem._read_bounded_regular_text(
+            candidate, workspace_root
+        )
 
 
 def test_bounded_writer_uses_short_temporary_name_for_long_destination(

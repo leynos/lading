@@ -87,6 +87,58 @@ def test_existing_path_with_glob_metacharacters_is_treated_as_literal(
     )
 
 
+def test_unconfigured_rewrites_read_no_sources(tmp_path: pathlib.Path) -> None:
+    """An empty rewrite configuration performs no filesystem reads."""
+    sources = bump_manifest_rewrite_filesystem.read_manifest_rewrite_sources(
+        tmp_path, (), ()
+    )
+
+    assert not sources, "no configured rewrites must yield no sources"
+
+
+def test_glob_scan_failure_is_reported(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A failing glob traversal becomes a manifest rewrite error."""
+
+    def fail_scan(*_args: object, **_kwargs: object) -> tuple[pathlib.Path, ...]:
+        """Simulate a directory scan failure."""
+        message = "scan failed"
+        raise OSError(message)
+
+    monkeypatch.setattr(manifest_paths, "expand_manifest_glob_candidates", fail_scan)
+
+    with pytest.raises(
+        bump_manifest_rewrites.ManifestRewriteError,
+        match="Could not expand manifest rewrite glob",
+    ):
+        plan_fixture_rewrites(
+            tmp_path,
+            (ManifestRewriteConfig(paths=("fixtures/*/Cargo.toml",)),),
+        )
+
+
+def test_unreadable_manifest_is_reported(
+    tmp_path: pathlib.Path,
+    write_fixture_manifest: _ManifestWriter,
+) -> None:
+    """A manifest that is not valid UTF-8 is reported with its path."""
+    manifest = write_fixture_manifest(
+        tmp_path, "fixtures/a/Cargo.toml", '[dependencies]\nalpha = "1.0.0"\n'
+    )
+    manifest.write_bytes(b"\xff\xfe\x00")
+
+    with pytest.raises(
+        bump_manifest_rewrites.ManifestRewriteError,
+        match="Could not read manifest rewrite target",
+    ):
+        plan_fixture_rewrites(
+            tmp_path,
+            (ManifestRewriteConfig(paths=("fixtures/a/Cargo.toml",)),),
+        )
+
+
 def test_windows_invalid_literal_name_falls_back_to_glob(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
