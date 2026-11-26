@@ -1,39 +1,51 @@
-"""Check packaged and uploaded archives against ``--expect-digests``.
+"""Compare crate archives with the digests ``--expect-digests`` recorded.
 
-:class:`ArchiveVerifier` is the side-effecting half of the feature whose pure
-half lives in :mod:`lading.commands.publish_digests`. The publish pipeline
-calls it at four points in a crate's life:
+:class:`ArchiveVerifier` is the unit that computes and compares digests and
+records outcomes. Everything else it needs is injected: where Cargo wrote an
+archive (:mod:`lading.commands.publish_target_dir`), what crates.io holds
+(:mod:`lading.commands.publish_registry`), and who is told of each decision
+(:class:`~lading.commands.publish_archive_outcomes.ArchiveObserver`). Rendering
+for the publish summary lives in :mod:`lading.commands.publish_digest_run`.
 
-1. :meth:`~ArchiveVerifier.check_packaged` after ``cargo package`` writes the
-   archive, before anything is uploaded;
-2. :meth:`~ArchiveVerifier.mark_unverified` when a dry run downgrades a failed
-   ``cargo package`` to a warning, so no archive exists to compare;
-3. :meth:`~ArchiveVerifier.resolve_published` before ``cargo publish``, to skip
-   a version whose identical archive is already on crates.io and to refuse one
-   whose archive differs;
-4. :meth:`~ArchiveVerifier.check_uploaded` after a successful live publish,
-   which cannot undo the upload but makes the run fail loudly.
+The publish pipeline calls it at these points in a crate's life:
 
-Each crate ends with one :class:`ArchiveOutcome`, logged when it is decided and
-rendered by :meth:`~ArchiveVerifier.summary_lines` for the publish summary.
-Digests, crate names and paths are the only things logged; lading never reads
-a registry credential here.
+1. :meth:`~ArchiveVerifier.resolve_published` before packaging, to skip a
+   version whose identical archive is already on crates.io and to refuse one
+   whose archive differs. It is two methods: the read-only query
+   :meth:`~ArchiveVerifier.fetch_published_digest`, and the command
+   :meth:`~ArchiveVerifier.settle_published`, which decides, records and may
+   raise. Their separation lets a caller look without side effects;
+2. :meth:`~ArchiveVerifier.check_archive` after ``cargo package`` writes the
+   archive, after ``cargo publish --dry-run`` packages again, and after a live
+   ``cargo publish`` (a difference there cannot undo the upload but fails the
+   run loudly);
+3. :meth:`~ArchiveVerifier.mark_unverified` when a dry run downgrades a failed
+   ``cargo package`` or ``cargo publish --dry-run`` to a warning, so no archive
+   exists to compare;
+4. :meth:`~ArchiveVerifier.confirm_already_published` when Cargo reports a
+   version the earlier check missed.
+
+Each crate ends with one outcome. Digests, crate names and paths are the only
+things recorded; lading never reads a registry credential here.
 
 Examples
 --------
->>> ArchiveOutcome.VERIFIED.value
-'verified'
+>>> PACKAGED.matches_detail
+'packaged archive matches'
 """
 
 import collections.abc as cabc
 import dataclasses as dc
-import enum
-import json
-import logging
 import typing as typ
 from pathlib import Path
 
 from lading.commands import publish_registry
+from lading.commands.publish_archive_outcomes import (
+    ArchiveObserver,
+    ArchiveOutcome,
+    CrateOutcome,
+    LoggingObserver,
+)
 from lading.commands.publish_digests import (
     ExpectedDigests,
     crate_archive_filename,
@@ -41,67 +53,16 @@ from lading.commands.publish_digests import (
 )
 from lading.commands.publish_errors import (
     ArchiveMismatchError,
+    ArchiveUnavailableError,
     PublishedArchiveConflictError,
-    PublishError,
     PublishPreflightError,
     UploadedArchiveMismatchError,
 )
-from lading.utils import metrics
-from lading.utils.process import command_detail
+from lading.commands.publish_target_dir import CargoTargetLocator
 
 if typ.TYPE_CHECKING:
     from lading.runtime import CommandRunner
     from lading.workspace import WorkspaceCrate
-
-LOGGER = logging.getLogger(__name__)
-
-#: Counter incremented once per crate outcome, labelled by ``outcome``.
-ARCHIVE_CHECK_METRIC = "publish.archive_check"
-
-_METADATA_COMMAND = ("cargo", "metadata", "--format-version", "1", "--no-deps")
-
-
-class ArchiveOutcome(enum.StrEnum):
-    """What lading established about one crate's archive."""
-
-    VERIFIED = "verified"
-    ALREADY_PUBLISHED = "already published and identical"
-    CONFLICT = "conflict"
-    MISMATCH = "mismatch"
-    UNVERIFIED = "unverified"
-
-
-@dc.dataclass(frozen=True, slots=True)
-class CrateOutcome:
-    """The outcome for one crate, with the reason it was reached.
-
-    Attributes
-    ----------
-    crate : str
-        The crate's name.
-    version : str
-        The crate's version.
-    outcome : ArchiveOutcome
-        What was established.
-    detail : str
-        A short human-readable reason, shown in the publish summary.
-    """
-
-    crate: str
-    version: str
-    outcome: ArchiveOutcome
-    detail: str
-
-    def summary_line(self) -> str:
-        """Return the line this outcome occupies in the publish summary."""
-        return f"- {self.crate} {self.version}: {self.outcome.value} ({self.detail})"
-
-
-_FAILURES = frozenset({ArchiveOutcome.CONFLICT, ArchiveOutcome.MISMATCH})
-
-
-class ArchiveUnavailableError(PublishError):
-    """Raise when an archive that must be compared cannot be located or read."""
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -168,90 +129,39 @@ UPLOADED = ArchivePhase(
 class ArchiveVerifier:
     """Compare crate archives with the caller's expected digests.
 
-    One instance serves one publish run. It remembers each crate's outcome so
-    the summary can report them, and each crate root's Cargo target
-    directory so ``cargo metadata`` is asked once per crate.
+    One instance serves one publish run and remembers each crate's outcome.
 
     Parameters
     ----------
     expected : ExpectedDigests
         The validated digests, covering exactly the planned crates.
-    runner : CommandRunner
-        Runs ``cargo metadata`` in the staged workspace to find where Cargo
-        writes archives; it honours ``CARGO_TARGET_DIR`` and Cargo
-        configuration, so lading never assumes ``target/``.
+    locate_target : Callable[[Path], Path]
+        Returns the Cargo target directory for a crate root.
     fetch : PublishedDigestFetcher
-        Reports the digest of an already-published archive. Defaults to the
-        crates.io downloader; tests inject a fake.
+        Reports the digest of an already-published archive.
+    observer : ArchiveObserver
+        Told of every outcome as it is decided.
     """
 
     expected: ExpectedDigests
-    runner: CommandRunner
-    fetch: publish_registry.PublishedDigestFetcher = (
-        publish_registry.fetch_crates_io_digest
-    )
+    locate_target: cabc.Callable[[Path], Path]
+    fetch: publish_registry.PublishedDigestFetcher
+    observer: ArchiveObserver
     _outcomes: dict[str, CrateOutcome] = dc.field(default_factory=dict, init=False)
-    _target_directories: dict[Path, Path] = dc.field(default_factory=dict, init=False)
 
     def _record(
         self, crate: WorkspaceCrate, outcome: ArchiveOutcome, detail: str
     ) -> None:
-        """Store, count, and log ``outcome`` for ``crate``."""
-        self._outcomes[crate.name] = CrateOutcome(
-            crate.name, crate.version, outcome, detail
-        )
-        metrics.increment_counter(ARCHIVE_CHECK_METRIC, outcome=outcome.name.lower())
-        log = LOGGER.error if outcome in _FAILURES else LOGGER.info
-        log(
-            "Archive check for crate %s %s: %s (%s)",
-            crate.name,
-            crate.version,
-            outcome.value,
-            detail,
-        )
-
-    def _target(self, crate_root: Path) -> Path:
-        """Return ``crate_root``'s Cargo target directory, asking Cargo once.
-
-        Keyed by crate root, not shared: a crate can carry its own
-        ``.cargo/config.toml`` and so its own ``build.target-dir``, and reading
-        another crate's directory could match a stale archive.
-
-        Returns
-        -------
-        Path
-            The directory Cargo writes ``package/<name>-<version>.crate`` under.
-        """
-        if crate_root not in self._target_directories:
-            self._target_directories[crate_root] = self._ask_cargo_for_target(
-                crate_root
-            )
-        return self._target_directories[crate_root]
-
-    def _ask_cargo_for_target(self, crate_root: Path) -> Path:
-        """Run ``cargo metadata`` in ``crate_root`` and read ``target_directory``."""
-        # The JSON is read here, not shown: echoing it would bury the publish
-        # log under the whole workspace's metadata for every crate.
-        exit_code, stdout, stderr = self.runner(
-            _METADATA_COMMAND, cwd=crate_root, env=None, echo_stdout=False
-        )
-        try:
-            return Path(json.loads(stdout)["target_directory"])
-        except (ValueError, KeyError, TypeError) as exc:
-            message = (
-                "Cannot find the Cargo target directory to locate the packaged "
-                f"archive (cargo metadata exited {exit_code}): "
-                f"{command_detail(stdout, stderr)[:200]}"
-            )
-            raise ArchiveUnavailableError(message) from exc
-
-    def _archive_path(self, crate: WorkspaceCrate, crate_root: Path) -> Path:
-        """Return where Cargo wrote ``crate``'s archive."""
-        return self._target(crate_root) / "package" / crate_archive_filename(crate)
+        """Remember ``outcome`` for ``crate`` and tell the observer."""
+        decided = CrateOutcome(crate.name, crate.version, outcome, detail)
+        self._outcomes[crate.name] = decided
+        self.observer.outcome_decided(decided)
 
     def _digest_archive(self, crate: WorkspaceCrate, crate_root: Path) -> str:
         """Hash the archive Cargo wrote for ``crate``."""
-        path = self._archive_path(crate, crate_root)
+        path = (
+            self.locate_target(crate_root) / "package" / crate_archive_filename(crate)
+        )
         try:
             return sha256_file(path)
         except OSError as exc:
@@ -292,7 +202,7 @@ class ArchiveVerifier:
             )
             message = f"{summary} ({comparison.describe()})"
             raise phase.error_cls(message)
-        if self._outcome_of(crate) is ArchiveOutcome.UNVERIFIED:
+        if self.outcome_of(crate) is ArchiveOutcome.UNVERIFIED:
             # A dry run that could not package the crate keeps saying so: a
             # later archive matching does not undo that it went unchecked
             # where the failure was downgraded.
@@ -303,22 +213,37 @@ class ArchiveVerifier:
         """Record that no archive for ``crate`` could be compared."""
         self._record(crate, ArchiveOutcome.UNVERIFIED, reason)
 
-    def resolve_published(self, crate: WorkspaceCrate) -> bool:
-        """Compare an already-published version with the expectation.
+    def fetch_published_digest(self, crate: WorkspaceCrate) -> str | None:
+        """Return the digest crates.io holds for ``crate``'s version (a query).
+
+        Pure with respect to the verifier: it records nothing and tells nobody,
+        so it can be called to look without deciding anything.
+
+        Returns
+        -------
+        str | None
+            The published archive's digest, or ``None`` when not yet published.
+        """
+        return self.fetch(crate.name, crate.version)
+
+    def settle_published(self, crate: WorkspaceCrate) -> bool:
+        """Decide, record and report an already-published version (a command).
+
+        Fetches the published digest, compares it with the expectation, records
+        the outcome and tells the observer.
 
         Returns
         -------
         bool
             ``True`` when crates.io holds the identical archive, so the caller
-            skips ``cargo publish``; ``False`` when the version is not yet
-            published.
+            skips the crate; ``False`` when the version is not yet published.
 
         Raises
         ------
         PublishedArchiveConflictError
             If the published archive differs from the expectation.
         """
-        published = self.fetch(crate.name, crate.version)
+        published = self.fetch_published_digest(crate)
         if published is None:
             return False
         comparison = _Comparison(self.expected.digest_for(crate), published)
@@ -330,31 +255,22 @@ class ArchiveVerifier:
                 "published version cannot be replaced; release a new version"
             )
             raise PublishedArchiveConflictError(message)
-        if self._outcome_of(crate) is ArchiveOutcome.UNVERIFIED:
-            # Nothing was compared locally and that is what the summary must
-            # keep saying; the published bytes match, but they are not the
-            # archive this run packaged.
-            LOGGER.info(
-                "Crate %s %s is already published with the expected archive",
-                crate.name,
-                crate.version,
+        if self.outcome_of(crate) is not ArchiveOutcome.UNVERIFIED:
+            # An unverified crate keeps saying so: nothing was compared locally,
+            # and the published bytes are not the archive this run packaged.
+            self._record(
+                crate, ArchiveOutcome.ALREADY_PUBLISHED, "skipping cargo publish"
             )
-            return True
-        self._record(
-            crate,
-            ArchiveOutcome.ALREADY_PUBLISHED,
-            "skipping cargo publish",
-        )
         return True
 
-    def _outcome_of(self, crate: WorkspaceCrate) -> ArchiveOutcome | None:
+    def outcome_of(self, crate: WorkspaceCrate) -> ArchiveOutcome | None:
         """Return the outcome decided so far for ``crate``, if any."""
         decided = self._outcomes.get(crate.name)
         return None if decided is None else decided.outcome
 
     def is_already_published(self, crate: WorkspaceCrate) -> bool:
-        """Whether ``resolve_published`` found the identical archive on crates.io."""
-        return self._outcome_of(crate) is ArchiveOutcome.ALREADY_PUBLISHED
+        """Whether ``settle_published`` found the identical archive on crates.io."""
+        return self.outcome_of(crate) is ArchiveOutcome.ALREADY_PUBLISHED
 
     def confirm_already_published(self, crate: WorkspaceCrate) -> None:
         """Compare a version Cargo says exists, when the pre-publish check missed it.
@@ -365,7 +281,7 @@ class ArchiveVerifier:
             If crates.io does not serve the archive Cargo says exists, so it
             cannot be compared.
         """
-        if not self.resolve_published(crate):
+        if not self.settle_published(crate):
             message = (
                 f"cargo reports that crate {crate.name} {crate.version} is "
                 "already published, but crates.io does not serve its archive, so "
@@ -378,7 +294,32 @@ class ArchiveVerifier:
         """Each decided crate's outcome, in the order they were decided."""
         return tuple(self._outcomes.values())
 
-    def summary_lines(self) -> tuple[str, ...]:
-        """Return the lines the publish summary shows for archive checks."""
-        header = f"Archive checks against {self.expected.source}:"
-        return (header, *(outcome.summary_line() for outcome in self.outcomes))
+
+def create_verifier(
+    expected: ExpectedDigests,
+    runner: CommandRunner,
+    fetch: publish_registry.PublishedDigestFetcher | None = None,
+) -> ArchiveVerifier:
+    """Build the production verifier: Cargo-located archives, logged outcomes.
+
+    Parameters
+    ----------
+    expected : ExpectedDigests
+        The validated digests.
+    runner : CommandRunner
+        Runs ``cargo metadata`` to locate archives.
+    fetch : PublishedDigestFetcher | None
+        Replacement for the crates.io download; tests inject a fake.
+
+    Returns
+    -------
+    ArchiveVerifier
+        A verifier wired to a :class:`CargoTargetLocator` and a
+        :class:`LoggingObserver`.
+    """
+    return ArchiveVerifier(
+        expected,
+        CargoTargetLocator(runner),
+        publish_registry.fetch_crates_io_digest if fetch is None else fetch,
+        LoggingObserver(),
+    )

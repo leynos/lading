@@ -20,7 +20,7 @@ from .cli_options import (
     WORKSPACE_ROOT_REQUIRED_MESSAGE,
 )
 from .commands.publish_skip import SkipPreflightDecision, SkipPreflightSource
-from .utils.redaction import protect_handler
+from .utils.log_redaction import protect_handler
 
 # Keep the established log channel: operators and tests filter on it.
 LOGGER = logging.getLogger("lading.cli")

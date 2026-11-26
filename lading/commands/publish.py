@@ -222,7 +222,7 @@ def _render_summary(
         staged.preparation, retained=staged.retained
     )
     if verifier is not None:
-        lines = (*lines, "", *verifier.summary_lines())
+        lines = (*lines, "", *publish_digest_run.archive_summary(verifier))
     return f"{plan_message}\n\n" + "\n".join(lines)
 
 
@@ -272,7 +272,9 @@ def _dispatch_reporting(
         )
     except PublishPreflightError:
         if options.verifier is not None:
-            LOGGER.exception("\n".join(options.verifier.summary_lines()))
+            LOGGER.exception(
+                "\n".join(publish_digest_run.archive_summary(options.verifier))
+            )
         raise
 
 

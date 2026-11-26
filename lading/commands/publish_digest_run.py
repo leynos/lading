@@ -12,7 +12,7 @@ import contextlib
 import typing as typ
 
 from lading.commands import publish_cargo_config, publish_digests, publish_pipeline
-from lading.commands.publish_archive_check import ArchiveVerifier
+from lading.commands.publish_archive_check import ArchiveVerifier, create_verifier
 from lading.commands.publish_execution import redacting_invoke
 from lading.commands.publish_staging import _resolve_staged_crate_root
 from lading.runtime.redacting_runner import redacting_runner
@@ -132,9 +132,7 @@ def archive_verifier(
     """Check the digests against the plan and build the run's verifier."""
     publish_digests.validate_against_plan(expected, plan)
     publish_digests.require_crates_io_crates(plan)
-    if options.published_digest_fetcher is None:
-        return ArchiveVerifier(expected, runner)
-    return ArchiveVerifier(expected, runner, options.published_digest_fetcher)
+    return create_verifier(expected, runner, options.published_digest_fetcher)
 
 
 def hidden_secrets(options: PublishOptions) -> contextlib.AbstractContextManager[None]:
@@ -150,3 +148,20 @@ def hidden_secrets(options: PublishOptions) -> contextlib.AbstractContextManager
     if options.expect_digests is None or environment is None:
         return contextlib.nullcontext()
     return use_secrets(environment.secrets)
+
+
+def archive_summary(verifier: ArchiveVerifier) -> tuple[str, ...]:
+    """Render the verifier's outcomes for the publish summary.
+
+    Returns
+    -------
+    tuple[str, ...]
+        A header naming the digest file, then one line per decided crate.
+    """
+    header = f"Archive checks against {verifier.expected.source}:"
+    lines = (
+        f"- {decided.crate} {decided.version}: {decided.outcome.value} "
+        f"({decided.detail})"
+        for decided in verifier.outcomes
+    )
+    return (header, *lines)

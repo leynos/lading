@@ -714,14 +714,12 @@ type = "method"
 full_name = [
     "lading.commands.publish_archive_check.ArchiveVerifier.check_archive",
     "lading.commands.publish_archive_check.ArchiveVerifier.is_already_published",
-    "lading.commands.publish_archive_check.ArchiveVerifier._outcome_of",
+    "lading.commands.publish_archive_check.ArchiveVerifier.outcome_of",
     "lading.commands.publish_archive_check.ArchiveVerifier.mark_unverified",
-    "lading.commands.publish_archive_check.ArchiveVerifier.resolve_published",
+    "lading.commands.publish_archive_check.ArchiveVerifier.fetch_published_digest",
+    "lading.commands.publish_archive_check.ArchiveVerifier.settle_published",
     "lading.commands.publish_archive_check.ArchiveVerifier.confirm_already_published",
-    "lading.commands.publish_archive_check.ArchiveVerifier.summary_lines",
-    "lading.commands.publish_archive_check.ArchiveVerifier._target",
-    "lading.commands.publish_archive_check.ArchiveVerifier._ask_cargo_for_target",
-    "lading.commands.publish_archive_check.ArchiveVerifier._archive_path",
+    "lading.commands.publish_archive_check.ArchiveVerifier._record",
     "lading.commands.publish_archive_check.ArchiveVerifier._digest_archive",
     "lading.commands.publish_digests.ExpectedDigests.digest_for_filename",
     "lading.commands.publish_digests.ExpectedDigests.digest_for",
@@ -733,15 +731,15 @@ type = "method"
 full_name = [
     "lading.commands.publish_archive_check._Comparison.describe",
 ]
-reason = "The verifier's check_archive and resolve_published format their mismatch messages with it."
+reason = "The verifier's check_archive and settle_published format their mismatch messages with it."
 
 [[tool.skylos.dead_code.entrypoints]]
 type = "class"
 full_name = [
-    "lading.commands.publish_archive_check.ArchiveUnavailableError",
+    "lading.commands.publish_errors.ArchiveUnavailableError",
     "lading.commands.publish_archive_check._Comparison",
 ]
-reason = "The verifier raises ArchiveUnavailableError when an archive cannot be located or compared, and builds a _Comparison for every digest check; the dead-code scan does not resolve either through the verifier's entry-point methods."
+reason = "The verifier and the target locator raise ArchiveUnavailableError when an archive cannot be located or compared, and the verifier builds a _Comparison for every digest check; the dead-code scan does not resolve either through the verifier's entry-point methods."
 
 [[tool.skylos.dead_code.entrypoints]]
 type = "method"
@@ -756,6 +754,20 @@ full_name = [
     "lading.commands.publish_registry._Retry.wait_for_next",
 ]
 reason = "fetch_crates_io_digest decides each retry through it; the dead-code scan does not resolve the call on the constructed value."
+
+[[tool.skylos.dead_code.entrypoints]]
+type = "method"
+full_name = [
+    "lading.commands.publish_archive_outcomes.LoggingObserver.outcome_decided",
+]
+reason = "The verifier announces each outcome through the ArchiveObserver port; the dead-code scan does not resolve the call on the injected observer."
+
+[[tool.skylos.dead_code.entrypoints]]
+type = "method"
+full_name = [
+    "lading.utils.log_redaction._Switchable.is_disabled",
+]
+reason = "_unwrapped reaches both through the _Hook protocol when it skips switched-off wrappers at removal."
 
 [tool.setuptools.packages.find]
 include = [

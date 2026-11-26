@@ -101,8 +101,13 @@ class PublishedArchiveConflictError(PublishError):
     """
 
 
+class ArchiveUnavailableError(PublishError):
+    """Raise when an archive that must be compared cannot be located or read."""
+
+
 __all__ = [
     "ArchiveMismatchError",
+    "ArchiveUnavailableError",
     "ExpectedDigestsError",
     "PublishError",
     "PublishPreflightError",

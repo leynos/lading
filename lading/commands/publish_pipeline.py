@@ -150,7 +150,7 @@ def _package_crate(
     """
     plan = state.plan
     options = state.options
-    if options.verifier is not None and options.verifier.resolve_published(crate):
+    if options.verifier is not None and options.verifier.settle_published(crate):
         return
     package_args = _cargo_flags(options)
     crate_root = _resolve_staged_crate_root(crate, plan, state.preparation.staging_root)

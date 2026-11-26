@@ -413,3 +413,38 @@ def test_a_replaced_exception_in_a_cycle_is_never_reached_through_its_original()
     assert isinstance(safe, LadingError), "the dirty exception is replaced"
     assert all(item is not dirty for item in seen), "the original must be unreachable"
     assert _LEAK not in "".join(traceback.format_exception(safe)), "no token remains"
+
+
+def test_log_hooks_are_restored_after_nested_and_overlapping_scopes() -> None:
+    """The process-wide logging hooks are exactly as before once scopes end."""
+    original_factory = logging.getLogRecordFactory()
+    original_make_record = logging.Logger.makeRecord
+    outer = use_secrets((_LEAK,))
+    inner = use_secrets(("other-secret-value",))
+
+    # Nested: inner opens and closes inside outer.
+    with outer:
+        with inner:
+            assert logging.getLogRecordFactory() is not original_factory, (
+                "the factory must be wrapped while a scope is open"
+            )
+        assert logging.getLogRecordFactory() is not original_factory, (
+            "the outer scope's factory must remain after the inner one ends"
+        )
+    assert logging.getLogRecordFactory() is original_factory, "nested: factory restored"
+    assert logging.Logger.makeRecord is original_make_record, (
+        "nested: makeRecord restored"
+    )
+
+    # Overlapping: the first scope closes while the second is still open.
+    first, second = use_secrets((_LEAK,)), use_secrets(("another-secret-value",))
+    first.__enter__()
+    second.__enter__()
+    first.__exit__(None, None, None)
+    second.__exit__(None, None, None)
+    assert logging.getLogRecordFactory() is original_factory, (
+        "overlapping: factory restored"
+    )
+    assert logging.Logger.makeRecord is original_make_record, (
+        "overlapping: makeRecord restored"
+    )

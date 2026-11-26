@@ -6,13 +6,11 @@ from pathlib import Path
 import pytest
 
 from lading.commands import publish
-from lading.commands.publish_archive_check import (
-    ARCHIVE_CHECK_METRIC,
-    ArchiveUnavailableError,
-)
+from lading.commands.publish_archive_outcomes import ARCHIVE_CHECK_METRIC
 from lading.commands.publish_cargo_config import CargoEnvironment
 from lading.commands.publish_errors import (
     ArchiveMismatchError,
+    ArchiveUnavailableError,
     ExpectedDigestsError,
     PublishedArchiveConflictError,
     UploadedArchiveMismatchError,

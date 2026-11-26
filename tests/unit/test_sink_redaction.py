@@ -9,12 +9,9 @@ import pytest
 from lading import cli
 from lading.commands import publish as publish_command
 from lading.commands import publish_diagnostics, publish_sccache
-from lading.commands.publish_archive_check import (
-    PACKAGED,
-    ArchiveUnavailableError,
-    ArchiveVerifier,
-)
+from lading.commands.publish_archive_check import PACKAGED, create_verifier
 from lading.commands.publish_digests import ExpectedDigests
+from lading.commands.publish_errors import ArchiveUnavailableError
 from lading.utils.redaction import REDACTED, use_secrets
 from lading.workspace import WorkspaceModelError
 from tests.unit.publish.conftest import make_crate
@@ -38,7 +35,7 @@ def test_archive_lookup_error_hides_the_secret_even_across_the_truncation(
         """Fail like a ``cargo metadata`` that echoes the secret."""
         return 101, "", noisy
 
-    verifier = ArchiveVerifier(
+    verifier = create_verifier(
         ExpectedDigests("d", {"alpha-0.1.0.crate": "0" * 64}), runner
     )
 

@@ -1864,50 +1864,64 @@ instances, applies crate-name canonicalization, and decides whether an index
 miss is out-of-plan and fatal, in-plan but still fatal, or in-plan and
 downgraded by `allow_unpublished_workspace_deps` during dry-run publication.
 
-`publish_digests.py`, `publish_archive_check.py`, and `publish_registry.py`
-implement `--expect-digests` (issue
+`publish_digests.py`, `publish_archive_check.py`, `publish_archive_outcomes.py`,
+`publish_target_dir.py` and `publish_registry.py` implement `--expect-digests`
+(issue
 [#419](https://github.com/leynos/lading/issues/419); [ADR-013](adrs/adr-0013-verify-archives-against-expected-digests.md)).
 `publish_digests` is the pure half: `parse_digest_text`,
 `load_expected_digests` and `validate_against_plan` turn the file into
 `ExpectedDigests` and reject it before anything is staged,
-`require_crates_io_default` and `require_crates_io_crates` refuse another
-registry, and `sha256_file` hashes an archive in bounded chunks.
-`publish_archive_check` owns `ArchiveVerifier`, which `run()` builds after
-validating the plan (before the pre-flight) and the pipeline calls at four
-points: `resolve_published` before packaging (`is_already_published` lets the
-dry-run publish phase skip what the packaging phase found, and
-`confirm_already_published` handles a version Cargo reports that the first
-check missed), `check_archive` with `PACKAGED` after `cargo package`,
-`mark_unverified` when a dry run downgrades packaging, and `check_archive` with
-`UPLOADED` after a successful live publish. It asks `cargo metadata --no-deps`
-for the target directory once per crate root, through the command runner, and
-records one `CrateOutcome` per crate for the summary and the
-`publish.archive_check` counter. `publish_digest_run` holds the digest-specific
-steps of `run()`: the runner choice (`command_runner`, `discovery_runner`), the
-pre-flight validation (`digest_checks`), and `refuse_staged_defaults`, which
-repeats the registry check from the staged paths.
-`publish_cargo_config.effective_default_registry` follows Cargo's own order
-(`CARGO_REGISTRY_DEFAULT`, then `.cargo/config` or `.cargo/config.toml`, the
-extensionless file winning, from a start directory up through its ancestors,
-then Cargo home); `refuse_alternate_default` applies it to the workspace root
-and to each publishable crate's root before anything is staged. The inputs
-arrive as `PublishOptions.cargo_environment`, a `CargoEnvironment` resolved by
-`lading.cli`. `lading.utils.redaction` and `redacting_runner` keep exact
-registry-token values out of what lading shows, never out of what it parses.
-`lading.cli` collects the values from the environment and the credentials file
-(`runtime.credentials`) for a digest-checked run only; `_select_runner` then
-returns `redacting_runner`, while a run without the option always gets the plain
-`subprocess_runner`. `redact_text` replaces, left to right, the longest secret
-starting at each position, so the result does not depend on the order secrets
-are given in, and `SecretRedactor` reproduces it exactly for any chunking by
-keeping the tail raw until later input settles it (a Hypothesis property checks
-the equivalence). The runner captures each stream raw and filters only the
-mirrored text (`stream_relay.relay_decoded` with a `RelayCapture`). Messages
-built from captured output are redacted centrally: `use_secrets` activates the
-values for the run and `command_detail` and `append_detail` (and so
-`with_detail` and the metadata error) call `redact_active`. The spawn error,
-the logged command line and the debug environment log redact by value too. As a
-backstop, `use_secrets` sanitizes an exception that propagates out of its scope
+`require_crates_io_crates` refuses a crate limited to another registry, and
+`sha256_file` hashes an archive in bounded chunks. The verifier is deliberately
+narrow and everything it needs is injected:
+
+- `publish_archive_check.ArchiveVerifier` computes and compares digests and
+  records outcomes. `create_verifier` wires the production parts. The pipeline
+  calls it at four points: before packaging, `settle_published` (a command that
+  decides, records and may raise; its read-only counterpart
+  `fetch_published_digest` is a query with no side effects, and
+  `is_already_published` lets the dry-run publish phase skip what the packaging
+  phase found); `check_archive` with `PACKAGED` after `cargo package`, with
+  `DRY_RUN_PUBLISH` after `cargo publish --dry-run`, and with `UPLOADED` after
+  a live publish; `mark_unverified` when a dry run downgrades packaging or
+  publishing; and `confirm_already_published` when Cargo reports a version the
+  first check missed.
+- `publish_target_dir.CargoTargetLocator` asks `cargo metadata --no-deps` for
+  each crate root's target directory once, through the command runner, and is
+  injected into the verifier as a plain function.
+- `publish_archive_outcomes` holds `ArchiveOutcome`, `CrateOutcome` and the
+  `ArchiveObserver` port; `LoggingObserver` logs each outcome and increments the
+  `publish.archive_check` counter, so the verifier itself neither logs nor
+  counts.
+- Rendering for the publish summary is presentation:
+  `publish_digest_run.archive_summary`.
+
+`publish_digest_run` holds the digest-specific steps of `run()`: the runner
+choice (`command_runner`, `discovery_runner`), the pre-flight validation
+(`digest_checks`), and `refuse_staged_defaults`, which repeats the registry
+check from the staged paths. `publish_cargo_config.effective_default_registry`
+follows Cargo's own order (`CARGO_REGISTRY_DEFAULT`, then `.cargo/config` or
+`.cargo/config.toml`, the extensionless file winning, from a start directory up
+through its ancestors, then Cargo home); `refuse_alternate_default` applies it
+to the workspace root and to each publishable crate's root before anything is
+staged. The inputs arrive as `PublishOptions.cargo_environment`, a
+`CargoEnvironment` resolved by `lading.cli`. `lading.utils.redaction` and
+`redacting_runner` keep exact registry-token values out of what lading shows,
+never out of what it parses. `lading.cli` collects the values from the
+environment and the credentials file (`runtime.credentials`) for a
+digest-checked run only; `_select_runner` then returns `redacting_runner`,
+while a run without the option always gets the plain `subprocess_runner`.
+`redact_text` replaces, left to right, the longest secret starting at each
+position, so the result does not depend on the order secrets are given in, and
+`SecretRedactor` reproduces it exactly for any chunking by keeping the tail raw
+until later input settles it (a Hypothesis property checks the equivalence).
+The runner captures each stream raw and filters only the mirrored text
+(`stream_relay.relay_decoded` with a `RelayCapture`). Messages built from
+captured output are redacted centrally: `use_secrets` activates the values for
+the run and `command_detail` and `append_detail` (and so `with_detail` and the
+metadata error) call `redact_active`. The spawn error, the logged command line
+and the debug environment log redact by value too. As a backstop, `use_secrets`
+sanitizes an exception that propagates out of its scope
 (`lading.utils.exception_redaction.sanitize_exception`: strings at any depth of
 `args` and attributes, notes and the whole cause and context chain, in place,
 (containers that contain themselves terminate; any traversal failure falls back
