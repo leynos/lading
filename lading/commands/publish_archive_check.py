@@ -229,8 +229,10 @@ class ArchiveVerifier:
 
     def _ask_cargo_for_target(self, crate_root: Path) -> Path:
         """Run ``cargo metadata`` in ``crate_root`` and read ``target_directory``."""
+        # The JSON is read here, not shown: echoing it would bury the publish
+        # log under the whole workspace's metadata for every crate.
         exit_code, stdout, stderr = self.runner(
-            _METADATA_COMMAND, cwd=crate_root, env=None
+            _METADATA_COMMAND, cwd=crate_root, env=None, echo_stdout=False
         )
         try:
             return Path(json.loads(stdout)["target_directory"])

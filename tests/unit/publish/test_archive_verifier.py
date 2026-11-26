@@ -1,5 +1,6 @@
 """Unit tests for :class:`~lading.commands.publish_archive_check.ArchiveVerifier`."""
 
+import collections.abc as cabc
 import typing as typ
 
 import pytest
@@ -108,3 +109,29 @@ def test_mismatch_leaves_a_mismatch_outcome(tmp_path: Path) -> None:
     assert verifier.outcomes[0].outcome is ArchiveOutcome.MISMATCH, (
         "a refused archive must be recorded as a mismatch"
     )
+
+
+def test_target_lookup_reads_cargo_metadata_without_echoing_it(
+    tmp_path: Path,
+) -> None:
+    """The metadata JSON is captured for the target directory, never relayed."""
+    crate = make_crate(tmp_path, "alpha")
+    cargo = FakeCargo(packaged={"alpha": PLAIN_ARCHIVE})
+    cargo(("cargo", "package"), cwd=crate.root_path)
+    echoes: list[tuple[tuple[str, ...], bool]] = []
+
+    def runner(
+        command: cabc.Sequence[str],
+        *,
+        cwd: Path | None = None,
+        env: cabc.Mapping[str, str] | None = None,
+        echo_stdout: bool = True,
+    ) -> tuple[int, str, str]:
+        """Record whether each command would be echoed, then run the fake."""
+        echoes.append((tuple(command), echo_stdout))
+        return cargo(command, cwd=cwd, env=env, echo_stdout=echo_stdout)
+
+    _verifier(runner).check_archive(crate, crate.root_path, PACKAGED)
+
+    metadata = [echo for command, echo in echoes if command[1] == "metadata"]
+    assert metadata == [False], "cargo metadata output must not be echoed"
