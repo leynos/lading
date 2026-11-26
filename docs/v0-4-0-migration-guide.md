@@ -298,19 +298,20 @@ but it also changes how Cargo selects files for a package. With no Git metadata,
 `.cargo_vcs_info.json`. When the manifest does not set `include`, Cargo skips
 dot-named entries. When the manifest sets `include`, Cargo packages each
 dot-named entry that the list names. Cargo also always packages the file named
-by `license-file`, and the `readme` file, even when they are dot-named and
-`include` does not name them. A file that Git ignores without a leading dot — a
-local database, or a settings module — is therefore packaged unless the
-configuration excludes it, and a Git-ignored settings file is packaged when the
-manifest sets no `include` list. To exclude one, either narrow `include` so it
-omits the file, or remove it with `stage_exclude`, before a live publish.
-Setting `include` makes Cargo ignore `exclude` entirely, so carry any existing
-`exclude` entries over into the new list. Audit any such file that sits inside
-a publishable crate before relying on the default. The source checkout still
-applies Git-aware selection, so check the file list on the staged tree: run
-`lading publish --keep-staging` in dry-run mode, which logs the retained path,
-and run `cargo package --list` in that staged crate. The default rules for
-`include` and `exclude` are described in the
+by `license-file`, even when it is dot-named and `include` does not name it. A
+file that Git ignores without a leading dot — a local database, or a settings
+module — is therefore packaged unless the configuration excludes it, and a
+Git-ignored settings file is packaged when the manifest sets no `include` list.
+To exclude one, either narrow `include` so it omits the file, or remove it with
+`stage_exclude`, before a live publish. Setting `include` makes Cargo ignore
+`exclude` entirely, so preserve the exclusion behaviour with negated patterns
+in the new list instead of copying entries across: an existing
+`exclude = ["secret.env"]` becomes `include = ["**", "!secret.env"]`. Audit any
+such file that sits inside a publishable crate before relying on the default.
+The source checkout still applies Git-aware selection, so check the file list
+on the staged tree: run `lading publish --keep-staging` in dry-run mode, which
+logs the retained path, and run `cargo package --list` in that staged crate.
+The default rules for `include` and `exclude` are described in the
 [Cargo manifest documentation](https://doc.rust-lang.org/cargo/reference/manifest.html#the-exclude-and-include-fields).
 A live publish that stages without `.git` logs a warning before copying,
 because an upload cannot be undone.
