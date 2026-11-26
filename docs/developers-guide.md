@@ -1906,11 +1906,14 @@ the logged command line and the debug environment log redact by value too. As a
 backstop, `use_secrets` sanitizes an exception that propagates out of its scope
 (`lading.utils.exception_redaction.sanitize_exception`: strings at any depth of
 `args` and attributes, notes and the whole cause and context chain, in place,
-then a `str`/`repr` check that replaces any exception still rendering a secret,
-at its place in the chain, with a redacted `LadingError` carrying its type
-name), `publish.run` opens the scope before it logs or validates anything, and
-`use_secrets` also installs a log-record factory (`RecordFactory`, so a handler
-on any logger is covered) and `RedactingFilter` on the root log handlers
+(containers that contain themselves terminate; any traversal failure falls back
+to a replacement), then a `str`/`repr` check that replaces any exception still
+rendering a secret, at its place in the chain, with a redacted `LadingError`
+carrying its type name), `publish.run` opens the scope before it logs or
+validates anything, and `use_secrets` also installs a log-record factory
+(`RecordFactory`, so a handler on any logger is covered), a wrapper around
+`Logger.makeRecord` (`MakeRecordPatch`, which redacts the `extra` fields
+applied after the factory), and `RedactingFilter` on the root log handlers
 (`protect_handler` covers handlers configured later), and
 `lading.cli_environment` prints errors and summaries through `redact_active`,
 so a message built without any redaction is still hidden where it leaves lading

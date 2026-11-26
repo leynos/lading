@@ -28,11 +28,12 @@ import typing as typ
 from lading.exceptions import LadingError
 
 type Redact = cabc.Callable[[str], str]
+type Memo = dict[int, object]
 
 _TEXT_ATTRIBUTES = ("strerror", "filename", "filename2")
 
 
-def _scrub(value: object, redact: Redact, memo: dict[int, BaseException]) -> object:
+def _scrub(value: object, redact: Redact, memo: Memo) -> object:
     """Return ``value`` with every string redacted, at any depth.
 
     Returns
@@ -50,9 +51,7 @@ def _scrub(value: object, redact: Redact, memo: dict[int, BaseException]) -> obj
     return result
 
 
-def _scrub_container(
-    value: object, redact: Redact, memo: dict[int, BaseException]
-) -> object:
+def _scrub_container(value: object, redact: Redact, memo: Memo) -> object:
     """Rebuild the built-in containers with their contents redacted.
 
     An unknown type is returned as it is and left to the rendering check.
@@ -67,9 +66,19 @@ def _scrub_container(
         """Redact each element of ``sequence``."""
         return [_scrub(item, redact, memo) for item in sequence]
 
+    if id(value) in memo:
+        return memo[id(value)]  # A container that contains itself.
     match value:
         case list():
-            result: object = items(value)
+            result: object = []
+            memo[id(value)] = result
+            typ.cast("list[object]", result).extend(items(value))
+        case dict():
+            result = {}
+            memo[id(value)] = result
+            typ.cast("dict[object, object]", result).update(
+                zip(items(value), items(value.values()), strict=True)
+            )
         case tuple() if hasattr(value, "_fields"):
             result = type(value)(*items(value))
         case tuple():
@@ -78,16 +87,12 @@ def _scrub_container(
             result = typ.cast("cabc.Callable[[list[object]], object]", type(value))(
                 items(value)
             )
-        case dict():
-            result = dict(zip(items(value), items(value.values()), strict=True))
         case _:
             result = value
     return result
 
 
-def _scrub_fields(
-    exc: BaseException, redact: Redact, memo: dict[int, BaseException]
-) -> None:
+def _scrub_fields(exc: BaseException, redact: Redact, memo: Memo) -> None:
     """Redact ``exc``'s ``args``, text and instance attributes, and notes."""
     exc.args = typ.cast("tuple[object, ...]", _scrub(exc.args, redact, memo))
     for name in dict.fromkeys((*_TEXT_ATTRIBUTES, *vars(exc))):
@@ -104,30 +109,43 @@ def _renders_clean(exc: BaseException, redact: Redact) -> bool:
     return all(redact(text) == text for text in (str(exc), repr(exc)))
 
 
-def _clean(
-    exc: BaseException, redact: Redact, memo: dict[int, BaseException]
-) -> BaseException:
+def _clean(exc: BaseException, redact: Redact, memo: Memo) -> BaseException:
     """Return ``exc`` sanitized in place, or its redacted replacement."""
     if id(exc) in memo:
-        return memo[id(exc)]
+        return typ.cast("BaseException", memo[id(exc)])
     memo[id(exc)] = exc  # Provisional, so a cycle in the chain terminates.
-    _scrub_fields(exc, redact, memo)
-    cause = _clean_link(exc.__cause__, redact, memo)
-    context = _clean_link(exc.__context__, redact, memo)
-    suppress = exc.__suppress_context__
-    exc.__cause__, exc.__context__ = cause, context
-    exc.__suppress_context__ = suppress
-    if _renders_clean(exc, redact):
+    cause: BaseException | None = None
+    context: BaseException | None = None
+    try:
+        _scrub_fields(exc, redact, memo)
+        cause = _clean_link(exc.__cause__, redact, memo)
+        context = _clean_link(exc.__context__, redact, memo)
+        suppress = exc.__suppress_context__
+        exc.__cause__, exc.__context__ = cause, context
+        exc.__suppress_context__ = suppress
+        is_clean = _renders_clean(exc, redact)
+    except Exception:  # ruff: ignore[blind-except] -- any failure must not let the original escape
+        is_clean = False
+    if is_clean:
         return exc
-    replacement = LadingError(redact(f"{type(exc).__name__}: {exc}"))
+    replacement = LadingError(_describe(exc, redact))
     replacement.__cause__ = cause or context
     replacement.__traceback__ = exc.__traceback__
     memo[id(exc)] = replacement
     return replacement
 
 
+def _describe(exc: BaseException, redact: Redact) -> str:
+    """Return ``"<TypeName>: <redacted text>"`` for ``exc``, however it renders."""
+    try:
+        text = f"{exc}"
+    except Exception:  # ruff: ignore[blind-except] -- an exception that cannot render itself
+        text = "<unrenderable>"
+    return redact(f"{type(exc).__name__}: {text}")
+
+
 def _clean_link(
-    link: BaseException | None, redact: Redact, memo: dict[int, BaseException]
+    link: BaseException | None, redact: Redact, memo: Memo
 ) -> BaseException | None:
     """Clean one link of a chain, keeping an absent link absent."""
     return None if link is None else _clean(link, redact, memo)
@@ -150,3 +168,14 @@ def sanitize_exception(exc: Exception, redact: Redact) -> Exception:
         redacted ``LadingError`` carrying its type name.
     """
     return typ.cast("Exception", _clean(exc, redact, {}))
+
+
+def scrub_value(value: object, redact: Redact) -> object:
+    """Redact every string in ``value``, at any depth and through cycles.
+
+    Returns
+    -------
+    object
+        The redacted value (containers are rebuilt, exceptions cleaned).
+    """
+    return _scrub(value, redact, {})

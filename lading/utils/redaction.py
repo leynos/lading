@@ -40,7 +40,7 @@ import functools
 import logging
 import re
 
-from lading.utils.exception_redaction import sanitize_exception
+from lading.utils.exception_redaction import sanitize_exception, scrub_value
 
 REDACTED = "<redacted>"
 
@@ -156,6 +156,61 @@ def redact_record(record: logging.LogRecord, secrets: cabc.Sequence[str]) -> Non
         record.stack_info = redact_text(record.stack_info, secrets)
 
 
+_STANDARD_ATTRIBUTES = frozenset(logging.makeLogRecord({}).__dict__)
+
+
+def redact_extras(record: logging.LogRecord, secrets: cabc.Sequence[str]) -> None:
+    """Redact every ``extra`` field of ``record``, at any depth.
+
+    ``Logger.makeRecord`` adds these after the record factory has run, so this
+    runs on the complete record.
+    """
+    redact = functools.partial(redact_text, secrets=secrets)
+    for name in set(vars(record)) - _STANDARD_ATTRIBUTES:
+        setattr(record, name, scrub_value(getattr(record, name), redact))
+
+
+class MakeRecordPatch:
+    """Wraps ``logging.Logger.makeRecord`` so ``extra`` fields are redacted too.
+
+    The record factory never sees ``extra``, which is applied afterwards, so
+    while secrets are active this wraps the method that applies it. Disabling it
+    restores the previous method when this is still the installed one, which
+    keeps nested and overlapping scopes safe.
+
+    Parameters
+    ----------
+    secrets : cabc.Sequence[str]
+        The values to replace.
+    """
+
+    def __init__(self, secrets: cabc.Sequence[str]) -> None:
+        """Install the wrapper around the current ``Logger.makeRecord``."""
+        self._previous: cabc.Callable[..., logging.LogRecord] = (
+            logging.Logger.makeRecord
+        )
+        self._secrets = tuple(secrets)
+        self._enabled = True
+
+        def make_record(
+            logger: logging.Logger, *args: object, **kwargs: object
+        ) -> logging.LogRecord:
+            """Make the record with the wrapped method, then redact it."""
+            record = self._previous(logger, *args, **kwargs)
+            if self._enabled:
+                redact_extras(record, self._secrets)
+            return record
+
+        self._installed = make_record
+        setattr(logging.Logger, "makeRecord", make_record)  # ruff: ignore[set-attr-with-constant] -- class-level wrap; direct assignment fails type checking
+
+    def disable(self) -> None:
+        """Stop redacting, and unwrap if this is still the installed method."""
+        self._enabled = False
+        if logging.Logger.makeRecord is self._installed:
+            setattr(logging.Logger, "makeRecord", self._previous)  # ruff: ignore[set-attr-with-constant] -- restores the wrapped method
+
+
 class RecordFactory:
     """A log-record factory that redacts each record as it is created.
 
@@ -222,6 +277,7 @@ def use_secrets(secrets: cabc.Iterable[str]) -> cabc.Generator[None]:
     _LIVE.append(redaction)
     factory = RecordFactory(logging.getLogRecordFactory(), combined)
     logging.setLogRecordFactory(factory)
+    patch = MakeRecordPatch(combined)
     try:
         yield
     except Exception as exc:
@@ -232,6 +288,7 @@ def use_secrets(secrets: cabc.Iterable[str]) -> cabc.Generator[None]:
             raise
         raise safe from safe.__cause__
     finally:
+        patch.disable()
         factory.disable()
         _LIVE.remove(redaction)
         redaction.detach_all()

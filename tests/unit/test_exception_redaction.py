@@ -1,8 +1,10 @@
 """Exceptions leaving a digest-checked scope are sanitized, type intact."""
 
+import collections
 import logging
 import shutil
 import traceback
+import typing as typ
 from pathlib import Path
 
 import pytest
@@ -245,3 +247,108 @@ def test_handler_on_a_specific_logger_receives_only_redacted_records(
         "the direct handler must receive the start log"
     )
     assert _LEAK not in "\n".join(seen), "and it must not show the token"
+
+
+def test_extra_fields_are_redacted_for_a_handler_on_a_specific_logger() -> None:
+    """``extra`` is applied after the record factory, and is covered too."""
+    seen: list[str] = []
+
+    class _Note(logging.Handler):
+        """Render a formatter that reads the ``extra`` fields."""
+
+        def emit(self, record: logging.LogRecord) -> None:
+            """Remember the rendered record."""
+            seen.append(self.format(record))
+
+    handler = _Note()
+    handler.setFormatter(logging.Formatter("%(message)s | %(note)s | %(nested)s"))
+    target = logging.getLogger("lading.commands.publish")
+    previous_level = target.level
+    target.setLevel(logging.INFO)
+    target.addHandler(handler)
+    try:
+        with use_secrets((_LEAK,)):
+            target.info(
+                "event",
+                extra={"note": f"token {_LEAK}", "nested": {"k": [f"v {_LEAK}"]}},
+            )
+        target.info("after", extra={"note": _LEAK, "nested": "x"})
+    finally:
+        target.removeHandler(handler)
+        target.setLevel(previous_level)
+
+    assert _LEAK not in seen[0], "no extra field may show the token inside the scope"
+    assert REDACTED in seen[0], "the redaction must show"
+    assert _LEAK in seen[1], "outside the scope nothing is altered"
+    assert logging.Logger.makeRecord.__name__ == "makeRecord", (
+        "the original makeRecord must be restored"
+    )
+
+
+def test_self_referential_containers_terminate_and_stay_cyclic() -> None:
+    """A list that contains itself is rebuilt with the cycle intact."""
+    cyclic: list[object] = [f"token {_LEAK}"]
+    cyclic.append(cyclic)
+    error = RuntimeError("boom", cyclic)
+
+    safe = sanitize_exception(error, _redact)
+
+    rebuilt = safe.args[1]
+    assert _LEAK not in "".join(traceback.format_exception(safe)), "no token remains"
+    assert rebuilt[1] is rebuilt, "the cycle must be preserved in the rebuilt list"
+
+
+_Pair = collections.namedtuple("_Pair", "first second")
+
+
+class _Unrebuildable(_Pair):
+    """A named tuple that cannot be reconstructed, so traversal must fail."""
+
+    __slots__ = ()
+
+    def __new__(cls, first: object, second: object) -> typ.Self:
+        """Refuse reconstruction, as a type with a strict constructor would."""
+        message = f"cannot rebuild {first!r} {second!r}"
+        raise TypeError(message)
+
+
+def test_failed_traversal_replaces_the_exception_instead_of_leaking_it() -> None:
+    """If rebuilding fails, the redacted replacement is raised, not the original."""
+    error = ValueError(tuple.__new__(_Unrebuildable, (f"token {_LEAK}", 1)))
+
+    safe = sanitize_exception(error, _redact)
+
+    assert isinstance(safe, LadingError), "the replacement must be a LadingError"
+    assert "ValueError" in str(safe), "it must carry the original type name"
+    assert _LEAK not in str(safe), "and it must be clean"
+
+
+def test_publish_run_with_a_cyclic_error_from_the_runner_is_clean(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An injected runner's cyclic, token-bearing error leaves ``run`` sanitized."""
+    rig = PublishRig.create(tmp_path)
+    cyclic: list[object] = [f"token {_LEAK}"]
+    cyclic.append(cyclic)
+
+    def runner(*_args: object, **_kwargs: object) -> tuple[int, str, str]:
+        """Fail with an error whose arguments contain a cycle and the token."""
+        message = "runner failed"
+        raise RuntimeError(message, cyclic)
+
+    caught: list[BaseException] = []
+    try:
+        rig.run(
+            monkeypatch,
+            command_runner=runner,
+            expect_digests=rig.digests_file(),
+            environment=CargoEnvironment(None, None, (_LEAK,)),
+        )
+    except RuntimeError as exc:
+        caught.append(exc)
+
+    assert caught, "the runner's error must reach the caller with its type"
+    assert _LEAK not in "".join(traceback.format_exception(caught[0])), (
+        "the formatted traceback must be clean"
+    )
+    assert caught[0].args[1][1] is caught[0].args[1], "the cycle must survive"
