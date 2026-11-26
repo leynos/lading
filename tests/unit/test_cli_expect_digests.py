@@ -126,22 +126,20 @@ def _stale_lockfile_runner(
 
 
 @pytest.mark.parametrize(
-    ("extra_args", "is_locked"),
+    "case",
     [
-        (("--expect-digests", "digests.txt"), True),
-        ((), False),
+        pytest.param((("--expect-digests", "digests.txt"), True), id="with_digests"),
+        pytest.param(((), False), id="without_digests"),
     ],
-    ids=["with_digests", "without_digests"],
 )
 def test_discovery_is_locked_only_when_digests_are_expected(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
-    extra_args: tuple[str, ...],
-    *,
-    is_locked: bool,
+    case: tuple[tuple[str, ...], bool],
 ) -> None:
     """A stale lockfile stops discovery instead of being updated first."""
+    extra_args, is_locked = case
     commands: list[tuple[str, ...]] = []
     monkeypatch.setattr(cli, "_select_runner", lambda: _stale_lockfile_runner(commands))
 
