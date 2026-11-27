@@ -616,3 +616,39 @@ def test_commit_order_is_root_members_documentation_then_readme(
     assert plan.proposals[0].path.display == "Cargo.toml", (
         "the root manifest must be committed first"
     )
+
+
+def test_an_unchanged_case_only_target_still_reports_the_ambiguity(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An unchanged first proposal must not turn the ambiguity into a KeyError."""
+    root = tmp_path.resolve()
+    upper = root / "README.md"
+    lower = root / "readme.md"
+    upper.write_text("same\n", encoding="utf-8")
+    try:
+        lower.write_text("same\n", encoding="utf-8")
+    except OSError as exc:  # pragma: no cover - a case-insensitive filesystem
+        if exc.errno != errno.EEXIST:
+            raise
+        pytest.skip("the filesystem cannot hold case-only sibling names")
+    if lower.samefile(upper):  # pragma: no cover - case-insensitive filesystem
+        pytest.skip("the filesystem treats case-only names as one file")
+    zero = os.stat_result((0o100644, 0, 7, 1, 0, 0, 0, 0, 0, 0))
+    real_stat = Path.stat
+
+    def fake_stat(self: Path, *, follow_symlinks: bool = True) -> os.stat_result:
+        """Report a zero inode for both case-only targets."""
+        if self in {upper, lower}:
+            return zero
+        return real_stat(self, follow_symlinks=follow_symlinks)
+
+    monkeypatch.setattr(Path, "stat", fake_stat)
+    builder = PlanBuilder(root=root)
+    builder.propose(_confined(root, "README.md"), "same\n", WriteCategory.README)
+
+    with pytest.raises(BumpPreflightError):
+        builder.propose(
+            _confined(root, "readme.md"), "different\n", WriteCategory.README
+        )

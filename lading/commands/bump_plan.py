@@ -122,6 +122,7 @@ class PlanBuilder:
     _original: dict[_ProposalKey, str | None] = dc.field(default_factory=dict)
     _order: list[_ProposalKey] = dc.field(default_factory=list)
     _casefold_keys: dict[_ProposalKey, _ProposalKey] = dc.field(default_factory=dict)
+    _casefold_paths: dict[_ProposalKey, str] = dc.field(default_factory=dict)
 
     def _key(self, path: ConfinedPath) -> _ProposalKey:
         """Return a filesystem-aware identity for ``path``.
@@ -238,6 +239,7 @@ class PlanBuilder:
                 self._original.pop(key, None)
                 self._order.remove(key)
                 self._casefold_keys.pop(self._casefold_key(key), None)
+                self._casefold_paths.pop(self._casefold_key(key), None)
                 return
             self._contents[key] = content
             self._categories[key].add(category)
@@ -295,11 +297,12 @@ class PlanBuilder:
         if existing is not None and existing != key:
             message = (
                 "two planned targets differ only in case and cannot be "
-                f"identified as one file: {self._paths[existing].display} and "
+                f"identified as one file: {self._casefold_paths[folded]} and "
                 f"{path.display}"
             )
             raise BumpPreflightError(message)
         self._casefold_keys[folded] = key
+        self._casefold_paths[folded] = path.display
 
     def has_changes(self, category: WriteCategory) -> bool:
         """Return whether any proposed write carries ``category``.
