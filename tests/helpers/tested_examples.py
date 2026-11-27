@@ -82,32 +82,55 @@ def load_tested_examples(
         identifier is duplicated.
     """
     lines = path.read_text(encoding="utf-8").splitlines()
-    examples: dict[str, MarkedExample] = {}
+    state = _LoadState(
+        lines=lines,
+        path=path,
+        require_markers=require_markers,
+        examples={},
+    )
     index = 0
-    list_levels: list[int] = []
     while index < len(lines):
-        raw = lines[index]
-        list_indent = list_context(raw, list_levels)
-        marker = _marker_at(raw, path, index, list_indent)
-        if marker is None:
-            if require_markers:
-                _reject_unmarked_fence(raw, path, index, list_indent)
-                index += 1
-                continue
-            # Skip the whole fence so a literal marker in its body is not read
-            # as an example.
-            skip_to = unmarked_fence_end(lines, index, list_indent)
-            index = skip_to if skip_to is not None else index + 1
-            continue
-        if marker.identifier in examples:
-            message = (
-                f"{path}:{index + 1}: duplicate tested-example {marker.identifier!r}"
-            )
-            raise ValueError(message)
-        example, next_index = _read_marked_example(lines, index, marker)
-        examples[marker.identifier] = example
-        index = next_index
-    return examples
+        index = _load_line(state, index)
+    return state.examples
+
+
+@dc.dataclass(slots=True)
+class _LoadState:
+    """Mutable state for one loader pass."""
+
+    lines: cabc.Sequence[str]
+    path: Path
+    require_markers: bool
+    examples: dict[str, MarkedExample]
+    list_levels: list[int] = dc.field(default_factory=list)
+
+
+def _load_line(state: _LoadState, index: int) -> int:
+    """Load one line, returning the next index to inspect."""
+    raw = state.lines[index]
+    list_indent = list_context(raw, state.list_levels)
+    marker = _marker_at(raw, state.path, index, list_indent)
+    if marker is None:
+        return _skip_line(state, index, list_indent)
+    if marker.identifier in state.examples:
+        message = (
+            f"{state.path}:{index + 1}: duplicate tested-example {marker.identifier!r}"
+        )
+        raise ValueError(message)
+    example, next_index = _read_marked_example(state.lines, index, marker)
+    state.examples[marker.identifier] = example
+    return next_index
+
+
+def _skip_line(state: _LoadState, index: int, list_indent: int) -> int:
+    """Return the next index after a line that carries no marker."""
+    if state.require_markers:
+        _reject_unmarked_fence(state.lines[index], state.path, index, list_indent)
+        return index + 1
+    # Skip the whole fence so a literal marker in its body is not read as an
+    # example.
+    skip_to = unmarked_fence_end(state.lines, index, list_indent)
+    return skip_to if skip_to is not None else index + 1
 
 
 def _reject_unmarked_fence(

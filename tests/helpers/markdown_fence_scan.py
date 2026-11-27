@@ -66,14 +66,27 @@ def strip_quotes(line: str, depth: int) -> str | None:
         column = _column_after(consumed, column)
         padding_consumed = consumed.endswith(" ")
         remainder = remainder[match.end() :]
-    if depth and remainder.startswith("\t"):
-        # A tab advances to the next four-column stop. Without a padding
-        # space the tab itself supplies the marker's one-space padding, so
-        # keep only the columns beyond the marker's content column.
-        tab_end = (column // TAB_WIDTH + 1) * TAB_WIDTH
-        content_column = column if padding_consumed else column + 1
-        remainder = " " * max(tab_end - content_column, 0) + remainder[1:]
-    return remainder
+    return _strip_quote_tab(
+        remainder, column, padding_consumed=padding_consumed, depth=depth
+    )
+
+
+def _strip_quote_tab(
+    remainder: str,
+    column: int,
+    *,
+    padding_consumed: bool,
+    depth: int,
+) -> str:
+    """Expand a tab that directly follows the final quote marker."""
+    if not depth or not remainder.startswith("\t"):
+        return remainder
+    # A tab advances to the next four-column stop. Without a padding space
+    # the tab itself supplies the marker's one-space padding, so keep only
+    # the columns beyond the marker's content column.
+    tab_end = (column // TAB_WIDTH + 1) * TAB_WIDTH
+    content_column = column if padding_consumed else column + 1
+    return " " * max(tab_end - content_column, 0) + remainder[1:]
 
 
 def fence_delimiter(line: str) -> tuple[str, int] | None:
@@ -136,20 +149,24 @@ def indentation(line: str) -> int:
 
 def dedent(line: str, indent: int) -> str:
     """Remove up to ``indent`` columns of leading whitespace from ``line``."""
+    prefix = line[: len(line) - len(line.lstrip(" \t"))]
+    expanded = _expand_tabs(prefix)
+    return expanded[indent:] + line[len(prefix) :]
+
+
+def _expand_tabs(text: str) -> str:
+    """Return ``text`` with each tab expanded to the next four-column stop."""
+    expanded: list[str] = []
     column = 0
-    index = 0
-    while index < len(line) and column < indent and line[index] in " \t":
-        if line[index] == " ":
+    for character in text:
+        if character == " ":
+            expanded.append(" ")
             column += 1
-            index += 1
             continue
-        tab_end = (column // TAB_WIDTH + 1) * TAB_WIDTH
-        if tab_end <= indent:
-            column = tab_end
-            index += 1
-            continue
-        return " " * (tab_end - indent) + line[index + 1 :]
-    return line[index:]
+        width = TAB_WIDTH - column % TAB_WIDTH
+        expanded.append(" " * width)
+        column += width
+    return "".join(expanded)
 
 
 def list_context(raw: str, levels: list[int]) -> int:
