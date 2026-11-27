@@ -257,7 +257,15 @@ def test_eligible_dependency_fence_still_rewrites_its_dependency() -> None:
     )
 
 
-_NON_MATCHING_NAME = st.text(min_size=1).filter(lambda name: name != "alpha")
+# The alphabet keeps a generated name valid inside a TOML basic string, so the
+# fixture cannot produce text that parses back as a different package name.
+_NON_MATCHING_NAME = st.text(
+    alphabet=st.characters(
+        whitelist_categories=("Ll", "Lu", "Nd"), whitelist_characters="-_"
+    ),
+    min_size=1,
+    max_size=20,
+).filter(lambda name: name != "alpha")
 _VERSION_SHAPES = st.sampled_from([
     'version = "0.1.0"',
     "version.workspace = true",

@@ -1,9 +1,11 @@
 """Documentation coverage tests for the end-user guide."""
 
+import re
 import typing as typ
 from pathlib import Path
 
 from lading import config as config_module
+from lading.commands import bump_docs_fences
 
 if typ.TYPE_CHECKING:
     from syrupy.assertion import SnapshotAssertion
@@ -65,22 +67,25 @@ def test_users_guide_documents_key_cli_flags_and_env_vars() -> None:
     assert not missing_env, f"users guide missing env var terms: {missing_env}"
 
 
-def test_users_guide_documents_documentation_version_policy() -> None:
-    """Guard against drift in the narrowed documentation-pass contract."""
+_TOML_FENCE = re.compile(r"^```toml\n(?P<body>.*?)^```$", re.DOTALL | re.MULTILINE)
+
+
+def test_users_guide_downstream_example_keeps_its_version() -> None:
+    """The guide's downstream-application example is not re-versioned."""
     content = Path("docs/users-guide.md").read_text(encoding="utf-8")
-    # The Markdown formatter wraps prose, so compare against unwrapped text.
-    unwrapped = " ".join(content.split())
+    examples = [match.group("body") for match in _TOML_FENCE.finditer(content)]
+    app_example = next((body for body in examples if 'name = "my-app"' in body), None)
 
-    required_terms = (
-        "`[package].name` names a bumped, non-excluded crate",
-        "never inserts a `version` key",
-        "`version.workspace = true`",
-        "`[workspace.package].version`",
-        "rewritten independently of this gate",
+    assert app_example is not None, (
+        "the guide must document a downstream-application example"
     )
-
-    missing = [term for term in required_terms if term not in unwrapped]
-    assert not missing, f"users guide missing documentation policy terms: {missing}"
+    updated, changed = bump_docs_fences.update_toml_snippet_versions(
+        app_example, {"alpha"}, "1.2.3"
+    )
+    assert not changed, "the documented application version must not be rewritten"
+    assert updated == app_example, (
+        "the documented downstream example must survive the pass unchanged"
+    )
 
 
 def test_users_guide_documents_relay_event_contract() -> None:
