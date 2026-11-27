@@ -1,6 +1,6 @@
 # Restrict the bump documentation pass to bumped workspace crates
 
-Status: IN PROGRESS
+Status: COMPLETE
 
 Issue: <https://github.com/leynos/lading/issues/368>
 
@@ -239,9 +239,13 @@ Scenario: Bumping restricts documentation version rewriting to bumped crates
   `lading/commands/bump_docs_markdown.py` as a separate atomic refactor
   (`30211d18`), restoring both modules under the 400-line ceiling. Full gates
   green on the refactor tree.
-- [ ] EP-M3: documentation, migration note, and gates. In progress: user
-  guide, design document, migration guide, and their contract tests are
-  written; the final gate run and commit remain.
+- [x] EP-M3: documentation, migration note, and gates. User guide, design
+  document, migration guide and their contract tests committed as `c395dc84`;
+  all six deterministic gates green.
+- [x] 2026-11-27: review fixes committed as `da097f52` (dependency-helper
+  split), `b0194fc7` (test hardening), `a80eac4c` (duplicated out-of-order
+  tests merged). Local CodeRabbit review reports zero findings, hosted CI is
+  green, and the CodeScene delta is clean.
 
 ## Surprises & discoveries
 
@@ -307,3 +311,9 @@ introduced.
   brief; no upstream deviation recorded.
 - 2026-11-27: recorded the implemented policy, the renderer extraction, the
   BDD step additions, and the placement of the tested documentation example.
+- 2026-11-27: review follow-up. Split the dependency helpers into
+  `bump_toml_dependencies.py` after CodeRabbit flagged `bump_toml.py` over the
+  400-line ceiling, replaced the exact-prose user-guide assertion with an
+  execution test, made the Hypothesis name strategy TOML-safe, and merged two
+  duplicated out-of-order tests that CodeScene flagged. All gates re-run green
+  after each change.
