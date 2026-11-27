@@ -122,6 +122,7 @@ Feature: Lading CLI scaffolding
     When I invoke lading bump 1.2.3 with that workspace
     Then the documentation file "README.md" contains "config_layer = { package = \"alpha\", version = \"1.2.3\" }"
     And the documentation file "README.md" contains "alpha = { package = \"unrelated\", version = \"3.0.0\" }"
+    And the documentation file "README.md" does not contain "alpha = { package = \"unrelated\", version = \"1.2.3\" }"
 
   Scenario: Bumping transposes workspace README to crates
     Given a workspace directory with configuration

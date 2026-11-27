@@ -230,6 +230,18 @@ _IDENTITY_CASES: typ.Final[tuple[tuple[str, str, str, bool], ...]] = (
         False,
     ),
     (
+        "empty-package-with-matching-key",
+        '[dependencies]\nalpha = { package = "", version = "1.0.0" }\n',
+        '[dependencies]\nalpha = { package = "", version = "1.0.0" }\n',
+        False,
+    ),
+    (
+        "non-string-package-with-matching-key",
+        '[dependencies]\nalpha = { package = 1, version = "1.0.0" }\n',
+        '[dependencies]\nalpha = { package = 1, version = "1.0.0" }\n',
+        False,
+    ),
+    (
         "alias-already-current",
         '[dependencies]\nalias = { package = "alpha", version = "2.0.0" }\n',
         '[dependencies]\nalias = { package = "alpha", version = "2.0.0" }\n',

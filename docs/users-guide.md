@@ -467,14 +467,14 @@ ortho_config = "0.9.0"                                          # bumped
 
 A `package` field that is present but empty, or that is not a string, makes the
 entry unidentifiable: `lading` leaves it untouched rather than falling back to
-the key. A key that merely shares a workspace crate's name while renaming
-another package is therefore never rewritten.
+the key. A key that shares a workspace crate's name while renaming another
+package is not rewritten unless that other package is itself being bumped.
 
 The identity rule applies at every location the pass visits: the top-level
 tables, their `[workspace.*]` counterparts, and the `[target.<spec>.*]` tables.
 
 When upgrading from a release that matched dependency keys only, re-run
-`lading bump` with `--dry-run` and review the documentation entries it reports:
+`lading bump` with `--dry-run` and review the documentation files it reports:
 TOML fences that previously kept a stale alias now change, and fences whose key
 happened to match a bumped crate but renamed a different package no longer do.
 
