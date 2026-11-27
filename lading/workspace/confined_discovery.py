@@ -151,13 +151,31 @@ def _require_cargo_workspace_root(
         message = "cargo metadata did not report a workspace_root path"
         raise BumpPreflightError(message)
     reported_root = Path(reported).expanduser().resolve(strict=False)
-    if reported_root != root:
+    if not _same_directory(reported_root, root):
         message = (
             f"Cargo reported workspace root {reported_root} but lading was asked "
             f"to bump {root}; pass --workspace-root {reported_root} (or run from "
             "that directory) so both agree"
         )
         raise BumpPreflightError(message)
+
+
+def _same_directory(first: Path, second: Path) -> bool:
+    """Return whether two existing roots identify the same directory.
+
+    Path equality is case-insensitive on Windows, so a case-only sibling could
+    pass the comparison while naming a different directory. Directory identity
+    accepts alternate spellings only for the same directory.
+
+    Returns
+    -------
+    bool
+        ``True`` when both paths identify the same directory.
+    """
+    try:
+        return first.samefile(second)
+    except OSError:
+        return False
 
 
 def _cross_check_declared_members(
