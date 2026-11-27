@@ -171,11 +171,13 @@ def _declared_length(response: _Response) -> int | None:
 def _limit_socket_wait(response: _Response, seconds: float) -> None:
     """Make the next blocking read on ``response`` wait at most ``seconds``.
 
-    A buffered ``read(n)`` can loop over several ``recv`` calls and so outlive
-    any single timeout, so the budget is applied to the socket before every
-    read, and reads use ``read1`` (one underlying read). The socket is reached
-    through the response's file object; a response without one (a test double)
-    is left alone.
+    A buffered ``read(n)`` can loop over many ``recv`` calls, so the budget
+    left is applied to the socket before every read and reads use ``read1``.
+    That bounds each underlying read, not the total: a ``read1`` on a chunked
+    body can still make several reads while it consumes the trailers. The total
+    is enforced by the deadline checks before any result is returned. The
+    socket is reached through the response's file object; a response without
+    one (a test double) is left alone.
     """
     sock = getattr(getattr(getattr(response, "fp", None), "raw", None), "_sock", None)
     if sock is not None:
@@ -314,9 +316,10 @@ class _Retry:
         return True
 
 
-def _attempt(url: str, transport: FetchTransport, deadline: _Deadline) -> str | None:
+def _open_and_hash(
+    url: str, transport: FetchTransport, deadline: _Deadline
+) -> str | None:
     """Make one request; return the digest, or ``None`` for a 404."""
-    deadline.check()
     # The URL comes from `crates_io_archive_url`: a fixed https host.
     request = urllib.request.Request(  # ruff: ignore[suspicious-url-open-usage] -- fixed https host
         url, headers={"User-Agent": _USER_AGENT}
@@ -336,6 +339,16 @@ def _attempt(url: str, transport: FetchTransport, deadline: _Deadline) -> str | 
         if not isinstance(error, _BudgetExhaustedError):
             deadline.check()
         raise
+
+
+def _attempt(url: str, transport: FetchTransport, deadline: _Deadline) -> str | None:
+    """Make one request within the budget; return the digest, or ``None``."""
+    deadline.check()
+    result = _open_and_hash(url, transport, deadline)
+    # Reads are bounded one by one and closing not at all, so a late end of
+    # body, a late 404 or a slow close is the budget expiring, never a result.
+    deadline.check()
+    return result
 
 
 def fetch_crates_io_digest(
