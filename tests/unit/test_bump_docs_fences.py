@@ -180,6 +180,26 @@ def test_a_tab_indented_list_fence_uses_column_indentation() -> None:
     )
 
 
+def test_a_tab_between_block_quote_markers_is_preserved() -> None:
+    """A tab between nested quote markers keeps both markers."""
+    text = '>\t> ```toml\n>\t> [dependencies]\n>\t> alpha = "0.1.0"\n>\t> ```\n'
+
+    updated, changed = bump_docs_fences.rewrite_markdown_toml_fences(
+        text, ("alpha",), "1.2.3"
+    )
+
+    assert changed, "the dependency version must be rewritten"
+    assert ">\t> [dependencies]" in updated, (
+        "the inner block quote must survive the continuation prefix"
+    )
+    parsed = MarkdownIt("commonmark").parse(updated)
+    fences = [token for token in parsed if token.type == "fence"]
+    assert len(fences) == 1, "the rewrite must remain one fenced block"
+    assert 'alpha = "1.2.3"' in fences[0].content, (
+        "the parsed fence must carry the rewritten TOML"
+    )
+
+
 _FENCE_OPENER = st.sampled_from([
     "```toml",
     "````toml",

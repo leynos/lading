@@ -175,7 +175,7 @@ def _terminated_opener(opener: str, ending: str) -> str:
     return f"{opener}{ending}"
 
 
-_QUOTE_PREFIX: typ.Final[re.Pattern[str]] = re.compile(r"^(?: {0,3}> ?)+")
+_QUOTE_PREFIX: typ.Final[re.Pattern[str]] = re.compile(r"^(?: {0,3}>[ \t]?)+")
 _LIST_PREFIX: typ.Final[re.Pattern[str]] = re.compile(r"^ *(?:[-+*]|\d{1,9}[.)])[ \t]+")
 
 

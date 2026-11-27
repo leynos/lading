@@ -96,3 +96,27 @@ def test_tabbed_list_padding_is_measured_from_the_marker_column() -> None:
     assert unmarked_fence_delimiter("- \t~~~python", 0) == ("~", 3), (
         "three columns of padding still open a fence"
     )
+
+
+def test_quote_marker_tab_uses_the_actual_marker_column() -> None:
+    """Leading indentation before a quote marker shifts the tab's columns."""
+    assert strip_quotes(" >\t  ```python", 1) == "   ```python", (
+        "one leading space and the marker padding leave three columns"
+    )
+    assert unmarked_fence_delimiter(" >\t  ```python", 0) == ("`", 3), (
+        "the remaining three columns still open a fence"
+    )
+
+
+def test_four_space_indented_list_marker_is_literal_code() -> None:
+    """A top-level marker indented four spaces is code, not a list item."""
+    assert unmarked_fence_delimiter("    - ```python", 0) is None, (
+        "four spaces at top level are indented code"
+    )
+
+
+def test_non_breaking_space_does_not_open_a_fence() -> None:
+    """Only spaces and tabs may precede an opening fence."""
+    assert unmarked_fence_delimiter("\u00a0~~~text", 0) is None, (
+        "a non-breaking space is content, not indentation"
+    )

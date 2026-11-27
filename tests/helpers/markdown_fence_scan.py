@@ -56,17 +56,23 @@ def quote_depth(line: str) -> int:
 def strip_quotes(line: str, depth: int) -> str | None:
     """Remove ``depth`` block-quote markers, or ``None`` when the quote ends."""
     remainder = line
+    column = 0
+    padding_consumed = False
     for _ in range(depth):
         match = _QUOTE_TOKEN.match(remainder)
         if match is None:
             return None
+        consumed = remainder[: match.end()]
+        column = _column_after(consumed, column)
+        padding_consumed = consumed.endswith(" ")
         remainder = remainder[match.end() :]
-    if remainder.startswith("\t"):
-        # A tab advances to the next four-column stop. The marker's content
-        # column is two per level, so keep the tab's remaining columns.
-        marker_column = depth * 2
-        tab_end = (marker_column // TAB_WIDTH + 1) * TAB_WIDTH
-        remainder = " " * (tab_end - marker_column) + remainder[1:]
+    if depth and remainder.startswith("\t"):
+        # A tab advances to the next four-column stop. Without a padding
+        # space the tab itself supplies the marker's one-space padding, so
+        # keep only the columns beyond the marker's content column.
+        tab_end = (column // TAB_WIDTH + 1) * TAB_WIDTH
+        content_column = column if padding_consumed else column + 1
+        remainder = " " * max(tab_end - content_column, 0) + remainder[1:]
     return remainder
 
 
@@ -160,7 +166,7 @@ def list_context(raw: str, levels: list[int]) -> int:
     """
     depth = quote_depth(raw)
     content = strip_quotes(raw, depth) or ""
-    match = _LIST_ITEM.match(content)
+    match = _list_item(content, levels[-1] if levels else 0)
     if match is not None:
         content_start = _list_content_start(content, match)
         indent = _column_after(content[:content_start])
@@ -192,7 +198,7 @@ def unmarked_fence_delimiter(
     """
     depth = quote_depth(raw)
     content = strip_quotes(raw, depth) or ""
-    list_item = _LIST_ITEM.match(content)
+    list_item = _list_item(content, list_indent)
     if list_item is not None:
         remainder = content[_list_content_start(content, list_item) :]
         too_indented = indentation(remainder) > MAX_FENCE_INDENT
@@ -201,7 +207,26 @@ def unmarked_fence_delimiter(
         too_indented = indentation(remainder) > list_indent + MAX_FENCE_INDENT
     if too_indented:
         return None
-    return fence_delimiter(remainder.strip())
+    return fence_delimiter(remainder.strip(" \t"))
+
+
+def _list_item(content: str, container_indent: int) -> re.Match[str] | None:
+    """Return a list-item match indented within its container, or ``None``.
+
+    Four or more spaces of indentation beyond the container make indented
+    code, not a list item.
+
+    Returns
+    -------
+    re.Match[str] | None
+        The list-item match when the marker sits within its container.
+    """
+    match = _LIST_ITEM.match(content)
+    if match is None:
+        return None
+    if indentation(content[: match.end()]) > container_indent + MAX_FENCE_INDENT:
+        return None
+    return match
 
 
 def list_item_end(content: str) -> int | None:
@@ -214,7 +239,7 @@ def list_item_end(content: str) -> int | None:
         marker padding when more than four spaces follow the marker, or
         ``None`` when ``content`` does not start with a list item.
     """
-    match = _LIST_ITEM.match(content)
+    match = _list_item(content, 0)
     return _list_content_start(content, match) if match is not None else None
 
 

@@ -346,12 +346,10 @@ provisioned private account-owned lock directory; dry runs take no lock. See
 [Rewriting configured non-member manifests](users-guide.md#rewriting-configured-non-member-manifests)
 for the lock location and repair guidance. Command summaries still go to
 stdout, and a script that captured both streams together sees no change in
-meaning. A documentation guide whose TOML fences describe bumped crates, or
-which does not configure `bump.documentation.globs`, A documentation guide
-needs no change when it does not configure `bump.documentation.globs`, or when
-every fence that names a bumped crate already declares a string `version`. A
-fence that relied on the previous pass inserting a version is covered by the
-review in
+meaning. A documentation guide needs no change when it does not configure
+`bump.documentation.globs`, or when every fence that names a bumped crate
+already declares a string `version`. A fence that relied on the previous pass
+inserting a version is covered by the review in
 [section 6](#6-review-documentation-snippets-for-over-broad-rewriting).
 
 ## Migration checklist
