@@ -14,7 +14,7 @@ Examples
 import collections.abc as cabc
 import logging
 
-from lading.utils.redaction import REDACTED, redact_text
+from lading.utils.redaction import marker_for, redact_text
 
 _LOGGER = logging.getLogger("lading.runtime.subprocess_runner")
 
@@ -44,12 +44,13 @@ def redact_environment(
     dict[str, str]
         The mapping sorted by key, secret-looking values masked.
     """
+    # The masked placeholder is the one value redaction would use, so a known
+    # secret that could overlap ``<redacted>`` cannot show through it either.
+    marker = marker_for(secrets)
     redacted: dict[str, str] = {}
     for key, value in env.items():
         redacted[key] = (
-            REDACTED
-            if _should_redact_env_key(key)
-            else redact_text(str(value), secrets)
+            marker if _should_redact_env_key(key) else redact_text(str(value), secrets)
         )
     return dict(sorted(redacted.items()))
 

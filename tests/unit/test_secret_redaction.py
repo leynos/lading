@@ -20,7 +20,6 @@ from lading.utils.process import append_detail, command_detail, with_detail
 from lading.utils.redaction import (
     REDACTED,
     SecretRedactor,
-    ordered_secrets,
     redact_text,
     registry_token_values,
     use_secrets,
@@ -220,9 +219,10 @@ def test_failure_formatters_hide_active_secrets_in_one_place() -> None:
     )
 
 
-# A small alphabet that includes the placeholder's own characters, so secrets
-# overlap one another in prefixes and suffixes and also overlap the marker.
-_ALPHABET = "xyzq" + REDACTED
+# A small alphabet that includes the placeholder's own characters and the first
+# fallback fillers, so secrets overlap one another in prefixes and suffixes and
+# also overlap both the default marker and the fallbacks chosen in its place.
+_ALPHABET = "xyzq*#" + REDACTED
 _TEXTS = st.text(alphabet=_ALPHABET, max_size=60)
 _SECRETS = st.lists(
     st.text(alphabet=_ALPHABET, min_size=1, max_size=6), min_size=1, max_size=4
@@ -248,8 +248,8 @@ def test_streaming_redaction_equals_redacting_the_whole(
     streamed += redactor.flush()
 
     assert streamed == redact_text(text, secrets), "streaming must match the whole"
-    assert all(secret not in streamed for secret in ordered_secrets(secrets)), (
-        "no honoured secret may remain in the output"
+    assert all(secret not in streamed for secret in secrets), (
+        "no complete known secret may remain in the output"
     )
 
 
@@ -271,47 +271,3 @@ def test_a_longer_secret_that_completes_later_beats_a_shorter_prefix() -> None:
     streamed = redactor.feed("abc") + redactor.feed("def") + redactor.flush()
 
     assert streamed == REDACTED, "the longer secret must be replaced whole"
-
-
-@pytest.mark.parametrize(
-    "secret",
-    [
-        REDACTED,
-        "redacted",
-        "act",
-        "<red",
-        "ted>",
-        "ed>x",
-        "y<re",
-        f"a{REDACTED}b",
-    ],
-    ids=[
-        "equal",
-        "inside",
-        "tiny",
-        "prefix",
-        "suffix",
-        "starts_with_suffix",
-        "ends_with_prefix",
-        "contains_marker",
-    ],
-)
-def test_a_secret_overlapping_the_marker_is_ignored_and_never_corrupts_output(
-    secret: str,
-) -> None:
-    """A value the marker would still show is not honoured, and nothing breaks."""
-    real = "real-token-value"
-    text = f"before {secret} and {real} after"
-
-    shown = redact_text(text, (secret, real))
-
-    assert ordered_secrets((secret, real)) == (real,), (
-        "the overlapping value is ignored"
-    )
-    assert shown == f"before {secret} and {REDACTED} after", (
-        "only the usable secret is replaced"
-    )
-    assert real not in shown, "the real token must not remain"
-    redactor = SecretRedactor((secret, real))
-    streamed = "".join(redactor.feed(char) for char in text) + redactor.flush()
-    assert streamed == shown, "streaming must agree"

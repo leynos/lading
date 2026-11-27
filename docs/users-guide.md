@@ -896,8 +896,10 @@ values come from lading's environment, from the same variables in a pre-flight
 `registries.<name>.token` keys of `$CARGO_HOME/credentials.toml` (or the legacy
 `credentials`). If the pre-flight builds, a build script, or Cargo print one,
 it appears as `<redacted>` on the console, in the logs, and in error messages.
-An unreadable credentials file adds no values and logs a warning that does not
-quote it.
+If a value could be confused with that placeholder, such as a named-registry
+token that is just `redacted`, lading uses a placeholder built from a character
+no value contains, such as `<********>`, instead. An unreadable credentials
+file adds no values and logs a warning that does not quote it.
 
 The limits are plain. Only those exact values are replaced, not patterns, so a
 credential that reaches the output in a changed form, such as encoded, is not

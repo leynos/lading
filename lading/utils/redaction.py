@@ -36,6 +36,7 @@ Examples
 import collections.abc as cabc
 import contextlib
 import contextvars
+import dataclasses as dc
 import functools
 import re
 
@@ -52,7 +53,7 @@ _ACTIVE: contextvars.ContextVar[tuple[str, ...]] = contextvars.ContextVar(
 
 
 def _overlaps_marker(secret: str) -> bool:
-    """Whether ``secret`` could appear in output through the marker itself.
+    """Whether ``secret`` could appear in output through the default marker.
 
     True when the secret lies inside the marker, contains it, or starts with a
     proper suffix or ends with a proper prefix of it (so the marker plus
@@ -73,34 +74,93 @@ def _overlaps_marker(secret: str) -> bool:
     )
 
 
+# ``*`` reads best as a mask, then the other printable symbols. Past those every
+# printable code point is tried, skipping the surrogates, which cannot be
+# encoded.
+_PREFERRED_FILLERS = "*#~=-_.+!$%&@^|:;?/,'\"`()[]{}<>"
+
+
+def _filler_candidates() -> cabc.Iterator[str]:
+    """Yield every candidate filler character in order of preference."""
+    yield from _PREFERRED_FILLERS
+    yield from map(chr, range(0x21, 0xD800))
+    yield from map(chr, range(0xE000, 0x110000))
+
+
+def _absent_character(secrets: cabc.Collection[str]) -> str:
+    """Return the most preferred character that appears in none of ``secrets``.
+
+    Returns
+    -------
+    str
+        A single character absent from every secret.
+
+    Raises
+    ------
+    ValueError
+        If the secrets use every code point, so no marker can avoid them.
+    """
+    used = set().union(*secrets)
+    absent = next((c for c in _filler_candidates() if c not in used), None)
+    if absent is None:
+        message = "the secrets use every character, so no marker can hide them"
+        raise ValueError(message)
+    return absent
+
+
+def marker_for(secrets: cabc.Iterable[str]) -> str:
+    """Return the replacement marker that cannot overlap any of ``secrets``.
+
+    The default ``<redacted>`` is used unless a secret could overlap it (a
+    named-registry token can be any string, even ``redacted``). Then the marker
+    is built from one character found in none of the secrets, framed by ``<``
+    and ``>`` when neither appears in any secret. Any overlap between a secret
+    and the marker would have to share one of the marker's characters, so no
+    secret can show through it. The choice depends only on the set of secrets,
+    so streaming and one-shot redaction pick the same marker.
+
+    Returns
+    -------
+    str
+        The marker to put in place of each secret.
+
+    Examples
+    --------
+    >>> marker_for(["token"])
+    '<redacted>'
+    >>> marker_for(["redacted"])
+    '<********>'
+    >>> marker_for(["<redacted>"])
+    '**********'
+    """
+    known = ordered_secrets(secrets)
+    if not any(map(_overlaps_marker, known)):
+        return REDACTED
+    filler = _absent_character(known)
+    if any("<" in secret or ">" in secret for secret in known):
+        return filler * len(REDACTED)
+    return f"<{filler * (len(REDACTED) - 2)}>"
+
+
 def ordered_secrets(values: cabc.Iterable[str]) -> tuple[str, ...]:
-    """Return the usable secrets, longest first then alphabetical.
+    """Return the distinct non-empty ``values``, longest first then alphabetical.
 
     Combine every group of secrets through this before replacing, so the longest
-    value wins wherever one contains another. Empty values are dropped, and so
-    are values that overlap the replacement marker (see below).
-
-    A value that is, is inside, or could be spelled with the marker cannot be
-    hidden by replacing it with the marker: the output would still show it, and
-    it cannot be told apart from the marker. Such a value is never a real
-    registry token, which is long and drawn from a token alphabet, so it is
-    ignored rather than letting the invariant "no honoured secret appears in
-    the output" fail.
+    value wins wherever one contains another.
 
     Returns
     -------
     tuple[str, ...]
-        The ordered, deduplicated, usable values.
+        The ordered, deduplicated values.
 
     Examples
     --------
     >>> ordered_secrets(["ab", "", "abc", "ab"])
     ('abc', 'ab')
-    >>> ordered_secrets(["redacted", "<redacted>", "ed>x", "real-token"])
-    ('real-token',)
     """
-    usable = {v for v in values if v and not _overlaps_marker(v)}
-    return tuple(sorted(usable, key=lambda value: (-len(value), value)))
+    return tuple(
+        sorted({v for v in values if v}, key=lambda value: (-len(value), value))
+    )
 
 
 def registry_token_values(environ: cabc.Mapping[str, object]) -> tuple[str, ...]:
@@ -122,11 +182,21 @@ def registry_token_values(environ: cabc.Mapping[str, object]) -> tuple[str, ...]
     )
 
 
+@dc.dataclass(frozen=True, slots=True)
+class _Plan:
+    """What replacing a set of secrets takes: one pattern and its marker."""
+
+    pattern: re.Pattern[str]
+    marker: str
+
+
 @functools.lru_cache(maxsize=64)
-def _pattern(secrets: tuple[str, ...]) -> re.Pattern[str] | None:
-    """Return one pattern matching any of ``secrets``, longest alternative first."""
+def _plan(secrets: tuple[str, ...]) -> _Plan | None:
+    """Return the pattern (longest alternative first) and marker for ``secrets``."""
     ordered = ordered_secrets(secrets)
-    return re.compile("|".join(map(re.escape, ordered))) if ordered else None
+    if not ordered:
+        return None
+    return _Plan(re.compile("|".join(map(re.escape, ordered))), marker_for(ordered))
 
 
 def redact_text(text: str, secrets: cabc.Sequence[str]) -> str:
@@ -135,7 +205,8 @@ def redact_text(text: str, secrets: cabc.Sequence[str]) -> str:
     Scans left to right and, at each position, replaces the longest secret that
     starts there. That definition does not depend on the order secrets are
     given in, and a stream can reproduce it chunk by chunk
-    (:class:`SecretRedactor`).
+    (:class:`SecretRedactor`). The replacement is ``<redacted>`` unless a secret
+    could overlap it (see :func:`marker_for`).
 
     Returns
     -------
@@ -148,9 +219,11 @@ def redact_text(text: str, secrets: cabc.Sequence[str]) -> str:
     '--token <redacted>'
     >>> redact_text("abcdef", ("abc", "abcdef"))
     '<redacted>'
+    >>> "redacted" in redact_text("a redacted b", ("redacted",))
+    False
     """
-    pattern = _pattern(tuple(secrets))
-    return text if pattern is None else pattern.sub(REDACTED, text)
+    plan = _plan(tuple(secrets))
+    return text if plan is None else plan.pattern.sub(lambda _m: plan.marker, text)
 
 
 @contextlib.contextmanager
@@ -212,7 +285,7 @@ class SecretRedactor:
     def __init__(self, secrets: cabc.Sequence[str]) -> None:
         """Remember ``secrets`` and start with nothing held back."""
         self._secrets = tuple(secrets)
-        self._pattern = _pattern(self._secrets)
+        self._plan = _plan(self._secrets)
         longest = max((len(secret) for secret in ordered_secrets(secrets)), default=0)
         self._hold = max(longest - 1, 0)
         self._pending = ""
@@ -226,16 +299,16 @@ class SecretRedactor:
             Redacted text, excluding a raw tail that might begin a match.
         """
         buffer = self._pending + text
-        if self._pattern is None:
+        if self._plan is None:
             self._pending = ""
             return buffer
         limit = len(buffer) - self._hold
         shown: list[str] = []
         consumed = 0
-        for match in self._pattern.finditer(buffer):
+        for match in self._plan.pattern.finditer(buffer):
             if match.start() >= limit:
                 break
-            shown += [buffer[consumed : match.start()], REDACTED]
+            shown += [buffer[consumed : match.start()], self._plan.marker]
             consumed = match.end()
         shown.append(buffer[consumed : max(consumed, limit)])
         self._pending = buffer[max(consumed, limit) :]
