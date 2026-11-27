@@ -1,7 +1,11 @@
 """TOML table, version-field, and manifest helpers for version bumping.
 
+This module owns table selection, the ``[package]`` and
+``[workspace.package]`` version writers, manifest parsing, and atomic writes.
 Dependency-section rewriting lives in
-:mod:`lading.commands.bump_toml_dependencies`.
+:mod:`lading.commands.bump_toml_dependencies`, whose exact-key
+``update_dependency_table`` the documentation pass calls after resolving a
+dependency's ``package`` rename.
 """
 
 import os

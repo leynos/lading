@@ -1289,6 +1289,29 @@ private account-owned directory. Processes running as another user, editors and
 tools that ignore the lock are outside its guarantee. The lock is re-entrant on
 the thread that holds it.
 
+#### Documentation dependency identity
+
+`lading.commands.bump_docs_dependencies` owns dependency identity inside TOML
+code fences. An entry is identified by its `package` field when that field is
+present, and by its key when the field is absent. A present but empty or
+non-string `package` field yields no identity, so the entry is skipped rather
+than matched on its key. The rule applies at every location the module visits:
+the top-level `[dependencies]`, `[dev-dependencies]`, and
+`[build-dependencies]` tables, their `[workspace.*]` counterparts, and each
+`[target.<spec>.*]` table.
+
+Identity selection lives in this module, not in `bump_toml`. Manifest callers
+pass manifest keys (resolved from `cargo metadata` by
+`bump_manifests._dependency_sections_for_crate`) to
+`bump_toml.update_dependency_table`, which stays an exact-key operation. Keep
+that boundary: adding `package` matching to the shared helper would change
+manifest selection. Dotted dependency entries parse as an
+`OutOfOrderTableProxy`; the shared entry dispatch mutates their `version` field
+in place, so both manifest and documentation callers can update them once
+selection has chosen the key. The user-visible rule is documented in
+[the user's guide](users-guide.md) and the implementation notes are in
+[the design document](lading-design.md).
+
 ### Lockfile regeneration modules
 
 `lading.commands.bump_lockfiles` is the public compatibility façade. It owns

@@ -18,7 +18,7 @@ import typing as typ
 
 import hypothesis.strategies as st
 import pytest
-from hypothesis import given, settings
+from hypothesis import example, given, settings
 from tomlkit import parse as parse_toml
 
 from lading.commands import bump_docs, bump_manifests, bump_toml, bump_toml_dependencies
@@ -319,3 +319,72 @@ def test_decoy_section_alias_is_not_updated() -> None:
 
     assert changed is False, "a decoy section must not report a change"
     assert document.as_string() == snippet, "the decoy sections must stay verbatim"
+
+
+# TOML bare keys admit ASCII letters, digits, underscores, and dashes only.
+_IDENTITY_TEXT = st.text(
+    alphabet="abcdefghijklmnopqrstuvwxyz0123456789-_",
+    min_size=1,
+    max_size=8,
+)
+_PACKAGE_VALUE = st.one_of(
+    st.none(),
+    st.just(""),
+    st.integers(min_value=0, max_value=99),
+    _IDENTITY_TEXT,
+)
+
+
+def _render_package(package: str | int) -> str:
+    """Return ``package`` as the TOML value text for an inline table."""
+    return str(package) if isinstance(package, int) else f'"{package}"'
+
+
+@settings(max_examples=80)
+@given(
+    key=_IDENTITY_TEXT,
+    package=_PACKAGE_VALUE,
+    current=st.sampled_from(("1.0.0", "2.0.0")),
+)
+@example(key="alpha", package="", current="1.0.0")
+@example(key="alpha", package=3, current="1.0.0")
+@example(key="alias", package="alpha", current="1.0.0")
+@example(key="alpha", package=None, current="2.0.0")
+def test_dependency_identity_changes_only_when_selected(
+    key: str,
+    package: str | int | None,
+    current: str,
+) -> None:
+    """A fence entry changes exactly when its identity is the target.
+
+    The key is generated independently of the package value, so the property
+    exercises keys equal to the target, packages equal to the target, empty and
+    non-string package fields, and already-current versions. A key fallback for
+    an unusable package field fails the expected-identity calculation.
+    """
+    if package is None:
+        snippet = f'[dependencies]\n{key} = {{ version = "{current}" }}\n'
+        identity: str | None = key
+    else:
+        snippet = (
+            f"[dependencies]\n{key} = {{ package = {_render_package(package)}, "
+            f'version = "{current}" }}\n'
+        )
+        identity = package if isinstance(package, str) and package else None
+
+    document = parse_toml(snippet)
+    changed = bump_docs.update_toml_snippet_dependencies(document, ("alpha",), "2.0.0")
+
+    expected_changed = identity == "alpha" and current != "2.0.0"
+    assert changed is expected_changed, (
+        f"key={key!r} package={package!r} current={current!r} identity={identity!r}"
+    )
+    if expected_changed:
+        expected = snippet.replace(f'"{current}"', '"2.0.0"', 1)
+        assert document.as_string() == expected, (
+            "only the version value may change in a rewritten entry"
+        )
+    else:
+        assert document.as_string() == snippet, (
+            "an unselected or already-current entry must stay byte-identical"
+        )
