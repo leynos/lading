@@ -391,23 +391,71 @@ lading bump <new_version> [--dry-run]
   documentation counts, and documentation entries are suffixed with
   `(documentation)` for clarity.
 
+### Confinement preflight
+
+Every bump write target passes through the shared confinement policy in
+`lading/utils/confinement/` before the first mutation. The policy establishes
+one canonical root, validates patterns lexically under POSIX and Windows
+spellings, walks each component below the root with `lstat` before resolving
+anything, and proves canonical containment as an independent second check. See
+[ADR-012](adrs/adr-0012-confine-bump-write-targets.md).
+
+Bump discovery is bump-only. `lading.workspace.confined_discovery` validates
+the root manifest and the declared `[workspace].members` and `exclude`
+patterns, expands members without following links, and then invokes
+`cargo metadata --no-deps`; every reported member manifest is confined and
+checked to be a regular `Cargo.toml` before the graph builder reads it. Publish
+keeps its existing full-metadata discovery path.
+
+The bump workflow is split into preparation and mutation. A `PlanBuilder`
+accumulates `PlannedWrite` values in `lading.commands.bump_plan`, keyed by
+confined path and carrying every change category that touched the file. Later
+stages read earlier proposed content, so an adopted README composes from a
+documentation rewrite of the workspace README. `bump_prepare` prepares
+manifests, documentation, and READMEs; only after every stage succeeds does
+`commit_plan()` write, in deterministic root-manifest, member-manifest,
+documentation, README order. A dry run reports the plan and writes nothing.
+
+Configured non-member manifests are not part of the bump plan yet. When that
+capability lands (`#353`), its proposals must be added to the same
+`PlanBuilder` and validated as confined existing targets before `commit_plan()`
+runs, rather than writing through a separate path.
+
 ### Lockfile repository port (bump side)
 
-The bump domain reaches Cargo lockfile projection and regeneration through a
+The bump domain reaches Cargo lockfile planning and regeneration through a
 `LockfileRepository` port defined in `lading.commands.bump_lockfiles`.
 `CargoLockfileRepository` is the cargo- and git-backed adapter; it is
-constructed with an optional `CommandRunner`, merges configured manifests with
-manifests discovered from tracked lockfiles, and delegates projection and
-regeneration through the `lading.commands.bump_lockfiles` compatibility façade.
+constructed with an optional `CommandRunner` and an optional environment
+mapping. The port exposes two pairs of operations. `plan_lockfiles` validates
+configured and git-discovered manifests, asks Cargo with
+`--no-deps --manifest-path` for each manifest's effective workspace root, and
+returns an immutable `LockfilePlan` of deduplicated destinations;
+`regenerate_planned` consumes that plan without rediscovery. Both
+`plan_lockfiles` and `regenerate_planned` are required members of the injected
+`LockfileRepository`: bump calls `plan_lockfiles` whenever lockfile
+regeneration is enabled, because planning is read-only and must reject an
+invalid configured manifest before any write, and calls `regenerate_planned`
+only when a manifest change makes regeneration necessary. The established
+`resolve_lockfile_paths` and `regenerate_lockfiles` methods remain for callers
+that supply a manifest tuple directly, but they alone no longer satisfy
+`BumpOptions.lockfile_repository`.
+
 The façade keeps the port, adapter, and established public imports in one
 boundary while cohesive helper modules hold the implementation:
 `bump_lockfile_manifests` merges configured and discovered manifests,
-`bump_lockfile_paths` validates manifests and projects lockfile paths, and
+`bump_lockfile_paths` validates manifests and projects adjacent lockfile paths,
+`bump_lockfile_planning` resolves effective workspace-root destinations, and
 `bump_lockfile_regeneration` invokes Cargo and aggregates failures.
 `BumpOptions.lockfile_repository` is the injection point; when `None`, bump
 substitutes `CargoLockfileRepository` bound to the default subprocess runner,
 and the CLI binds the adapter at the composition root. This keeps the bump
-domain free of a raw `CommandRunner` (issue #82).
+domain free of a raw `CommandRunner` (issue #82). A non-empty
+`CARGO_RESOLVER_LOCKFILE_PATH`, a `resolver.lockfile-path` in Cargo
+configuration, and Cargo's `include`d configuration files are checked during
+planning because Cargo would otherwise write a lockfile the validated plan does
+not name. The plan records the environment it was validated against, and
+regeneration refuses to run if `CARGO_HOME` or the override variable changed.
 
 ## 4. `publish` Subcommand Design
 

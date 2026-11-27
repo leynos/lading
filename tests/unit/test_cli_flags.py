@@ -38,7 +38,7 @@ def test_bump_cli_accepts_dry_run_flag(
         return "preview"
 
     monkeypatch.setattr(bump_command, "run", fake_run)
-    monkeypatch.setattr(cli, "load_workspace", lambda _: workspace_graph)
+    monkeypatch.setattr(cli, "load_bump_workspace", lambda _: workspace_graph)
 
     exit_code = cli.main([
         "--workspace-root",
@@ -392,7 +392,7 @@ def test_bump_cli_forwards_raw_rebuild_lockfiles(
         return "bumped"
 
     monkeypatch.setattr(bump_command, "run", fake_run)
-    monkeypatch.setattr(cli, "load_workspace", lambda _: workspace_graph)
+    monkeypatch.setattr(cli, "load_bump_workspace", lambda _: workspace_graph)
 
     exit_code = cli.main([
         "--workspace-root",

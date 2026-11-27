@@ -178,30 +178,53 @@ def _matches_expected_prefix(
     )
 
 
+def _existing_stub_fallback(
+    cmd_mox: CmdMox,
+    program: str,
+) -> cabc.Callable[[Invocation], tuple[str, str, int]] | None:
+    """Return a pre-existing handler stub's responder for ``program``.
+
+    Workspace discovery happens before publish pre-flight, and the fixtures for
+    the bump and publish commands share one ``cargo metadata`` stub. A
+    handler-based stub cannot be lifted into the prefix table, so it is called
+    as a fallback for invocations the pre-flight table does not cover. The
+    handler is read before the dispatch double is installed, because cmd-mox
+    reuses the same double object for a program.
+
+    Returns
+    -------
+    cabc.Callable[[Invocation], tuple[str, str, int]] | None
+        The pre-existing handler, or ``None`` when there is no handler stub.
+    """
+    double = getattr(cmd_mox, "_doubles", {}).get(program)
+    if double is None or getattr(double, "kind", None) != "stub":
+        return None
+    handler = getattr(double, "handler", None)
+    if handler is None:
+        return None
+    return typ.cast("cabc.Callable[[Invocation], tuple[str, str, int]]", handler)
+
+
 def _make_preflight_dispatch_handler(
     entries: cabc.Sequence[tuple[tuple[str, ...], ResponseProvider]],
     recorder: _PreflightInvocationRecorder | None,
     label: str,
+    fallback: cabc.Callable[[Invocation], tuple[str, str, int]] | None = None,
 ) -> cabc.Callable[[Invocation], tuple[str, str, int]]:
     """Build a handler that dispatches several prefixes for one command."""
 
     def _handler(invocation: Invocation) -> tuple[str, str, int]:
-        """Dispatch to the first matching prefix, or fail on unknown arguments."""
+        """Dispatch to the first matching prefix, else the fallback responder."""
         received = tuple(invocation.args)
-        for expected_arguments, response in entries:
-            if _matches_expected_prefix(expected_arguments, received):
-                if isinstance(response, _CommandResponse):
-                    active_response = response
-                else:
-                    active_response = response(invocation)
-                if recorder is not None:
-                    env_mapping = dict(invocation.env)
-                    recorder.record(label, received, env_mapping)
-                return (
-                    active_response.stdout,
-                    active_response.stderr,
-                    active_response.exit_code,
-                )
+        response = _matching_response(entries, received)
+        if response is not None:
+            return _respond(
+                response,
+                invocation,
+                _DispatchContext(recorder=recorder, label=label),
+            )
+        if fallback is not None:
+            return fallback(invocation)
         expected = ", ".join(str(arguments) for arguments, _response in entries)
         message = (
             f"Unexpected {label} invocation arguments: {received!r}; "
@@ -210,6 +233,45 @@ def _make_preflight_dispatch_handler(
         raise AssertionError(message)
 
     return _handler
+
+
+def _matching_response(
+    entries: cabc.Sequence[tuple[tuple[str, ...], ResponseProvider]],
+    received: tuple[str, ...],
+) -> ResponseProvider | None:
+    """Return the response for the first matching prefix."""
+    for expected_arguments, response in entries:
+        if _matches_expected_prefix(expected_arguments, received):
+            return response
+    return None
+
+
+@dc.dataclass(frozen=True, slots=True)
+class _DispatchContext:
+    """Reporting context for one dispatch handler."""
+
+    recorder: _PreflightInvocationRecorder | None
+    label: str
+
+
+def _respond(
+    response: ResponseProvider,
+    invocation: Invocation,
+    context: _DispatchContext,
+) -> tuple[str, str, int]:
+    """Resolve one response, record the invocation, and return its tuple."""
+    active_response = (
+        response if isinstance(response, _CommandResponse) else response(invocation)
+    )
+    if context.recorder is not None:
+        context.recorder.record(
+            context.label, tuple(invocation.args), dict(invocation.env)
+        )
+    return (
+        active_response.stdout,
+        active_response.stderr,
+        active_response.exit_code,
+    )
 
 
 def _existing_static_stub_response(
@@ -352,11 +414,13 @@ def _register_preflight_commands(
         existing = _existing_static_stub_response(config.cmd_mox, expectation_program)
         if existing is not None:
             entries.insert(0, existing)
+        fallback = _existing_stub_fallback(config.cmd_mox, expectation_program)
         config.cmd_mox.stub(expectation_program).runs(
             _make_preflight_dispatch_handler(
                 entries,
                 config.recorder,
                 expectation_program,
+                fallback,
             )
         )
 

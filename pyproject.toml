@@ -20,7 +20,7 @@ dependencies = [
     "cyclopts>=4.25.3,<5",
     "markdown-it-py>=3,<5",
     "msgspec>=0.18,<1.0",
-    "tomlkit>=0.13,<0.16",
+    "tomlkit>=0.15,<0.16",
 ]
 
 [project.scripts]
@@ -143,6 +143,10 @@ extend-ignore = [
 ]
 [tool.ruff.lint.per-file-ignores]
 "**/test_*.py" = ["assert", "too-many-arguments", "too-many-positional-arguments", "magic-value-comparison", "no-self-use"]
+# The bump CLI harness holds the shared rejection assertions used by the
+# command-level preflight suites. It is test support, so the same assertion
+# policy applies even though its filename does not start with ``test_``.
+"tests/unit/bump_cli_harness.py" = ["assert", "too-many-arguments", "too-many-positional-arguments", "magic-value-comparison"]
 "tests/bdd/steps/*.py" = ["assert", "too-many-arguments", "too-many-positional-arguments", "magic-value-comparison", "no-self-use"]
 # The TOML-coercion helpers raise through the ``_reject`` factory, which
 # returns the caller-injected ``error`` (a ``LadingError`` subclass) for the
@@ -568,7 +572,7 @@ reason = "Type-checking import blocks, each listing the types that module alone 
 
 [[tool.duplication_gate.allow]]
 members = [
-    "lading/cli.py",
+    "lading/cli_helpers.py",
     "lading/runtime/subprocess_runner.py",
     "lading/toml_coerce/_mappings.py",
 ]
@@ -615,9 +619,25 @@ reason = "A deliberate cross-platform pair: the Windows (msvcrt) and POSIX (fcnt
 unit = "lading/toml_coerce/_scalars.py"
 reason = "Two single-statement rejection calls differing only in the expected-type noun ('a string' versus 'a boolean'). The shared helper, _reject, already exists; a further extraction would only rename the noun argument. NOTE: this key covers the whole file."
 
+[[tool.duplication_gate.allow]]
+members = [
+    "lading/commands/bump_docs.py",
+    "lading/commands/bump_pipeline.py",
+    "lading/commands/publish.py",
+]
+reason = "Independent command modules importing the same shared confinement and TOML helpers; the overlap is an import header, not shared logic, and a common import module would add an artificial layer with no behaviour of its own."
 # The dead-code gate is the installed `df12-skylos` command from
 # df12-python-lints. `roots` limits liveness analysis to production sources and
 # the exclusion keeps the test tree out of the liveness graph.
+[[tool.duplication_gate.allow]]
+members = ["lading/utils/confinement/glob.py", "lading/workspace/confined_discovery.py"]
+reason = "Import preamble only: both modules open with the same stdlib block because each expands a validated pattern using os, pathlib, and collections.abc. The module docstrings, the confinement helpers they import, and every function differ; sharing the block would need a common imports module that no behaviour justifies."
+[[tool.duplication_gate.allow]]
+members = ["lading/commands/bump_lockfile_config.py", "lading/workspace/implicit_members.py"]
+reason = "Import preamble only: both modules parse TOML configuration or manifests with tomlkit and classify files with os/stat, so their stdlib and tomlkit preamble coincides. The module responsibilities, functions and data differ; sharing the preamble would add a common imports module for no behavioural gain."
+[[tool.duplication_gate.allow]]
+members = ["lading/commands/bump_lockfile_planning.py", "lading/workspace/confined_discovery.py"]
+reason = "Import preamble only: both modules use os, pathlib and collections.abc while resolving confined workspace paths, so their stdlib preamble coincides. Their responsibilities, imports of confinement helpers and functions differ; sharing the block would add a common imports module without behavioural value."
 [tool.df12_skylos]
 roots = ["lading"]
 python = "3.14"

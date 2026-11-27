@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from lading import cli
+from lading import cli, cli_entrypoint
 from lading import config as config_module
 from lading.commands import bump as bump_command
 from lading.commands import publish as publish_command
@@ -60,6 +60,7 @@ def test_main_dispatches_command(
 
     monkeypatch.setattr(case.command_module, "run", fake_run)
     monkeypatch.setattr(cli, "load_workspace", lambda _: workspace_graph)
+    monkeypatch.setattr(cli, "load_bump_workspace", lambda _: workspace_graph)
     args = [arg.replace("{tmp_path}", str(tmp_path)) for arg in case.cli_args]
     assert case.command_name in args, "the args must name the subcommand under test"
     exit_code = cli.main(args)
@@ -208,6 +209,7 @@ def test_main_uses_defaults_when_configuration_missing(
     """CLI commands fall back to default configuration when no file exists."""
     workspace_graph = make_workspace(tmp_path.resolve())
     monkeypatch.setattr(cli, "load_workspace", lambda _: workspace_graph)
+    monkeypatch.setattr(cli, "load_bump_workspace", lambda _: workspace_graph)
     captured: dict[str, typ.Any] = {}
 
     def fake_run(
@@ -343,7 +345,7 @@ def test_dispatch_and_print_owns_results_and_exit_codes(
             raise outcome
         return outcome
 
-    monkeypatch.setattr(cli, "app", fake_app)
+    monkeypatch.setattr(cli_entrypoint, "app", fake_app)
     tokens = ("bump", "1.2.3")
 
     status = cli._dispatch_and_print(tokens)

@@ -277,9 +277,12 @@ validated against.
 
 Wheels from releases tagged before this change declare the older
 `cuprum>=0.1.0` range instead; `v0.3.1` is the most recent of those. No further
-release is tagged while the pin names a pre-release, so no newly tagged wheel
-carries the beta. That release gate is a procedure rather than an automated
-check, as recorded in
+final release is tagged while the pin names a pre-release, so no final wheel
+carries the beta. A pre-release tag, such as the `0.4.0b1` tag that first
+carries the bump confinement change, does pin the beta: installing a
+pre-release is how a consumer adopts that change before cuprum 0.2.0 final
+exists. That release gate is a procedure rather than an automated check, as
+recorded in
 [ADR-006](adrs/adr-0006-align-cuprum-selection-across-dependency-paths.md). See
 [Changing the cuprum version](developers-guide.md#changing-the-cuprum-version)
 for the maintainer procedure.
@@ -340,6 +343,71 @@ READMEs appear in the output with the `(readme)` suffix described above.
 If `bump.documentation.globs` is configured, `lading` also searches those
 Markdown files for TOML code fences and updates version values that refer to
 workspace crates.
+
+#### Confinement preflight
+
+Before writing anything, `lading bump` builds and validates the complete write
+plan: the workspace manifest, every member manifest, configured documentation,
+and adopted README destinations. When lockfile regeneration is enabled, the
+plan also validates lockfile manifests and destinations, even when no manifest
+changes and regeneration will therefore be skipped; `--no-rebuild-lockfiles`
+leaves configured lockfile entries unvalidated because the run will not touch
+them. Discovery runs `cargo metadata --no-deps`, which reports workspace
+members without resolving dependencies; a missing or stale `Cargo.lock` is left
+untouched.
+
+The member and exclusion patterns in the root manifest are validated lexically.
+Absolute, rooted, drive-qualified, UNC, and parent-traversing patterns are
+rejected under both POSIX and Windows spellings. Member patterns are then
+expanded without following symlinks. A literal member that does not exist, a
+glob that matches nothing, or a matched directory without a regular
+`Cargo.toml` fails the run and names the pattern. A documentation glob that
+matches nothing is a no-op, and a directory matched by a documentation glob is
+ignored. An exclusion is a literal path prefix, not a glob: Cargo does not
+expand wildcards in `[workspace].exclude`, so an exclusion that names no
+directory simply filters nothing.
+
+Within the workspace, every path component below the canonical root is
+inspected with `lstat` before anything is resolved. Symlinked ancestors, final
+symlinks, dangling links, in-workspace symlink aliases, junctions, and
+non-regular targets are rejected. Existing regular-file targets with more than
+one hard link are rejected even when every link is inside the workspace,
+because a write through one name would leave the other names stale. An intended
+new file, such as an adopted crate README, is accepted only when every parent
+directory is a real directory. Canonical containment is proved as an
+independent second check. A workspace reached through a symlink in the root's
+own ancestry remains valid.
+
+A selected documentation file that cannot be read or decoded is a preflight
+error rather than a warning-skip.
+
+When a rejected write plan is detected, the command exits with status 1, writes
+`Preflight error: <detail>` to stderr naming the rejected input, and leaves
+every intended target and any external file unchanged. A missing workspace
+README for crates that adopt it is a rejected plan too, so it produces the same
+`Preflight error:` diagnostic rather than a separate message. Validation
+completes before the first write. Each file Lading writes is replaced
+atomically, but the command does not roll back writes after an actual execution
+failure, and it does not defend against a concurrent process changing paths
+between validation and writing. This atomicity covers Lading's own writes only:
+Cargo truncates `Cargo.lock` before writing new contents, so a failure during
+`cargo update` can leave that file empty or partial. When lockfile regeneration
+is enabled, `CARGO_RESOLVER_LOCKFILE_PATH` must be unset, and no Cargo
+configuration file Cargo would read may set `resolver.lockfile-path`, including
+through that configuration's `include` entries; either route is rejected
+because Cargo would write a lockfile the plan did not validate. Unset the
+variable, or remove the setting from the reported configuration file, before
+bumping. `--no-rebuild-lockfiles` neither plans lockfiles nor checks either
+route.
+
+Configured lockfile manifests are resolved to the effective workspace root that
+Cargo reports. A member manifest therefore contributes the outer workspace
+`Cargo.lock`, while a nested standalone workspace contributes its own adjacent
+lockfile. Duplicate destinations are reported once. A same-version rerun makes
+no manifest changes and therefore does not regenerate lockfiles; repair a stale
+lockfile with `cargo update --workspace --manifest-path <manifest>` instead.
+Run that command from the workspace root, or pass an absolute manifest path,
+because a relative path resolves against the shell's current directory.
 
 ### 3. Publish in dry-run mode
 
@@ -698,12 +766,15 @@ stderr_tail_lines = 40
 - `exclude`: array of strings, default `[]`. Crate names to exclude from
   manifest updates.
 - `lockfile_manifests`: array of strings, default `[]`. Additional
-  `Cargo.toml` manifests whose adjacent `Cargo.lock` files should be
+  `Cargo.toml` manifests whose effective workspace `Cargo.lock` files should be
   regenerated after `lading bump`. Git-tracked lockfiles are discovered and
   regenerated automatically. Configured manifests are needed for lockfiles that
   git does not track (for example, generated fixtures listed in `.gitignore`),
   and for all nested lockfiles when the workspace is outside a Git repository,
-  where tracked-lockfile discovery cannot run at all. The workspace root
+  where tracked-lockfile discovery cannot run at all. Each manifest is
+  validated as a confined regular file and resolved through Cargo to the
+  workspace root that owns it; a member manifest reports the outer lockfile,
+  while a standalone nested workspace reports its own. The workspace root
   `Cargo.toml` is always included and should not be listed.
 - `rebuild_lockfiles`: boolean, default `true`. Controls whether `lading bump`
   regenerates the workspace lockfile, discovered tracked lockfiles, and
@@ -736,10 +807,15 @@ repaired:
 ```
 
 When one manifest was attempted, its lone failure surfaces the plain Cargo
-error instead. To recover, fix the underlying Cargo error and rerun
-`lading bump`, run the printed repair command for each listed manifest, or use
+error instead, naming the manifest and exit code without a repair command. To
+recover, fix the underlying Cargo error and run
+`cargo update --workspace --manifest-path <manifest>` for that manifest, or use
 `--no-rebuild-lockfiles` and regenerate the lockfiles manually before
-committing the bump.
+committing the bump. A same-version rerun is not a repair: it finds no manifest
+changes and therefore skips lockfile regeneration, even when an earlier
+regeneration failed after the manifests were already written. Run the repair
+command from the workspace root, or pass an absolute manifest path, because a
+relative path resolves against the shell's current directory.
 
 ### `[bump.documentation]`
 

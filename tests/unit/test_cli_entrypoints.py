@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from lading import cli
+from lading import cli, cli_entrypoint
 from lading import config as config_module
 from lading.commands import bump as bump_command
 from lading.commands import publish as publish_command
@@ -62,7 +62,7 @@ def test_main_handles_exceptions(
         """Raise the parametrised exception in place of dispatching the command."""
         raise case.exception
 
-    monkeypatch.setattr(cli, "_dispatch_and_print", boom)
+    monkeypatch.setattr(cli_entrypoint, "_dispatch_and_print", boom)
     exit_code = cli.main(["bump", "1.2.3", "--workspace-root", str(tmp_path)])
     assert exit_code == case.expected_exit_code, (
         f"expected exit code {case.expected_exit_code}, got {exit_code}"
@@ -107,7 +107,7 @@ def test_bump_command_accepts_extended_semver(
 ) -> None:
     """Accept semantic versions with pre-release and build metadata."""
     graph = make_workspace(tmp_path.resolve())
-    monkeypatch.setattr(cli, "load_workspace", lambda _: graph)
+    monkeypatch.setattr(cli, "load_bump_workspace", lambda _: graph)
     captured: dict[str, object] = {}
 
     def fake_run(
@@ -148,7 +148,7 @@ def test_cyclopts_invoke_uses_workspace_env(
 ) -> None:
     """Invoke the Cyclopts app directly with workspace override propagation."""
     graph = make_workspace(tmp_path.resolve())
-    monkeypatch.setattr(cli, "load_workspace", lambda _: graph)
+    monkeypatch.setattr(cli, "load_bump_workspace", lambda _: graph)
 
     def fake_run(
         workspace_root: Path,

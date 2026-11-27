@@ -36,6 +36,9 @@ branch, recording the plan, progress, decisions, and retrospective for a change.
 
 - [Regenerate discovered nested lockfiles][execplan-regenerate-lockfiles] -
   completed plan for discovery-driven lockfile regeneration in the bump command.
+- [Bump confinement preflight](execplans/bump-confinement-preflight.md) -
+  delivered plan for confining every bump write target and validating the
+  complete write plan before mutation.
 
 ## Decision records
 
@@ -63,6 +66,10 @@ branch, recording the plan, progress, decisions, and retrospective for a change.
 - [ADR-011: Preserve the CLI result and diagnostic-stream boundary under
   Cyclopts 4][adr-011] - accepted policy for raw command results, stdout
   summaries, stderr diagnostics, exit-code mapping, and the dependency floor.
+- [ADR-012: Confine every bump write target and validate the complete plan
+  before mutation][adr-012] - accepted policy for canonical-root lexical
+  checks, component-wise confinement, read-only `--no-deps` discovery, and
+  prepare-then-commit.
 
 ## Reference documents
 
@@ -98,4 +105,5 @@ branch, recording the plan, progress, decisions, and retrospective for a change.
 [adr-009]: adrs/adr-0009-pypi-first-distribution-publication.md
 [adr-010]: adrs/adr-0010-adopt-nose-duplication-gate.md
 [adr-011]: adrs/adr-0011-cyclopts-4-cli-result-and-diagnostic-boundary.md
+[adr-012]: adrs/adr-0012-confine-bump-write-targets.md
 [execplan-regenerate-lockfiles]: execplans/regenerate-lockfiles.md

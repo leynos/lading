@@ -22,19 +22,27 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from lading.commands import bump_toml
-from lading.exceptions import LadingError
+from lading.utils.confinement import (
+    BumpPreflightError,
+    MissingBumpTargetError,
+    confine_relative_path,
+)
 
 _log = logging.getLogger(__name__)
 
-if typ.TYPE_CHECKING:
+if typ.TYPE_CHECKING:  # pragma: no cover - import-time typing aids only
+    from lading.utils.confinement import ConfinedPath
     from lading.workspace import WorkspaceCrate
 
 
-class ReadmeTranspositionError(LadingError):
+class ReadmeTranspositionError(BumpPreflightError):
     """Raised when the workspace README cannot be transposed into a crate.
 
     This is the bump-domain error for README adoption failures (issue #100);
-    publish staging failures use ``PublishPreparationError`` instead.
+    publish staging failures use ``PublishPreparationError`` instead. It is a
+    preflight error because preparation raises it before any write, so the CLI
+    reports it with the same ``Preflight error:`` diagnostic as every other
+    rejected plan.
     """
 
 
@@ -151,15 +159,116 @@ def _load_source_text(source_readme: Path, _source_text: str | None) -> str:
     if _source_text is not None:
         return _source_text
     if not source_readme.exists():
-        message = (
-            "Workspace README.md is required by crates that set readme.workspace = true"
-        )
-        raise ReadmeTranspositionError(message)
+        raise ReadmeTranspositionError(_MISSING_SOURCE_MESSAGE)
     return source_readme.read_text(encoding="utf-8")
 
 
-def _resolve_crate_relative_path(workspace_root: Path, crate: WorkspaceCrate) -> Path:
-    """Return the crate path relative to the workspace root."""
+def read_workspace_readme(
+    workspace_root: Path,
+    *,
+    read_source: cabc.Callable[[ConfinedPath], str | None],
+) -> str:
+    """Return the confined workspace README text for README adoption.
+
+    Parameters
+    ----------
+    workspace_root : Path
+        Canonical workspace root.
+    read_source : cabc.Callable[[ConfinedPath], str | None]
+        Reader honouring earlier proposed content. It returns ``None`` for an
+        absent file.
+
+    Returns
+    -------
+    str
+        The workspace README text, including any documentation rewrite already
+        proposed for it.
+
+    Raises
+    ------
+    ReadmeTranspositionError
+        If the workspace README is missing.
+    UnsafeBumpTargetError
+        If the workspace README is a symlink or is not a regular file.
+    """
+    try:
+        source = confine_relative_path(
+            workspace_root, "README.md", key="workspace README"
+        )
+    except MissingBumpTargetError as exc:
+        raise ReadmeTranspositionError(_MISSING_SOURCE_MESSAGE) from exc
+    text = read_source(source)
+    if text is None:
+        raise ReadmeTranspositionError(_MISSING_SOURCE_MESSAGE)
+    return text
+
+
+def prepare_readme_content(
+    workspace_root: Path,
+    crate: WorkspaceCrate,
+    source_text: str,
+    *,
+    crate_relative_path: Path | None = None,
+) -> str:
+    """Return the workspace README rewritten for ``crate``.
+
+    Parameters
+    ----------
+    workspace_root : Path
+        Canonical workspace root.
+    crate : WorkspaceCrate
+        Crate that adopts the workspace README.
+    source_text : str
+        Workspace README text, including any proposed rewrite.
+    crate_relative_path : Path | None, optional
+        The crate directory relative to ``workspace_root``. Supply this when
+        the crate's ``root_path`` may be spelled through a symlink alias of the
+        root; ``None`` derives it from ``crate.root_path``.
+
+    Returns
+    -------
+    str
+        The crate-specific README text.
+
+    Raises
+    ------
+    ReadmeTranspositionError
+        If the crate lies outside ``workspace_root`` and no relative path is
+        supplied.
+    """
+    relative = (
+        resolve_crate_relative_path(workspace_root, crate)
+        if crate_relative_path is None
+        else crate_relative_path
+    )
+    return rewrite_relative_links(source_text, compute_link_prefix(relative))[0]
+
+
+_MISSING_SOURCE_MESSAGE = (
+    "Workspace README.md is required by crates that set readme.workspace = true"
+)
+
+
+def resolve_crate_relative_path(workspace_root: Path, crate: WorkspaceCrate) -> Path:
+    """Return the crate's path relative to the workspace root.
+
+    Parameters
+    ----------
+    workspace_root : Path
+        Canonical workspace root.
+    crate : WorkspaceCrate
+        Crate whose README location is being computed.
+
+    Returns
+    -------
+    Path
+        The crate directory relative to ``workspace_root``.
+
+    Raises
+    ------
+    ReadmeTranspositionError
+        If the crate directory lies outside ``workspace_root``.
+    """
     try:
         return crate.root_path.relative_to(workspace_root)
     except ValueError as exc:
@@ -228,10 +337,7 @@ def transpose_readme_to_crate(
     _log.debug("Transposing workspace README into crate %r", crate.name)
     source_readme = workspace_root / "README.md"
     source_text = _load_source_text(source_readme, _source_text)
-    crate_relative_path = _resolve_crate_relative_path(workspace_root, crate)
-    rewritten_text = rewrite_relative_links(
-        source_text, compute_link_prefix(crate_relative_path)
-    )[0]
+    rewritten_text = prepare_readme_content(workspace_root, crate, source_text)
     return _write_or_skip_readme(
         crate.root_path / "README.md",
         rewritten_text,

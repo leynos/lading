@@ -8,12 +8,11 @@ sequence is orchestrated by :mod:`lading.commands.bump_pipeline`, while
 
 import collections.abc as cabc
 import dataclasses as dc
-import types
 import typing as typ
 
 from lading.commands import bump_toml
 
-if typ.TYPE_CHECKING:
+if typ.TYPE_CHECKING:  # pragma: no cover - import-time typing aids only
     from pathlib import Path
 
     from lading.commands.bump import BumpOptions
@@ -42,9 +41,9 @@ class _BumpContext:
     """Initialisation context for bump operations.
 
     Derived once by ``bump._initialize_bump_context`` and consumed by
-    :func:`bump_pipeline._apply_crate_manifest_update`; the manifest-mutation
-    contract lives with this extracted module rather than reaching back into
-    ``bump`` internals.
+    :mod:`lading.commands.bump_prepare`; the manifest-mutation contract lives
+    with this extracted module rather than reaching back into ``bump``
+    internals.
     """
 
     root_path: Path
@@ -72,23 +71,52 @@ def _should_skip_crate_update(
     return not selectors and not dependency_sections
 
 
-def _freeze_dependency_sections(
-    sections: cabc.Mapping[str, cabc.Collection[str]],
-) -> cabc.Mapping[str, cabc.Collection[str]]:
-    """Return an immutable mapping for dependency sections."""
-    if not sections:
-        return types.MappingProxyType({})
-    frozen_sections = {key: tuple(sorted(names)) for key, names in sections.items()}
-    return types.MappingProxyType(frozen_sections)
+@dc.dataclass(frozen=True, slots=True)
+class ManifestRenderOptions:
+    """Dependency-rewrite policy for one manifest render.
+
+    Attributes
+    ----------
+    dependency_sections : cabc.Mapping[str, cabc.Collection[str]]
+        Package dependency names to update, grouped by section.
+    workspace_sections : cabc.Mapping[str, cabc.Collection[str]]
+        ``[workspace.<section>]`` names to update, grouped by section. Keeping
+        this map separate prevents a package alias from rewriting an unrelated
+        workspace dependency that happens to share the alias.
+    """
+
+    dependency_sections: cabc.Mapping[str, cabc.Collection[str]] = dc.field(
+        default_factory=dict
+    )
+    workspace_sections: cabc.Mapping[str, cabc.Collection[str]] = dc.field(
+        default_factory=dict
+    )
 
 
-def _update_manifest(
+def render_manifest(
     manifest_path: Path,
-    selectors: tuple[tuple[str, ...], ...],
+    selectors: cabc.Iterable[tuple[str, ...]],
     target_version: str,
-    options: BumpOptions,
-) -> bool:
-    """Apply ``target_version`` to each selected table and dependency section."""
+    options: ManifestRenderOptions,
+) -> str | None:
+    """Return ``manifest_path`` rewritten for the bump, or ``None`` unchanged.
+
+    Parameters
+    ----------
+    manifest_path : Path
+        Manifest to parse. It must already have passed confinement checks.
+    selectors : cabc.Iterable[tuple[str, ...]]
+        Table paths whose ``version`` key is assigned.
+    target_version : str
+        Version to apply.
+    options : ManifestRenderOptions
+        Dependency-rewrite policy.
+
+    Returns
+    -------
+    str | None
+        The complete rewritten text, or ``None`` when no value changed.
+    """
     document = bump_toml.parse_manifest(manifest_path)
     changed = False
     for selector in selectors:
@@ -96,14 +124,13 @@ def _update_manifest(
         changed |= bump_toml.assign_version(table, target_version)
     if options.dependency_sections:
         changed |= bump_toml.update_dependency_sections(
-            document,
-            options.dependency_sections,
-            target_version,
-            include_workspace_sections=options.include_workspace_sections,
+            document, options.dependency_sections, target_version
         )
-    if changed and not options.dry_run:
-        bump_toml.write_atomic_text(manifest_path, document.as_string())
-    return changed
+    if options.workspace_sections:
+        changed |= bump_toml.update_workspace_dependency_sections(
+            document, options.workspace_sections, target_version
+        )
+    return document.as_string() if changed else None
 
 
 def _workspace_dependency_sections(

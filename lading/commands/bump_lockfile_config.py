@@ -1,0 +1,304 @@
+"""Locate a Cargo lockfile-path override in the configuration Cargo layers.
+
+Cargo accepts ``resolver.lockfile-path`` from a layered configuration file as
+well as from ``CARGO_RESOLVER_LOCKFILE_PATH``. A configuration file may pull in
+more files through its top-level ``include`` key, so planning must follow those
+includes before it decides whether Cargo could write a lockfile the validated
+plan does not name.
+"""
+
+import collections.abc as cabc
+import dataclasses as dc
+import os
+import stat
+import typing as typ
+from pathlib import Path
+
+from tomlkit import parse as parse_toml
+from tomlkit.exceptions import TOMLKitError
+
+from lading.utils.confinement import BumpPreflightError
+
+__all__ = ["configured_lockfile_override"]
+
+_CONFIG_NAME = "config"
+_CONFIG_TOML_NAME = "config.toml"
+_INCLUDE_KEY = "include"
+_LOCKFILE_PATH_KEY = "lockfile-path"
+_RESOLVER_TABLE = "resolver"
+_TOML_SUFFIX = ".toml"
+
+
+@dc.dataclass(frozen=True, slots=True)
+class _PathSetting:
+    """One declared ``resolver.lockfile-path`` value and its source file."""
+
+    value: str
+    source: Path
+
+
+def configured_lockfile_override(
+    workspace_root: Path,
+    environ: cabc.Mapping[str, str],
+) -> tuple[Path, str] | None:
+    """Return the effective configured lockfile path and the file setting it.
+
+    Parameters
+    ----------
+    workspace_root : Path
+        Canonical workspace root, used to locate layered configuration files.
+    environ : cabc.Mapping[str, str]
+        Environment used to resolve ``CARGO_HOME``.
+
+    Returns
+    -------
+    tuple[Path, str] | None
+        The file that supplied the effective non-empty value and the value
+        itself, or ``None`` when no layer sets one.
+
+    Raises
+    ------
+    BumpPreflightError
+        If a configuration file or an included file cannot be read or parsed,
+        an ``include`` entry is malformed, or includes form a cycle.
+    """  # ruff: ignore[docstring-extraneous-exception]  # raised by helpers
+    setting: _PathSetting | None = None
+    # Cargo loads ancestors first and lets the deepest file win, so this
+    # iteration runs from the outermost layer to the workspace root.
+    for config_path in reversed(_cargo_config_paths(workspace_root, environ)):
+        declared = _effective_setting(config_path, frozenset())
+        if declared is not None:
+            setting = declared
+    if setting is None or not setting.value:
+        return None
+    return setting.source, setting.value
+
+
+def _cargo_config_paths(
+    workspace_root: Path,
+    environ: cabc.Mapping[str, str],
+) -> tuple[Path, ...]:
+    """Return the Cargo configuration files that could layer over the root."""
+    paths: list[Path] = []
+    for directory in (workspace_root, *workspace_root.parents):
+        paths.extend(_config_files(directory / ".cargo"))
+    paths.extend(_config_files(_cargo_home(workspace_root, environ)))
+    return tuple(dict.fromkeys(paths))
+
+
+def _cargo_home(
+    workspace_root: Path,
+    environ: cabc.Mapping[str, str],
+) -> Path:
+    """Return the Cargo home directory as Cargo resolves it.
+
+    Returns
+    -------
+    Path
+        ``CARGO_HOME`` when set, joined to the workspace root when relative,
+        otherwise the invoking user's ``~/.cargo``.
+    """
+    cargo_home = environ.get("CARGO_HOME")
+    if not cargo_home:
+        return Path.home() / ".cargo"
+    home = Path(cargo_home)
+    if home.is_absolute():
+        return home
+    # Cargo joins a relative CARGO_HOME to its working directory and does not
+    # expand ``~``, so neither does this check. The bump run gives Cargo the
+    # workspace root as its working directory.
+    return workspace_root / home
+
+
+def _config_files(directory: Path) -> list[Path]:
+    """Return the Cargo configuration file Cargo would read from ``directory``.
+
+    When both spellings exist, Cargo prefers the extensionless ``config`` and
+    ignores ``config.toml``. Returning both would let this preflight reject a
+    setting, or a malformed file, that Cargo never reads.
+
+    Returns
+    -------
+    list[Path]
+        The configuration file Cargo would read, or an empty list when the
+        directory has neither spelling.
+    """
+    for name in (_CONFIG_NAME, _CONFIG_TOML_NAME):
+        candidate = directory / name
+        if _is_regular_file(candidate):
+            return [candidate]
+    return []
+
+
+def _examine(path: Path) -> os.stat_result | None:
+    """Return ``path``'s status, or ``None`` when it does not exist.
+
+    Returns
+    -------
+    os.stat_result | None
+        The status, or ``None`` for a missing file.
+
+    Raises
+    ------
+    BumpPreflightError
+        If the file cannot be examined for any other reason.
+    """
+    try:
+        return path.stat()
+    except FileNotFoundError:
+        return None
+    except OSError as exc:
+        message = f"cannot examine Cargo configuration {path}: {exc}"
+        raise BumpPreflightError(message) from exc
+
+
+def _is_regular_file(path: Path) -> bool:
+    """Return whether ``path`` is a regular file, preserving examination errors."""
+    status = _examine(path)
+    return status is not None and stat.S_ISREG(status.st_mode)
+
+
+def _include_exists(path: Path) -> bool:
+    """Return whether an include target exists, rejecting a non-regular file."""
+    status = _examine(path)
+    if status is None:
+        return False
+    if not stat.S_ISREG(status.st_mode):
+        message = f"included Cargo configuration is not a regular file: {path}"
+        raise BumpPreflightError(message)
+    return True
+
+
+def _effective_setting(
+    config_path: Path,
+    ancestors: frozenset[Path],
+) -> _PathSetting | None:
+    """Return the setting Cargo would apply for one configuration file."""
+    canonical = config_path.resolve(strict=False)
+    if canonical in ancestors:
+        message = f"Cargo configuration include cycle at {config_path}"
+        raise BumpPreflightError(message)
+    document = _load(config_path)
+    setting = _included_setting(document, config_path, ancestors | {canonical})
+    own = _declared_path(document)
+    if own is not None:
+        # The file's own values are merged on top of everything it includes.
+        setting = _PathSetting(value=own, source=config_path)
+    return setting
+
+
+def _included_setting(
+    document: cabc.Mapping[str, typ.Any],
+    config_path: Path,
+    ancestors: frozenset[Path],
+) -> _PathSetting | None:
+    """Return the last setting declared by the file's includes."""
+    setting: _PathSetting | None = None
+    for include_path, optional in _include_entries(document, config_path):
+        if not _include_exists(include_path):
+            if optional:
+                continue
+            # Reading a missing file raises the standard diagnostic.
+            _load(include_path)
+        nested = _effective_setting(include_path, ancestors)
+        if nested is not None:
+            # Included files load left to right, so later values win.
+            setting = nested
+    return setting
+
+
+def _include_entries(
+    document: cabc.Mapping[str, typ.Any],
+    config_path: Path,
+) -> cabc.Iterator[tuple[Path, bool]]:
+    """Yield each include target and whether Cargo treats it as optional."""
+    value = document.get(_INCLUDE_KEY)
+    if value is None:
+        return
+    if isinstance(value, str | bytes) or not isinstance(value, cabc.Sequence):
+        message = f"{config_path}: include must be an array of paths or tables"
+        raise BumpPreflightError(message)
+    for entry in value:
+        yield _include_entry(entry, config_path)
+
+
+def _include_entry(entry: object, config_path: Path) -> tuple[Path, bool]:
+    """Return one include entry's path and optional flag."""
+    match entry:
+        case str():
+            return _include_path(entry, config_path), False
+        case cabc.Mapping():
+            return _include_table(
+                typ.cast("cabc.Mapping[str, typ.Any]", entry), config_path
+            )
+        case _:
+            message = f"{config_path}: include entries must be paths or tables"
+            raise BumpPreflightError(message)
+
+
+def _include_table(
+    entry: cabc.Mapping[str, typ.Any],
+    config_path: Path,
+) -> tuple[Path, bool]:
+    """Return a table-form include entry's path and optional flag."""
+    path_value = entry.get("path")
+    if not isinstance(path_value, str):
+        message = f"{config_path}: include table must name a string path"
+        raise BumpPreflightError(message)
+    optional_value = entry.get("optional", False)
+    if not isinstance(optional_value, bool):
+        message = f"{config_path}: include optional must be a boolean"
+        raise BumpPreflightError(message)
+    return _include_path(path_value, config_path), optional_value
+
+
+def _include_path(path_text: str, config_path: Path) -> Path:
+    """Return the resolved path for one include target."""
+    if not path_text.endswith(_TOML_SUFFIX):
+        message = (
+            f"{config_path}: included path must end with {_TOML_SUFFIX}: {path_text}"
+        )
+        raise BumpPreflightError(message)
+    candidate = Path(path_text)
+    if not candidate.is_absolute():
+        # Cargo resolves an include path against the file that includes it.
+        candidate = config_path.parent / candidate
+    # Cargo removes ``..`` components lexically before probing the path, so a
+    # missing intermediate directory must not hide the file it resolves to.
+    return Path(os.path.normpath(candidate))
+
+
+def _declared_path(document: cabc.Mapping[str, typ.Any]) -> str | None:
+    """Return this file's top-level ``resolver.lockfile-path``, if declared."""
+    match document.get(_RESOLVER_TABLE):
+        case cabc.Mapping() as resolver:
+            match resolver.get(_LOCKFILE_PATH_KEY):
+                case str() as configured:
+                    return configured
+        case _:
+            pass
+    return None
+
+
+def _load(config_path: Path) -> cabc.Mapping[str, typ.Any]:
+    """Return the parsed configuration file, reporting read failures.
+
+    ``tomlkit`` is used rather than :mod:`tomllib` because Cargo accepts TOML
+    1.1 syntax such as multiline inline tables, which Python 3.14's reader
+    rejects. A configuration file Cargo can read must not abort the preflight.
+
+    Returns
+    -------
+    cabc.Mapping[str, typ.Any]
+        The parsed configuration document.
+
+    Raises
+    ------
+    BumpPreflightError
+        If the file cannot be read, decoded, or parsed as TOML.
+    """
+    try:
+        return parse_toml(config_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, TOMLKitError) as exc:
+        message = f"cannot read Cargo configuration {config_path}: {exc}"
+        raise BumpPreflightError(message) from exc

@@ -5,7 +5,11 @@ from pathlib import Path
 
 import pytest
 
-from lading.commands import bump_lockfile_regeneration, bump_lockfiles
+from lading.commands import (
+    bump_lockfile_planning,
+    bump_lockfile_regeneration,
+    bump_lockfiles,
+)
 from lading.runtime import CommandSpawnError
 from lading.utils import metrics
 
@@ -212,3 +216,38 @@ def test_regenerate_lockfiles_records_partial_success_and_failure(
         )
         == 1
     ), "partial regeneration should count the Cargo-exit failure"
+
+
+def test_regenerate_planned_runs_cargo_with_the_validated_environment(
+    tmp_path: Path,
+) -> None:
+    """The executed Cargo receives the same environment that was validated."""
+    seen: list[dict[str, str] | None] = []
+
+    def runner(
+        command: cabc.Sequence[str],
+        *,
+        cwd: Path | None = None,
+        env: cabc.Mapping[str, str] | None = None,
+        echo_stdout: bool = True,
+    ) -> tuple[int, str, str]:
+        """Record the environment and report success."""
+        del command, cwd, echo_stdout
+        seen.append(None if env is None else dict(env))
+        return 0, "", ""
+
+    validated = {"CARGO_HOME": "/validated/home"}
+    plan = bump_lockfile_planning.LockfilePlan(
+        root=tmp_path,
+        manifests=(tmp_path / "Cargo.toml",),
+        lockfiles=(tmp_path / "Cargo.lock",),
+        environ=validated,
+    )
+
+    bump_lockfile_regeneration.regenerate_planned(
+        plan, runner=runner, environ=validated
+    )
+
+    assert seen == [validated], (
+        "cargo must run with the environment the plan was validated against"
+    )

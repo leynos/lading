@@ -9,6 +9,7 @@ Publish tests rely on the workspace/config factory fixtures and the
 import collections.abc as cabc
 import dataclasses as dc
 import typing as typ
+from pathlib import Path
 
 import pytest
 import tomlkit
@@ -28,12 +29,11 @@ from lading.workspace import WorkspaceCrate, WorkspaceDependency, WorkspaceGraph
 _LOCKFILE_STUB_MODULES = frozenset({
     "test_bump_manifest_updates",
     "test_bump_documentation_updates",
+    "test_bump_context_properties",
+    "test_bump_result_formatting",
     "test_bump_lockfile_rebuild",
     "test_bump_rebuild_lockfiles_resolution",
 })
-
-if typ.TYPE_CHECKING:
-    from pathlib import Path
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -190,6 +190,28 @@ def stub_lockfile_regeneration(
         bump.bump_lockfiles,
         "regenerate_lockfiles",
         lambda *_args, **_kwargs: (),
+    )
+    # The pipeline now consumes the repository port's plan methods rather than
+    # the module-level helpers above, so both surfaces are stubbed.
+    from lading.commands.bump_lockfile_planning import LockfilePlan
+
+    def empty_plan(
+        _repository: object,
+        workspace_root: Path,
+        _manifests: object,
+    ) -> LockfilePlan:
+        """Return a plan with no lockfile work."""
+        return LockfilePlan(root=workspace_root, manifests=(), lockfiles=())
+
+    monkeypatch.setattr(
+        bump.bump_lockfiles.CargoLockfileRepository,
+        "plan_lockfiles",
+        empty_plan,
+    )
+    monkeypatch.setattr(
+        bump.bump_lockfiles.CargoLockfileRepository,
+        "regenerate_planned",
+        lambda _repository, _plan: (),
     )
 
 

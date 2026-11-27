@@ -41,7 +41,7 @@ Feature: Lading end-to-end workflows in a temporary Git repository
 
   Scenario: Bump rebuilds Cargo.lock files for nested manifests
     Given a non-trivial workspace in a Git repository at version "0.1.0"
-    And the workspace rebuilds the app crate lockfile during bump
+    And the workspace rebuilds a nested standalone lockfile during bump
     When I run lading bump "1.0.0" in the E2E workspace
     Then the command succeeds
     And all workspace manifests are at version "1.0.0"

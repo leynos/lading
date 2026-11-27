@@ -21,6 +21,7 @@ regenerate_lockfiles(
 import collections.abc as cabc
 import dataclasses as dc
 import logging
+import os
 import shlex
 import time
 import typing as typ
@@ -33,6 +34,9 @@ from lading.commands.bump_lockfile_paths import (
 from lading.runtime import CommandRunner, CommandSpawnError, subprocess_runner
 from lading.utils import metrics
 from lading.utils.process import with_detail
+
+if typ.TYPE_CHECKING:  # pragma: no cover - import-time typing aids only
+    from lading.commands.bump_lockfile_planning import LockfilePlan
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -124,12 +128,10 @@ def regenerate_lockfiles(
             )
             raise
         _LOGGER.info("Regenerating %d Cargo lockfile(s)", len(manifests))
-        lockfiles, failures = _collect_lockfile_results(
-            manifests, workspace_root, command_runner, clock
+        regeneration = _Regeneration(
+            workspace_root=workspace_root, runner=command_runner, clock=clock
         )
-        _record_regeneration_results(lockfiles, failures)
-        if failures:
-            _raise_aggregated_failure(manifests, failures)
+        lockfiles = _regenerate_manifests(manifests, regeneration)
     finally:
         elapsed = clock() - started_at
         metrics.observe_duration(REGENERATE_DURATION_METRIC, elapsed)
@@ -141,19 +143,120 @@ def regenerate_lockfiles(
     return tuple(lockfiles)
 
 
+def regenerate_planned(
+    plan: LockfilePlan,
+    *,
+    runner: CommandRunner | None = None,
+    clock: cabc.Callable[[], float] = time.perf_counter,
+    environ: cabc.Mapping[str, str] | None = None,
+) -> tuple[Path, ...]:
+    """Regenerate the lockfiles named by a validated plan.
+
+    Parameters
+    ----------
+    plan : LockfilePlan
+        Destination plan built during bump preparation. Its manifests are the
+        effective workspace roots; no rediscovery happens here.
+    runner : CommandRunner | None
+        Callable used to invoke ``cargo``. Defaults to
+        :func:`lading.runtime.subprocess_runner`.
+    clock : cabc.Callable[[], float], optional
+        Monotonic clock for logging and duration metrics.
+
+    Returns
+    -------
+    tuple[Path, ...]
+        The validated lockfile destinations, in plan order.
+
+    Raises
+    ------
+    LockfileRegenerationError
+        If the Cargo-relevant environment differs from the environment the plan
+        was validated against, or after every manifest has been attempted, if
+        any ``cargo update`` failed. When only one manifest was attempted, its
+        original cargo error is re-raised unchanged; when more than one was
+        attempted, one aggregated error lists each manifest and its repair
+        command.
+
+    Notes
+    -----
+    Regeneration is not a transaction. Manifest versions are already written
+    when this runs, and successful updates are not rolled back when a later
+    manifest fails. Validation happened before the first write; an error here
+    is an execution failure, not a rejected plan.
+    """  # ruff: ignore[docstring-extraneous-exception]  # raised after attempt-all aggregation
+    _require_unchanged_environment(plan, environ)
+    command_runner = subprocess_runner if runner is None else runner
+    started_at = clock()
+    try:
+        _LOGGER.info("Regenerating %d Cargo lockfile(s)", len(plan.manifests))
+        regeneration = _Regeneration(
+            workspace_root=plan.root,
+            runner=command_runner,
+            clock=clock,
+            environ=environ,
+        )
+        _regenerate_manifests(plan.manifests, regeneration)
+    finally:
+        metrics.observe_duration(REGENERATE_DURATION_METRIC, clock() - started_at)
+    return plan.lockfiles
+
+
+_ENVIRONMENT_KEYS: typ.Final[tuple[str, ...]] = (
+    "CARGO_HOME",
+    "CARGO_RESOLVER_LOCKFILE_PATH",
+)
+
+
+def _require_unchanged_environment(
+    plan: LockfilePlan,
+    environ: cabc.Mapping[str, str] | None,
+) -> None:
+    """Refuse regeneration when the Cargo environment changed after planning."""
+    if plan.environ is None:
+        return
+    current = os.environ if environ is None else environ
+    changed = [
+        name
+        for name in _ENVIRONMENT_KEYS
+        if current.get(name) != plan.environ.get(name)
+    ]
+    if changed:
+        settings = (
+            f"Restore the validated Cargo settings ({', '.join(changed)}) and "
+            f"run from {plan.root}; the manifests may already carry the target "
+            "version, so a same-version rerun would skip regeneration. Repair "
+            "each planned lockfile with:"
+        )
+        commands = "\n".join(
+            f"  cargo update --workspace --manifest-path {shlex.quote(str(manifest))}"
+            for manifest in plan.manifests
+        )
+        message = f"{settings}\n{commands}"
+        raise LockfileRegenerationError(message)
+
+
+def _regenerate_manifests(
+    manifests: tuple[Path, ...],
+    regeneration: _Regeneration,
+) -> list[Path]:
+    """Attempt every manifest, record the outcome, and raise any aggregate."""
+    lockfiles, failures = _collect_lockfile_results(manifests, regeneration)
+    _record_regeneration_results(lockfiles, failures)
+    if failures:
+        _raise_aggregated_failure(manifests, failures)
+    return lockfiles
+
+
 def _collect_lockfile_results(
     manifests: tuple[Path, ...],
-    workspace_root: Path,
-    command_runner: CommandRunner,
-    clock: cabc.Callable[[], float],
+    regeneration: _Regeneration,
 ) -> tuple[list[Path], list[tuple[Path, LockfileRegenerationError]]]:
     """Attempt every manifest and partition the outcomes into a pair."""
     lockfiles: list[Path] = []
     failures: list[tuple[Path, LockfileRegenerationError]] = []
     for manifest in manifests:
-        result = _attempt_single_lockfile_update(
-            workspace_root, manifest, command_runner, clock
-        )
+        result = _attempt_single_lockfile_update(manifest, regeneration)
         if result.error is not None:
             failures.append((manifest, result.error))
         elif result.lockfile is not None:
@@ -222,6 +325,16 @@ def _build_aggregate_failure_message(
 
 
 @dc.dataclass(frozen=True, slots=True)
+class _Regeneration:
+    """Inputs shared by one regeneration attempt."""
+
+    workspace_root: Path
+    runner: CommandRunner
+    clock: cabc.Callable[[], float]
+    environ: cabc.Mapping[str, str] | None = None
+
+
+@dc.dataclass(frozen=True, slots=True)
 class _LockfileUpdateResult:
     """Outcome of attempting one manifest's lockfile update."""
 
@@ -230,16 +343,14 @@ class _LockfileUpdateResult:
 
 
 def _attempt_single_lockfile_update(
-    workspace_root: Path,
     manifest: Path,
-    command_runner: CommandRunner,
-    clock: cabc.Callable[[], float],
+    regeneration: _Regeneration,
 ) -> _LockfileUpdateResult:
     """Attempt one manifest's lockfile update and return the outcome."""
-    manifest_started_at = clock()
+    manifest_started_at = regeneration.clock()
     _LOGGER.info("Regenerating Cargo lockfile for %s", manifest)
     try:
-        _run_workspace_lockfile_update(workspace_root, manifest, command_runner)
+        _run_workspace_lockfile_update(manifest, regeneration)
     except LockfileRegenerationError as exc:
         # Keep going: attempting the remaining manifests gives the
         # operator one aggregated repair list instead of a re-run per
@@ -249,19 +360,29 @@ def _attempt_single_lockfile_update(
     _LOGGER.info(
         "Regenerated Cargo lockfile for %s in %.3fs",
         manifest,
-        clock() - manifest_started_at,
+        regeneration.clock() - manifest_started_at,
     )
     return _LockfileUpdateResult(lockfile=manifest.parent / "Cargo.lock", error=None)
 
 
 def _run_workspace_lockfile_update(
-    workspace_root: Path,
     manifest_path: Path,
-    runner: CommandRunner,
+    regeneration: _Regeneration,
 ) -> None:
-    """Invoke cargo for one manifest and surface failures consistently."""
+    """Invoke cargo for one manifest and surface failures consistently.
+
+    ``regeneration.environ`` is the mapping regeneration validated against;
+    passing it to the runner keeps the executed Cargo environment identical to
+    the checked one. ``None`` inherits the process environment, which is also
+    what validation reads when no explicit mapping is supplied.
+
+    Raises
+    ------
+    LockfileRegenerationError
+        If Cargo cannot be spawned or exits nonzero.
+    """
     try:
-        exit_code, stdout, stderr = runner(
+        exit_code, stdout, stderr = regeneration.runner(
             (
                 "cargo",
                 "update",
@@ -269,7 +390,8 @@ def _run_workspace_lockfile_update(
                 "--manifest-path",
                 str(manifest_path),
             ),
-            cwd=workspace_root,
+            cwd=regeneration.workspace_root,
+            env=regeneration.environ,
         )
     except (CommandSpawnError, ValueError) as exc:
         message = f"Cargo lockfile regeneration failed for {manifest_path}: {exc}"

@@ -354,7 +354,7 @@ requires-dist = [
     { name = "cyclopts", specifier = ">=4.25.3,<5" },
     { name = "markdown-it-py", specifier = ">=3,<5" },
     { name = "msgspec", specifier = ">=0.18,<1.0" },
-    { name = "tomlkit", specifier = ">=0.13,<0.16" },
+    { name = "tomlkit", specifier = ">=0.15,<0.16" },
 ]
 
 [package.metadata.requires-dev]

@@ -3,7 +3,10 @@
 import collections.abc as cabc
 import pathlib
 
+import pytest
+
 from lading.commands import bump
+from lading.commands.bump_lockfile_planning import LockfilePlan
 from tests.helpers.workspace_builders import _make_config, _make_workspace
 
 
@@ -12,26 +15,41 @@ class _RecordingLockfileRepository:
 
     def __init__(self) -> None:
         """Start with empty call records for both port operations."""
-        self.resolved: list[tuple[pathlib.Path, tuple[str, ...]]] = []
-        self.regenerated: list[tuple[pathlib.Path, tuple[str, ...]]] = []
+        self.planned: list[tuple[pathlib.Path, tuple[str, ...]]] = []
+        self.planned_plans: list[LockfilePlan] = []
+        self.regenerated: list[LockfilePlan] = []
+
+    def plan_lockfiles(
+        self,
+        workspace_root: pathlib.Path,
+        lockfile_manifests: cabc.Sequence[str],
+    ) -> LockfilePlan:
+        """Record the plan request and return a single-lockfile plan."""
+        self.planned.append((workspace_root, tuple(lockfile_manifests)))
+        plan = LockfilePlan(
+            root=workspace_root,
+            manifests=(workspace_root / "Cargo.toml",),
+            lockfiles=(workspace_root / "Cargo.lock",),
+        )
+        self.planned_plans.append(plan)
+        return plan
+
+    def regenerate_planned(self, plan: LockfilePlan) -> tuple[pathlib.Path, ...]:
+        """Record the regeneration request and return the planned lockfiles."""
+        self.regenerated.append(plan)
+        return plan.lockfiles
 
     def resolve_lockfile_paths(
-        self,
-        workspace_root: pathlib.Path,
-        lockfile_manifests: cabc.Sequence[str],
+        self, *_args: object, **_kwargs: object
     ) -> tuple[pathlib.Path, ...]:
-        """Record the resolution request and return a single lockfile path."""
-        self.resolved.append((workspace_root, tuple(lockfile_manifests)))
-        return (workspace_root / "Cargo.lock",)
+        """Fail: the bump pipeline no longer projects paths directly."""
+        pytest.fail("the bump pipeline must use plan_lockfiles")
 
     def regenerate_lockfiles(
-        self,
-        workspace_root: pathlib.Path,
-        lockfile_manifests: cabc.Sequence[str],
+        self, *_args: object, **_kwargs: object
     ) -> tuple[pathlib.Path, ...]:
-        """Record the regeneration request and return a single lockfile path."""
-        self.regenerated.append((workspace_root, tuple(lockfile_manifests)))
-        return (workspace_root / "Cargo.lock",)
+        """Fail: the bump pipeline no longer regenerates from raw manifests."""
+        pytest.fail("the bump pipeline must use regenerate_planned")
 
 
 def test_run_uses_injected_lockfile_repository(tmp_path: pathlib.Path) -> None:
@@ -49,11 +67,11 @@ def test_run_uses_injected_lockfile_repository(tmp_path: pathlib.Path) -> None:
         ),
     )
 
-    assert repository.regenerated == [(tmp_path.resolve(), ())], (
-        "a real bump must regenerate lockfiles through the repository port"
+    assert repository.planned == [(tmp_path.resolve(), ())], (
+        "a real bump must plan lockfiles through the repository port"
     )
-    assert not repository.resolved, (
-        "a real bump must not resolve lockfile paths without regenerating"
+    assert repository.regenerated == repository.planned_plans, (
+        "regeneration must receive the exact plan that planning returned"
     )
     assert "Cargo.lock (lockfile)" in message, (
         "the bump summary must report the regenerated lockfile"
@@ -78,7 +96,7 @@ def test_dry_run_projects_through_lockfile_repository(
         ),
     )
 
-    assert repository.resolved == [(tmp_path.resolve(), ())], (
-        "a dry run must project lockfile paths through the repository port"
+    assert repository.planned == [(tmp_path.resolve(), ())], (
+        "a dry run must plan lockfile destinations through the repository port"
     )
     assert not repository.regenerated, "a dry run must not regenerate any lockfiles"
