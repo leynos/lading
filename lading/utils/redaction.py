@@ -38,6 +38,7 @@ import contextlib
 import contextvars
 import dataclasses as dc
 import functools
+import itertools
 import re
 
 from lading.utils.exception_redaction import sanitize_exception
@@ -50,6 +51,9 @@ _TOKEN_VARIABLE = re.compile(r"CARGO_REGISTRY_TOKEN|CARGO_REGISTRIES_[A-Z0-9_]+_
 _ACTIVE: contextvars.ContextVar[tuple[str, ...]] = contextvars.ContextVar(
     "lading_active_secrets", default=()
 )
+# Every open scope's secrets. The log hooks are process-wide, so they read this
+# rather than the per-context ``_ACTIVE``.
+_LOGGED: list[tuple[str, ...]] = []
 
 
 def _overlaps_marker(secret: str) -> bool:
@@ -235,12 +239,15 @@ def use_secrets(secrets: cabc.Iterable[str]) -> cabc.Generator[None]:
     it is created (so a handler on any logger is covered), and a
     :class:`RedactingFilter` is installed on the root logger's handlers. Both
     are removed afterwards, so nothing changes for a run that never activates
-    any. An exception that propagates out of the block is sanitized first (see
+    any. The hooks redact with the secrets of every open scope at once (see
+    :func:`_redact_logged`). An exception that propagates out of the block is
+    sanitized first (see
     :func:`~lading.utils.exception_redaction.sanitize_exception`).
     """
     combined = ordered_secrets((*_ACTIVE.get(), *secrets))
     token = _ACTIVE.set(combined)
-    hooks = LogRedaction(functools.partial(redact_text, secrets=combined))
+    _LOGGED.append(combined)
+    hooks = LogRedaction(_redact_logged)
     try:
         yield
     except Exception as exc:
@@ -252,7 +259,25 @@ def use_secrets(secrets: cabc.Iterable[str]) -> cabc.Generator[None]:
         raise safe from safe.__cause__
     finally:
         hooks.remove()
+        _LOGGED.remove(combined)
         _ACTIVE.reset(token)
+
+
+def _redact_logged(text: str) -> str:
+    """Redact ``text`` with the secrets of every open scope, in one pass.
+
+    Each scope's log hooks wrap the previous scope's, so the outermost runs
+    first. Were it to use only its own secrets, it could replace the prefix of a
+    longer secret an inner scope added and leave the rest showing. Every hook
+    uses this one combined set instead: the first rewrite hides each secret
+    whole, longest first, and the later hooks find nothing left to replace.
+
+    Returns
+    -------
+    str
+        ``text`` with every open scope's secrets replaced.
+    """
+    return redact_text(text, tuple(itertools.chain.from_iterable(tuple(_LOGGED))))
 
 
 def redact_active(text: str) -> str:

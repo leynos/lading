@@ -121,6 +121,70 @@ def test_extra_fields_are_redacted_for_a_handler_on_a_specific_logger() -> None:
     )
 
 
+def test_nested_scopes_hide_a_longer_token_whole() -> None:
+    """An outer secret that prefixes an inner one must not split it.
+
+    Each scope's hooks wrap the previous ones, so the outer scope's hooks see
+    the record first. If they used only the outer secret they would replace the
+    prefix and leave the inner token's suffix in the output.
+    """
+    short = "token-0123456789abcdef"
+    long = f"{short}9876543210"
+    seen: list[str] = []
+
+    class _Show(logging.Handler):
+        """Render the message and the ``note`` extra."""
+
+        def emit(self, record: logging.LogRecord) -> None:
+            """Remember the rendered record."""
+            seen.append(self.format(record))
+
+    handler = _Show()
+    handler.setFormatter(logging.Formatter("%(message)s | %(note)s"))
+    target = logging.getLogger("lading.commands.publish")
+    previous_level = target.level
+    target.setLevel(logging.INFO)
+    target.addHandler(handler)
+    try:
+        with use_secrets((short,)), use_secrets((long,)):
+            target.info("token %s", long, extra={"note": [f"also {long}"]})
+    finally:
+        target.removeHandler(handler)
+        target.setLevel(previous_level)
+
+    assert "9876543210" not in seen[0], "no part of the longer token may show"
+    assert seen[0] == f"token {REDACTED} | ['also {REDACTED}']", (
+        "the message and extra must each show one marker per token"
+    )
+
+
+def test_nested_scope_filters_hide_a_longer_token_whole() -> None:
+    """The stacked root-handler filters use the one combined set as well."""
+    short = "token-0123456789abcdef"
+    long = f"{short}9876543210"
+    seen: list[str] = []
+
+    class _Show(logging.Handler):
+        """Render the message."""
+
+        def emit(self, record: logging.LogRecord) -> None:
+            """Remember the rendered record."""
+            seen.append(self.format(record))
+
+    handler = _Show()
+    root = logging.getLogger()
+    root.addHandler(handler)
+    try:
+        with use_secrets((short,)), use_secrets((long,)):
+            # Built directly, so only the handler filters can redact it.
+            handler.handle(logging.makeLogRecord({"msg": f"token {long}"}))
+    finally:
+        root.removeHandler(handler)
+
+    assert seen == [f"token {REDACTED}"], "the filters must hide the token whole"
+    assert not handler.filters, "the filters must be removed with their scopes"
+
+
 class _Unrenderable:
     """An object whose text cannot be produced."""
 

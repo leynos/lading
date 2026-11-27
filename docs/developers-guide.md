@@ -1939,37 +1939,41 @@ validates anything, and `use_secrets` also installs a log-record factory
 `Logger.makeRecord` (`MakeRecordPatch`, which redacts the `extra` fields
 applied after the factory, replacing any object that would render a secret with
 its redacted text), and `RedactingFilter` on the root log handlers
-(`protect_handler` covers handlers configured later), and
-`lading.cli_environment` activates the environment's token values before it
-reads the credentials file (so a warning about it is redacted) and prints
-errors and summaries through `redact_active`, so a message built without any
-redaction is still hidden where it leaves lading for a digest-checked run.
-Every runner logs through `subprocess_runner.run_logged`, so the
-`Running external command` line is identical with or without redaction;
-`env_redaction` is the older key-based masking for logged environment overrides.
-`publish_registry` is the injectable `PublishedDigestFetcher` port;
-`fetch_crates_io_digest` streams the archive from `static.crates.io` through a
-size cap, one 180 s time budget covering connecting, reads, closing and retry
-waits, a `Content-Length` check and bounded retries (a short or interrupted
-body, including `IncompleteRead`, is retried), and tests substitute a fake.
-Each underlying socket read is bounded by a socket timeout of the 60 s request
-timeout or the budget left, whichever is less, so a stalled body costs one
-request timeout and is retried while budget remains, reading with `read1`; that
-does not bound one `read1` call, since CPython's chunked reader can make
-several reads in one while it consumes the trailers, nor closing. The total is
-enforced by deadline checks once the body is read and the response closed,
-before a digest or a 404's `None` is returned, so expiry is never reported as
-either. The new errors (`ExpectedDigestsError`, `ArchiveMismatchError`,
-`UploadedArchiveMismatchError`, `PublishedArchiveConflictError`) live in
-`publish_errors`; `ArchiveUnavailableError` and
-`PublishedArchiveUnavailableError` sit beside the code that raises them.
-`tests/e2e/test_publish_expect_digests_cli.py` covers the option through the
-real `lading` process, with a stub `cargo` (`tests/e2e/helpers/stub_cargo.py`)
-on `PATH` and a loopback server standing in for the archive host (the process
-is started through a launcher that points the downloader at it, so nothing
-reaches crates.io). `tests/helpers/publish_digests.py` provides `FakeCargo`,
-`FakeRegistry`, and `PublishRig`, which drive `publish.run` in process without
-a subprocess or socket; the behavioural scenarios in
+(`protect_handler` covers handlers configured later). Those hooks are
+process-wide and stack when scopes nest, the outermost running first, so every
+one of them redacts with the combined secrets of all open scopes (longest
+first) rather than its own: an outer secret that prefixes an inner one cannot
+split it and leave the rest showing. And `lading.cli_environment` activates the
+environment's token values before it reads the credentials file (so a warning
+about it is redacted) and prints errors and summaries through `redact_active`,
+so a message built without any redaction is still hidden where it leaves lading
+for a digest-checked run. Every runner logs through
+`subprocess_runner.run_logged`, so the `Running external command` line is
+identical with or without redaction; `env_redaction` is the older key-based
+masking for logged environment overrides. `publish_registry` is the injectable
+`PublishedDigestFetcher` port; `fetch_crates_io_digest` streams the archive from
+`static.crates.io` through a size cap, one 180 s time budget covering
+connecting, reads, closing and retry waits, a `Content-Length` check and
+bounded retries (a short or interrupted body, including `IncompleteRead`, is
+retried), and tests substitute a fake. Each underlying socket read is bounded
+by a socket timeout of the 60 s request timeout or the budget left, whichever
+is less, so a stalled body costs one request timeout and is retried while
+budget remains, reading with `read1`; that does not bound one `read1` call,
+since CPython's chunked reader can make several reads in one while it consumes
+the trailers, nor closing. The total is enforced by deadline checks once the
+body is read and the response closed, before a digest or a 404's `None` is
+returned, so expiry is never reported as either. The new errors
+(`ExpectedDigestsError`, `ArchiveMismatchError`, `UploadedArchiveMismatchError`,
+`PublishedArchiveConflictError`) live in `publish_errors`;
+`ArchiveUnavailableError` and `PublishedArchiveUnavailableError` sit beside the
+code that raises them. `tests/e2e/test_publish_expect_digests_cli.py` covers
+the option through the real `lading` process, with a stub `cargo`
+(`tests/e2e/helpers/stub_cargo.py`) on `PATH` and a loopback server standing in
+for the archive host (the process is started through a launcher that points the
+downloader at it, so nothing reaches crates.io).
+`tests/helpers/publish_digests.py` provides `FakeCargo`, `FakeRegistry`, and
+`PublishRig`, which drive `publish.run` in process without a subprocess or
+socket; the behavioural scenarios in
 `tests/bdd/features/publish_expect_digests.feature` use them because a download
 cannot be injected into the CLI subprocess the other publish scenarios run.
 
