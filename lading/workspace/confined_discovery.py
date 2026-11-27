@@ -28,6 +28,7 @@ from lading.utils.confinement import (
     BumpPreflightError,
     confine_relative_path,
     establish_workspace_root,
+    validate_relative_pattern,
 )
 from lading.workspace.graph_build import build_workspace_graph
 from lading.workspace.implicit_members import (
@@ -94,7 +95,7 @@ def load_bump_workspace(
     root = establish_workspace_root(workspace_root)
     members, excludes = _read_workspace_tables(root)
     declared = expand_member_patterns(root, members, excludes)
-    validate_implicit_member_manifests(root, declared)
+    validate_implicit_member_manifests(root, declared, _literal_exclusions(excludes))
     metadata = load_cargo_metadata(root, runner=runner, no_deps=True)
     _require_cargo_workspace_root(root, metadata)
     reported = validate_reported_member_manifests(root, metadata)
@@ -130,6 +131,14 @@ def _string_sequence(value: object, key: str) -> tuple[str, ...]:
         return ()
     sequence = toml_coerce.expect_sequence(value, key, error=BumpPreflightError)
     return toml_coerce.validate_string_sequence(sequence, key, error=BumpPreflightError)
+
+
+def _literal_exclusions(excludes: cabc.Sequence[str]) -> tuple[tuple[str, ...], ...]:
+    """Return the literal exclusion prefixes Cargo applies."""
+    return tuple(
+        validate_relative_pattern(pattern, key=f"{_EXCLUDES_KEY}[{index}]")
+        for index, pattern in enumerate(excludes)
+    )
 
 
 def _require_cargo_workspace_root(

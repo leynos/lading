@@ -51,7 +51,7 @@ class _ManifestRequest:
     path: ConfinedPath
     selectors: list[tuple[str, ...]] = dc.field(default_factory=list)
     dependency_sections: dict[str, set[str]] = dc.field(default_factory=dict)
-    include_workspace_sections: bool = False
+    workspace_sections: dict[str, set[str]] = dc.field(default_factory=dict)
 
     def add_selectors(self, selectors: cabc.Iterable[tuple[str, ...]]) -> None:
         """Append selectors that are not already present."""
@@ -99,10 +99,9 @@ def _manifest_requests(context: _BumpContext) -> list[_ManifestRequest]:
     )
     root_request = _ManifestRequest(path=workspace_manifest)
     root_request.add_selectors(_WORKSPACE_SELECTORS)
-    root_request.add_sections(
-        _workspace_dependency_sections(context.updated_crate_names)
+    root_request.workspace_sections = _workspace_dependency_sections(
+        context.updated_crate_names
     )
-    root_request.include_workspace_sections = True
     requests = [root_request]
     requests_by_parts = {workspace_manifest.parts: root_request}
     skipped = 0
@@ -157,7 +156,7 @@ def _render_request(request: _ManifestRequest, target_version: str) -> str | Non
             target_version,
             ManifestRenderOptions(
                 dependency_sections=request.dependency_sections,
-                include_workspace_sections=request.include_workspace_sections,
+                workspace_sections=request.workspace_sections,
             ),
         )
     except (OSError, UnicodeDecodeError) as exc:

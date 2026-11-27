@@ -323,16 +323,53 @@ def update_dependency_sections(
     >>> update_dependency_sections(document, sections, "0.2.0")
     True
     """
+    changed = _update_named_sections(document, dependency_sections, target_version)
+    if include_workspace_sections:
+        changed |= _update_named_sections(
+            document, dependency_sections, target_version, prefix=("workspace",)
+        )
+    return changed
+
+
+def _update_named_sections(
+    document: TOMLDocument,
+    sections: cabc.Mapping[str, cabc.Collection[str]],
+    target_version: str,
+    prefix: tuple[str, ...] = (),
+) -> bool:
+    """Apply ``target_version`` under ``prefix`` for each named section."""
     changed = False
-    for section, names in dependency_sections.items():
+    for section, names in sections.items():
         if not names:
             continue
-        changed |= update_section(document, (section,), names, target_version)
-        if include_workspace_sections:
-            changed |= update_section(
-                document, ("workspace", section), names, target_version
-            )
+        changed |= update_section(document, (*prefix, section), names, target_version)
     return changed
+
+
+def update_workspace_dependency_sections(
+    document: TOMLDocument,
+    workspace_sections: cabc.Mapping[str, cabc.Collection[str]],
+    target_version: str,
+) -> bool:
+    """Apply ``target_version`` to ``[workspace.<section>]`` dependency entries.
+
+    Parameters
+    ----------
+    document : TOMLDocument
+        The parsed TOML manifest document.
+    workspace_sections : cabc.Mapping[str, cabc.Collection[str]]
+        Mapping of section names to the workspace dependency keys to update.
+    target_version : str
+        The target version to apply.
+
+    Returns
+    -------
+    bool
+        True if any version entries were changed.
+    """
+    return _update_named_sections(
+        document, workspace_sections, target_version, prefix=("workspace",)
+    )
 
 
 def parse_manifest(manifest_path: Path) -> TOMLDocument:

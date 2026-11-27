@@ -298,3 +298,14 @@ def test_loader_restores_the_outer_list_indentation(tmp_path: Path) -> None:
     assert example.body == "print(1)", (
         "the example must continue in the outer list after the nested item"
     )
+
+
+def test_inline_code_with_a_backtick_fence_lookalike_is_not_a_fence(
+    tmp_path: Path,
+) -> None:
+    """A paragraph such as ```bash``` is inline code, not an unmarked fence."""
+    path = _write(tmp_path, "Use ```bash``` to run the command.\n")
+
+    assert not load_tested_examples(path), (
+        "a backtick run inside an info string must not open a fence"
+    )

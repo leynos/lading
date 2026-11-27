@@ -246,9 +246,26 @@ def _fence_delimiter(line: str) -> tuple[str, int] | None:
     """Return the fence character and run length for an opening fence."""
     for character in ("`", "~"):
         length = len(line) - len(line.lstrip(character))
-        if length >= _MIN_FENCE_LENGTH and line.startswith(character * length):
+        if length < _MIN_FENCE_LENGTH or not line.startswith(character * length):
+            continue
+        if _is_valid_fence_info(character, line[length:]):
             return character, length
     return None
+
+
+def _is_valid_fence_info(character: str, info: str) -> bool:
+    r"""Return whether ``info`` may follow a fence opener of ``character``.
+
+    CommonMark forbids backticks in a backtick fence's info string, so
+    ``\`\`\`bash\`\`\``` is inline code, not a fence. Tilde fences may carry
+    backticks in their info string.
+
+    Returns
+    -------
+    bool
+        ``True`` when the info string is valid for the fence character.
+    """
+    return character != "`" or "`" not in info
 
 
 @dc.dataclass(frozen=True, slots=True)

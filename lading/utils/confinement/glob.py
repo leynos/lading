@@ -94,6 +94,7 @@ def expand_confined_glob(
         unmatched=policy.unmatched,
         link_predicate=policy.link_predicate,
         reject_intermediate_links=policy.reject_intermediate_links,
+        case_sensitive=policy.case_sensitive,
     )
     expansion.expand(parts, prefix=())
     if policy.unmatched is UnmatchedPolicy.ERROR and not _matched(expansion):

@@ -5,7 +5,9 @@ item's marker and continuation indentation when it changes, and align its line
 splicing with MarkdownIt's own line boundaries.
 """
 
+import hypothesis.strategies as st
 import pytest
+from hypothesis import given
 from markdown_it import MarkdownIt
 
 from lading.commands import bump_docs_fences
@@ -151,3 +153,92 @@ def test_a_quote_after_a_list_marker_is_preserved() -> None:
     assert "  > [dependencies]" in updated, (
         "the block quote after the list marker must be preserved"
     )
+
+
+def test_a_tab_indented_list_fence_uses_column_indentation() -> None:
+    """A tab after the marker expands to the CommonMark column stop."""
+    text = '-\t```toml\n\t[dependencies]\n\talpha = "0.1.0"\n\t```\n'
+
+    updated, changed = bump_docs_fences.rewrite_markdown_toml_fences(
+        text, ("alpha",), "1.2.3"
+    )
+
+    assert changed, "the dependency version must be rewritten"
+    assert "\n    [dependencies]" in updated, (
+        "a tab after the marker must become four columns of continuation"
+    )
+    parsed = MarkdownIt("commonmark").parse(updated)
+    assert [token.type for token in parsed].count("fence") == 1, (
+        "the rewrite must remain one fenced block inside the list item"
+    )
+    assert any(token.type == "bullet_list_open" for token in parsed), (
+        "the fence must stay inside the list item"
+    )
+
+
+_FENCE_OPENER = st.sampled_from([
+    "```toml",
+    "````toml",
+    "~~~toml",
+    "~~~",
+    "  ```toml",
+    "- ```toml",
+])
+_FENCE_ENDING = st.sampled_from(["\n", "\r\n"])
+
+
+@st.composite
+def _fence_documents(draw: st.DrawFn) -> tuple[str, str]:
+    """Return a one-fence document and a language-matched opener shape."""
+    opener = draw(_FENCE_OPENER)
+    ending = draw(_FENCE_ENDING)
+    version = draw(st.sampled_from(["0.1.0", "1.2.3", "9.9.9"]))
+    body = draw(
+        st.lists(
+            st.sampled_from([
+                "[dependencies]",
+                f'alpha = "{version}"',
+                'beta = { version = "0.1.0" }',
+                "",
+            ]),
+            min_size=1,
+            max_size=4,
+        )
+    )
+    closer_length = 3 if opener.strip().startswith("~") else 4
+    closer_char = "~" if opener.strip().startswith("~") else "`"
+    closer = closer_char * closer_length
+    lines = [opener, *body, closer, ""]
+    return ending.join(lines), version
+
+
+@given(document=_fence_documents())
+def test_an_unchanged_fence_is_byte_identical(
+    document: tuple[str, str],
+) -> None:
+    """Rewriting to the fence's own version returns the source byte-for-byte."""
+    text, version = document
+
+    updated, changed = bump_docs_fences.rewrite_markdown_toml_fences(
+        text, ("alpha",), version
+    )
+
+    assert not changed, "no dependency version differs, so nothing may change"
+    assert updated == text, "an unchanged rewrite must be byte-identical"
+
+
+@given(document=_fence_documents(), target=st.sampled_from(["1.2.3", "0.1.0"]))
+def test_rewriting_a_fence_twice_is_idempotent(
+    document: tuple[str, str],
+    target: str,
+) -> None:
+    """A second rewrite with the same target changes nothing further."""
+    text, _version = document
+
+    once, _ = bump_docs_fences.rewrite_markdown_toml_fences(text, ("alpha",), target)
+    twice, changed = bump_docs_fences.rewrite_markdown_toml_fences(
+        once, ("alpha",), target
+    )
+
+    assert not changed, "the rewritten document already carries the target"
+    assert twice == once, "a repeated rewrite must be idempotent"

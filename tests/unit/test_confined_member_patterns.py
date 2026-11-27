@@ -14,8 +14,10 @@ import pytest
 from lading.utils.confinement import (
     MissingBumpTargetError,
     UnsafeBumpTargetError,
+    validate_relative_pattern,
 )
 from lading.workspace.confined_discovery import load_bump_workspace
+from lading.workspace.member_declarations import _reject_hidden_wildcard
 from tests.unit.confined_discovery_helpers import (
     RecordingRunner as _RecordingRunner,
 )
@@ -215,3 +217,26 @@ def test_a_dot_prefixed_fixed_wildcard_member_is_accepted(tmp_path: Path) -> Non
     assert {crate.name for crate in graph.crates} == {".hidden-app"}, (
         "a hidden prefix that cannot select '.' or '..' must be accepted"
     )
+
+
+@pytest.mark.parametrize(
+    ("pattern", "accepted"),
+    [
+        pytest.param("crates/*", True, id="star"),
+        pytest.param("crates/**", True, id="recursive"),
+        pytest.param("crates/.[a-z]*", True, id="dot-class"),
+        pytest.param("crates/.*", False, id="dot-star"),
+        pytest.param("crates/..*", False, id="dot-dot-star"),
+    ],
+)
+def test_hidden_wildcard_rejection_follows_the_full_component(
+    pattern: str,
+    *,
+    accepted: bool,
+) -> None:
+    """Only a component that actually matches ``.`` or ``..`` is rejected."""
+    if accepted:
+        validate_relative_pattern(pattern, key="workspace.members[0]")
+        return
+    with pytest.raises(UnsafeBumpTargetError):
+        _reject_hidden_wildcard(pattern, key="workspace.members[0]")

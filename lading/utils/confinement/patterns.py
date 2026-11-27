@@ -119,7 +119,7 @@ def _reject_rooted_pattern(pattern: str, key: str) -> None:
 
 def _reject_parent_traversal(pattern: str, key: str) -> None:
     """Reject ``..`` components under either POSIX or Windows spelling."""
-    if any(segment == ".." for segment in _PATH_SEPARATORS.split(pattern)):
+    if ".." in PureWindowsPath(pattern).parts:
         message = (
             f"{key}: parent-traversing '..' components are not permitted: {pattern!r}"
         )

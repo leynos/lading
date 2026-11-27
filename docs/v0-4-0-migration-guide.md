@@ -33,6 +33,34 @@ The release is the first whose wheel is built under 3.14, and the first whose
 package metadata refuses an older interpreter. Both follow from the same
 decision, recorded below.
 
+## Who is affected
+
+| Your environment                                                       | Action required                                             |
+| ---------------------------------------------------------------------- | ----------------------------------------------------------- |
+| CPython 3.14 or later, confined workspace                              | None; upgrade as usual.                                     |
+| CPython 3.14 or later, script reads diagnostics from stdout            | Required: read diagnostics from stderr instead.             |
+| CPython 3.14 or later, symlinked member or escaping documentation glob | Required: make the member or glob real, or remain on 0.3.1. |
+| CPython 3.14 or later, unreadable documentation file                   | Required: make the file readable and decodable.             |
+| CPython 3.14 or later, symlinked or non-regular README target          | Required: replace it with a regular file.                   |
+| CPython 3.14 or later, hard-linked write target                        | Required: replace it with an independent copy of the file.  |
+| CPython 3.14 or later, invalid configured lockfile manifest            | Required: make it an existing, confined `Cargo.toml`.       |
+| CPython 3.14 or later, invalid implicit member manifest                | Required: make the path dependency real and regular.        |
+| CPython 3.14 or later, Cargo lockfile-path override                    | Required, with regeneration enabled: unset the variable.    |
+| CPython 3.13                                                           | Required: upgrade the interpreter, or remain on 0.3.1.      |
+| CPython 3.12 or earlier                                                | Required: upgrade the interpreter; 0.3.1 required 3.13.     |
+
+_Table 1: Required action by interpreter version and workspace shape._
+
+Three changes require action. The interpreter floor requires an environment
+migration. A workspace that relies on a symlinked member or an escaping
+documentation glob must be corrected, as described under
+[Bump confinement preflight](#bump-confinement-preflight); such a workspace
+fails the same way on any interpreter. A script that reads diagnostics from
+stdout should read stderr instead, because diagnostics moved there. A project
+pinned to a Lading version through a lockfile keeps that version until the
+lockfile is regenerated, so the floor bites when the pin is moved rather than
+when this release is published.
+
 ## Bump confinement preflight
 
 `lading bump` now validates the complete write plan before changing anything. A
@@ -84,39 +112,57 @@ The guarantee is validation before mutation. A failure during an actual write
 or Cargo invocation is not rolled back, and a concurrent process that changes a
 path after validation is not defended against.
 
+### Migrating a custom lockfile repository
+
 A custom `LockfileRepository` supplied through
 `BumpOptions.lockfile_repository` must implement `plan_lockfiles` and
 `regenerate_planned`. The older `resolve_lockfile_paths` and
 `regenerate_lockfiles` methods remain available for callers that supply a
-manifest tuple directly, but they alone no longer satisfy the port.
+manifest tuple directly, but they alone no longer satisfy the port. Call
+`plan_lockfiles` whenever regeneration is enabled, because bump validates
+configured destinations before writing, and call `regenerate_planned` only when
+a manifest changed.
 
-## Who is affected
+Before:
 
-| Your environment                                                       | Action required                                             |
-| ---------------------------------------------------------------------- | ----------------------------------------------------------- |
-| CPython 3.14 or later, confined workspace                              | None; upgrade as usual.                                     |
-| CPython 3.14 or later, script reads diagnostics from stdout            | Required: read diagnostics from stderr instead.             |
-| CPython 3.14 or later, symlinked member or escaping documentation glob | Required: make the member or glob real, or remain on 0.3.1. |
-| CPython 3.14 or later, unreadable documentation file                   | Required: make the file readable and decodable.             |
-| CPython 3.14 or later, symlinked or non-regular README target          | Required: replace it with a regular file.                   |
-| CPython 3.14 or later, hard-linked write target                        | Required: replace it with an independent copy of the file.  |
-| CPython 3.14 or later, invalid configured lockfile manifest            | Required: make it an existing, confined `Cargo.toml`.       |
-| CPython 3.14 or later, invalid implicit member manifest                | Required: make the path dependency real and regular.        |
-| CPython 3.14 or later, Cargo lockfile-path override                    | Required, with regeneration enabled: unset the variable.    |
-| CPython 3.13                                                           | Required: upgrade the interpreter, or remain on 0.3.1.      |
-| CPython 3.12 or earlier                                                | Required: upgrade the interpreter; 0.3.1 required 3.13.     |
+<!-- tested-example: migration-lockfile-port-before -->
+```python
+class Repository(Protocol):
+    def resolve_lockfile_paths(self, manifests): ...
+    def regenerate_lockfiles(self, manifests): ...
+```
 
-_Table 1: Required action by interpreter version and workspace shape._
+After:
 
-Three changes require action. The interpreter floor requires an environment
-migration. A workspace that relies on a symlinked member or an escaping
-documentation glob must be corrected, as described under
-[Bump confinement preflight](#bump-confinement-preflight); such a workspace
-fails the same way on any interpreter. A script that reads diagnostics from
-stdout should read stderr instead, because diagnostics moved there. A project
-pinned to a Lading version through a lockfile keeps that version until the
-lockfile is regenerated, so the floor bites when the pin is moved rather than
-when this release is published.
+<!-- tested-example: migration-lockfile-port-after -->
+```python
+class Repository(Protocol):
+    def plan_lockfiles(
+        self,
+        workspace_root: Path,
+        lockfile_manifests: cabc.Sequence[str],
+    ) -> LockfilePlan: ...
+
+    def regenerate_planned(self, plan: LockfilePlan) -> tuple[Path, ...]: ...
+```
+
+### Migration checklist
+
+- [ ] Make any member reachable only through a symlinked directory a real path.
+- [ ] Narrow escaping documentation globs to the workspace.
+- [ ] Make selected documentation files readable and decodable.
+- [ ] Replace symlinked, non-regular, or hard-linked write targets with
+      independent regular files.
+- [ ] Make in-workspace path dependencies real directories with a regular
+      `Cargo.toml`.
+- [ ] Fix or remove configured `bump.lockfile_manifests` entries.
+- [ ] Unset `CARGO_RESOLVER_LOCKFILE_PATH` and remove any
+      `resolver.lockfile-path` setting Cargo would read.
+- [ ] Implement `plan_lockfiles` and `regenerate_planned` on any custom
+      lockfile repository.
+- [ ] Run `lading bump --dry-run` on the migrated workspace before bumping.
+
+The affected-reader table above lists the same work by workspace shape.
 
 ## What changed
 

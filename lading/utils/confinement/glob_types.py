@@ -50,9 +50,14 @@ class GlobOptions:
         Reject a symlink met while expanding ``**``. Member patterns need this
         because Cargo's own glob expansion follows the link and could read an
         external manifest; documentation patterns ignore unrelated links.
+    case_sensitive : bool
+        Match wildcard components case-sensitively. Cargo's member globs are
+        case-sensitive on every platform; documentation globs keep the
+        platform's usual matching.
     """
 
     expect: MatchExpectation = MatchExpectation.REGULAR_FILE
     unmatched: UnmatchedPolicy = UnmatchedPolicy.IGNORE
     link_predicate: LinkPredicate = is_link_like
     reject_intermediate_links: bool = False
+    case_sensitive: bool = False

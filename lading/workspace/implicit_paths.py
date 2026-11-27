@@ -33,13 +33,30 @@ def resolve_dependency(
     missing ``a`` must not hide ``dep``, and a path that leaves the root and
     returns to it is still an in-workspace member.
 
+    Parameters
+    ----------
+    root : Path
+        Canonical workspace root.
+    base_parts : tuple[str, ...]
+        Validated directory components of the manifest declaring ``raw``.
+    raw : str
+        The original Cargo path spelling.
+
     Returns
     -------
     tuple[str, ...] | None
         The dependency's directory components below ``root``, or ``None`` when
         it lies outside the workspace or names something that is not a
         directory.
+
+    Raises
+    ------
+    UnsafeBumpTargetError
+        If the path contains a NUL byte or traverses a symlinked component.
     """
+    if "\x00" in raw:
+        message = f"dependency path contains a NUL byte: {raw!r}"
+        raise UnsafeBumpTargetError(message)
     candidate = Path(raw)
     if candidate.is_absolute():
         absolute = candidate

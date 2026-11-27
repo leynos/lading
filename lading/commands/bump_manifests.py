@@ -78,15 +78,19 @@ class ManifestRenderOptions:
     Attributes
     ----------
     dependency_sections : cabc.Mapping[str, cabc.Collection[str]]
-        Dependency names to update, grouped by section.
-    include_workspace_sections : bool
-        Also update ``[workspace.<section>]`` tables.
+        Package dependency names to update, grouped by section.
+    workspace_sections : cabc.Mapping[str, cabc.Collection[str]]
+        ``[workspace.<section>]`` names to update, grouped by section. Keeping
+        this map separate prevents a package alias from rewriting an unrelated
+        workspace dependency that happens to share the alias.
     """
 
     dependency_sections: cabc.Mapping[str, cabc.Collection[str]] = dc.field(
         default_factory=dict
     )
-    include_workspace_sections: bool = False
+    workspace_sections: cabc.Mapping[str, cabc.Collection[str]] = dc.field(
+        default_factory=dict
+    )
 
 
 def render_manifest(
@@ -120,10 +124,11 @@ def render_manifest(
         changed |= bump_toml.assign_version(table, target_version)
     if options.dependency_sections:
         changed |= bump_toml.update_dependency_sections(
-            document,
-            options.dependency_sections,
-            target_version,
-            include_workspace_sections=options.include_workspace_sections,
+            document, options.dependency_sections, target_version
+        )
+    if options.workspace_sections:
+        changed |= bump_toml.update_workspace_dependency_sections(
+            document, options.workspace_sections, target_version
         )
     return document.as_string() if changed else None
 

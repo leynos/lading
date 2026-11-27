@@ -196,11 +196,32 @@ def prove_containment(
     except OSError as exc:
         message = f"{context.key}: cannot resolve target {context.display}: {exc}"
         raise BumpTargetExaminationError(message) from exc
-    try:
-        canonical_candidate.relative_to(canonical_root)
-    except ValueError as exc:
+    if not _is_within_directory_identity(canonical_candidate, canonical_root):
         message = (
             f"{context.key}: target resolves outside the workspace root: "
             f"{context.display}"
         )
-        raise UnsafeBumpTargetError(message) from exc
+        raise UnsafeBumpTargetError(message)
+
+
+def _is_within_directory_identity(candidate: Path, root: Path) -> bool:
+    """Return whether ``candidate`` is inside ``root`` by directory identity.
+
+    Path comparison is case-insensitive on Windows, so a canonical path under
+    a case-only sibling of the root would pass a lexical ``relative_to`` test.
+    Comparing the resolved candidate and its ancestors with ``samefile``
+    accepts alternate spellings only when they identify the same directory.
+
+    Returns
+    -------
+    bool
+        ``True`` when the candidate or one of its ancestors is ``root``.
+    """
+    probe = candidate if os.path.lexists(candidate) else candidate.parent
+    for ancestor in (probe, *probe.parents):
+        try:
+            if ancestor.samefile(root):
+                return True
+        except OSError:
+            continue
+    return False

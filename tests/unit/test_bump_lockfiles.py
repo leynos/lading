@@ -296,10 +296,11 @@ def _selective_failure_runner(
         command: cabc.Sequence[str],
         *,
         cwd: Path | None = None,
+        env: cabc.Mapping[str, str] | None = None,
         echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
         """Return failure for manifests in the failing set and log every attempt."""
-        del cwd, echo_stdout
+        del cwd, env, echo_stdout
         manifest = Path(command[-1])
         attempted.append(manifest)
         if manifest in failing_manifests:

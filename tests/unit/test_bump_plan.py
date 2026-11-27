@@ -8,9 +8,12 @@ no-mutation-on-rejection promise.
 
 import dataclasses as dc
 import os
+import string
 from pathlib import Path
 
+import hypothesis.strategies as st
 import pytest
+from hypothesis import HealthCheck, given
 
 from lading.commands import bump, bump_toml
 from lading.commands.bump_plan import (
@@ -26,6 +29,7 @@ from lading.utils.confinement import (
     confine_relative_path,
 )
 from lading.workspace import WorkspaceCrate, WorkspaceGraph
+from tests.helpers.hypothesis_settings import filesystem_property_settings
 from tests.helpers.workspace_builders import _make_config, _make_workspace
 
 
@@ -358,3 +362,203 @@ def test_readme_report_order_is_sorted_by_path(tmp_path: Path) -> None:
         (root / "crates/a/README.md").as_posix(),
         (root / "crates/z/README.md").as_posix(),
     ], "the README report must be sorted by path"
+
+
+def test_targets_without_an_inode_identity_stay_distinct(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Two files reporting inode zero must not share a proposal."""
+    root = tmp_path.resolve()
+    first = root / "crates" / "alpha" / "Cargo.toml"
+    second = root / "crates" / "beta" / "Cargo.toml"
+    for path in (first, second):
+        path.parent.mkdir(parents=True)
+        path.write_text('version = "0.1.0"\n', encoding="utf-8")
+    zero = os.stat_result((0o100644, 0, 7, 1, 0, 0, 0, 0, 0, 0))
+    real_stat = Path.stat
+
+    def fake_stat(self: Path, *, follow_symlinks: bool = True) -> os.stat_result:
+        """Report a zero inode for the two distinct target files."""
+        if self in {first, second}:
+            return zero
+        return real_stat(self, follow_symlinks=follow_symlinks)
+
+    monkeypatch.setattr(Path, "stat", fake_stat)
+    builder = PlanBuilder(root=root)
+
+    builder.propose(
+        _confined(root, "crates/alpha/Cargo.toml"), "alpha\n", WriteCategory.MANIFEST
+    )
+    builder.propose(
+        _confined(root, "crates/beta/Cargo.toml"), "beta\n", WriteCategory.MANIFEST
+    )
+
+    plan = builder.build(target_version="1.2.3", lockfiles=None)
+
+    assert [proposal.content for proposal in plan.proposals] == ["alpha\n", "beta\n"], (
+        "a zero inode must fall back to the path, keeping both writes distinct"
+    )
+
+
+def _root_first_report(root: Path) -> list[str]:
+    """Return the expected root-first lockfile report order."""
+    names = ("Cargo.lock", "a/Cargo.lock", "z/Cargo.lock")
+    return [(root / name).as_posix() for name in names]
+
+
+def test_lockfile_report_puts_the_root_first(tmp_path: Path) -> None:
+    """The report leads with the root lockfile and sorts nested destinations."""
+    root = tmp_path.resolve()
+    builder = PlanBuilder(root=root)
+    builder.propose(
+        _confined(root, "Cargo.toml"),
+        'version = "1.2.3"\n',
+        WriteCategory.MANIFEST,
+    )
+    plan = builder.build(target_version="1.2.3", lockfiles=None)
+
+    changes = changes_from_plan(
+        plan,
+        lockfiles=(
+            root / "z" / "Cargo.lock",
+            root / "Cargo.lock",
+            root / "a" / "Cargo.lock",
+        ),
+    )
+
+    assert [path.as_posix() for path in changes.lockfiles] == _root_first_report(
+        root
+    ), "the root lockfile must lead the sorted nested report"
+
+
+_PLAN_COMPONENT = st.text(alphabet=string.ascii_lowercase, min_size=1, max_size=4)
+_PLAN_CATEGORY = st.sampled_from(sorted(WriteCategory, key=lambda item: item.name))
+_PLAN_PROPOSAL = st.tuples(
+    _PLAN_COMPONENT,
+    st.text(alphabet="ab\n", min_size=0, max_size=6),
+    _PLAN_CATEGORY,
+)
+
+
+@dc.dataclass(slots=True)
+class _PlanModel:
+    """Reference model of the builder's documented composition rules."""
+
+    original: str = "initial\n"
+    pending: dict[str, str] = dc.field(default_factory=dict)
+    categories: dict[str, set[WriteCategory]] = dc.field(default_factory=dict)
+
+    def propose(self, name: str, content: str, category: WriteCategory) -> None:
+        """Apply one proposal exactly as the builder documents it."""
+        if name in self.pending:
+            if content == self.pending[name]:
+                return
+            if content == self.original:
+                del self.pending[name]
+                del self.categories[name]
+                return
+            self.pending[name] = content
+            self.categories[name].add(category)
+            return
+        if content == self.original:
+            return
+        self.pending[name] = content
+        self.categories[name] = {category}
+
+
+@filesystem_property_settings(
+    max_examples=25,
+    suppress_health_check=[HealthCheck.function_scoped_fixture],
+)
+@given(proposals=st.lists(_PLAN_PROPOSAL, min_size=1, max_size=8))
+def test_plan_builder_matches_the_composition_model(
+    tmp_path: Path,
+    proposals: list[tuple[str, str, WriteCategory]],
+) -> None:
+    """The plan agrees with the documented composition model for every sequence."""
+    root = tmp_path.resolve()
+    for name, _, _ in proposals:
+        (root / f"{name}.md").write_text("initial\n", encoding="utf-8")
+    builder = PlanBuilder(root=root)
+    model = _PlanModel()
+    for name, content, category in proposals:
+        builder.propose(_confined(root, f"{name}.md"), content, category)
+        model.propose(name, content, category)
+
+    plan = builder.build(target_version="1.2.3", lockfiles=None)
+
+    built = {
+        proposal.path.display: (proposal.content, proposal.categories)
+        for proposal in plan.proposals
+    }
+    expected = {
+        f"{name}.md": (content, frozenset(model.categories[name]))
+        for name, content in model.pending.items()
+    }
+    assert built == expected, (
+        "the plan must match the model: last content wins, categories "
+        "accumulate, and a restoration removes the write"
+    )
+    assert len(plan.proposals) == len(built), (
+        "each target must appear at most once in the plan"
+    )
+
+
+_EXPECTED_COMMIT_CATEGORIES = [
+    WriteCategory.MANIFEST,
+    WriteCategory.MANIFEST,
+    WriteCategory.DOCUMENTATION,
+    WriteCategory.README,
+]
+
+
+@filesystem_property_settings(
+    max_examples=20,
+    suppress_health_check=[HealthCheck.function_scoped_fixture],
+)
+@given(
+    contents=st.lists(
+        st.text(alphabet="ab\n", min_size=0, max_size=6),
+        min_size=4,
+        max_size=4,
+    )
+)
+def test_commit_order_is_root_members_documentation_then_readme(
+    tmp_path: Path,
+    contents: list[str],
+) -> None:
+    """The commit order follows the documented category ranking."""
+    root_content, member_content, doc_content, readme_content = contents
+    root = tmp_path.resolve()
+    paths = {
+        "Cargo.toml": root_content,
+        "crates/alpha/Cargo.toml": member_content,
+        "docs/guide.md": doc_content,
+    }
+    for relative in paths:
+        (root / relative).parent.mkdir(parents=True, exist_ok=True)
+        (root / relative).write_text("initial\n", encoding="utf-8")
+    builder = PlanBuilder(root=root)
+    builder.propose(
+        _confined(root, "docs/guide.md"), doc_content, WriteCategory.DOCUMENTATION
+    )
+    builder.propose(_confined(root, "Cargo.toml"), root_content, WriteCategory.MANIFEST)
+    builder.propose(
+        _confined(root, "crates/alpha/README.md"), readme_content, WriteCategory.README
+    )
+    builder.propose(
+        _confined(root, "crates/alpha/Cargo.toml"),
+        member_content,
+        WriteCategory.MANIFEST,
+    )
+
+    plan = builder.build(target_version="1.2.3", lockfiles=None)
+
+    categories = [next(iter(proposal.categories)) for proposal in plan.proposals]
+    assert categories == _EXPECTED_COMMIT_CATEGORIES, (
+        "commit order must be root manifest, members, documentation, then README"
+    )
+    assert plan.proposals[0].path.display == "Cargo.toml", (
+        "the root manifest must be committed first"
+    )

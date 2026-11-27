@@ -122,7 +122,8 @@ maximum of four positional arguments (Ruff) or five (Pylint), Ruff complexity
 Explicit non-goals: full rollback after a write or subprocess failure, and
 protection against a concurrent adversary that changes paths between validation
 and writing. Per-file atomic replacement remains the only write-atomicity
-guarantee.
+guarantee, and it covers the files Lading writes, not Cargo's own truncating
+lockfile rewrite.
 
 ## Constraints
 
@@ -609,6 +610,18 @@ Scenario: Bumping rejects an escaping configured lockfile manifest
   records `tomlkit` as a floor raise on an existing dependency rather than a
   new one. The rejection test fails against the previous planning gate, so the
   same-version evidence is non-vacuous.
+- [x] 2026-11-27: Hosted review round addressed. Zero inodes fall back to the
+  path identity; the lockfile report is root-first and sorted; member globs
+  match case-sensitively and reject a hidden wildcard only when it can select
+  `.` or `..`; containment uses directory identity; implicit discovery applies
+  literal exclusions and rejects NUL paths; Cargo runs with the validated
+  environment; package and workspace dependency sections render from separate
+  name sets; fence continuation indentation expands tabs; and a backtick in a
+  backtick fence's info string no longer opens a fence. Hypothesis properties
+  cover the lexical validator, glob expansion, plan composition and order, and
+  fence idempotence. The docs limit atomicity to Lading's own writes and the
+  migration guide gains ordered tasks, a checklist, and a before/after port
+  pair.
 - [ ] EP-M5 release: tag and release `v0.4.0b1` after review convergence, then
   record the tag commit on issue #409.
 
@@ -737,9 +750,11 @@ Scenario: Bumping rejects an escaping configured lockfile manifest
   example. A marker on a list continuation line inherits the enclosing list's
   content indentation, and block quotes before or after a list marker are
   preserved when the body is re-rendered.
-- A member component that begins with `.` and contains a wildcard is rejected.
-  Cargo's glob crate can turn such a component into `..`, and Cargo would then
-  open a manifest outside the workspace before the reported-member check.
+- A member component that begins with `.` and contains a wildcard is rejected
+  when it can select `.` or `..` under Cargo's case-sensitive matching;
+  `.[a-z]*` and `**` are accepted. Cargo's glob crate can turn such a component
+  into `..`, and Cargo would then open a manifest outside the workspace before
+  the reported-member check.
 - Every parsed manifest's `package.workspace` pointer is checked, including
   whitespace-only pointers and manifests reached in the finishing pass.
 - Cargo include paths are lexically normalized before probing. An experiment
@@ -808,6 +823,11 @@ here and on issue #409 once the release tag is pushed.
 - 2026-11-26: Recorded the sixteenth-review decisions on fence containers,
   non-regular includes, root-lookup errors, Windows components, hidden
   wildcards, and observing the write itself.
+- 2026-11-27: Recorded the hosted-review decisions on zero-inode identity,
+  case-sensitive member matching, literal exclusions in implicit discovery,
+  separate package and workspace section maps, environment pass-through,
+  directory-identity containment, and property-test coverage. Empty path
+  components collapse as Cargo collapses them, so they stay accepted.
 - 2026-11-27: Recorded the assessment decisions on lockfile validation without
   a manifest change, README adoption through an injected alias, and the
   `tomlkit` requirement-floor change. Recorded the same-version control

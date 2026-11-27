@@ -75,6 +75,7 @@ def read_manifest_text(path: Path, *, key: str) -> str:
 def validate_implicit_member_manifests(
     root: Path,
     member_parts: cabc.Iterable[tuple[str, ...]],
+    excluded: cabc.Collection[tuple[str, ...]] = (),
 ) -> None:
     """Validate every manifest Cargo may read as an implicit member.
 
@@ -86,6 +87,12 @@ def validate_implicit_member_manifests(
         Declared member directory components. The workspace root manifest is
         always inspected, because ``[workspace.dependencies]`` path entries are
         resolved relative to it.
+    excluded : cabc.Collection[tuple[str, ...]], optional
+        Literal exclusion prefixes. Cargo does not make an excluded directory a
+        member, so its manifest is neither read nor used as a source of
+        inherited dependency names. An exclusion that also appears in
+        ``member_parts`` stays a member, matching Cargo's explicit-member
+        precedence.
 
     Raises
     ------
@@ -104,6 +111,8 @@ def validate_implicit_member_manifests(
         root=root,
         seen=set(frontier),
         inherited=set(),
+        explicit=frozenset(frontier),
+        excluded=frozenset(excluded),
     )
     root_document: cabc.Mapping[str, typ.Any] | None = None
     while frontier:
@@ -145,11 +154,7 @@ def _initial_frontier(
     member_parts: cabc.Iterable[tuple[str, ...]],
 ) -> list[tuple[str, ...]]:
     """Return the root manifest and each distinct declared member."""
-    frontier: list[tuple[str, ...]] = [()]
-    for parts in member_parts:
-        if parts not in frontier:
-            frontier.append(parts)
-    return frontier
+    return list(dict.fromkeys(((), *member_parts)))
 
 
 @dc.dataclass(slots=True)
@@ -159,6 +164,8 @@ class _Discovery:
     root: Path
     seen: set[tuple[str, ...]]
     inherited: set[str]
+    explicit: frozenset[tuple[str, ...]] = frozenset()
+    excluded: frozenset[tuple[str, ...]] = frozenset()
 
     def dependency_parts(
         self,
@@ -194,7 +201,24 @@ class _Discovery:
         if resolved is None or resolved in self.seen:
             return
         self.seen.add(resolved)
+        if self._is_excluded(resolved):
+            return
         discovered.append(resolved)
+
+    def _is_excluded(self, parts: tuple[str, ...]) -> bool:
+        """Return whether Cargo keeps ``parts`` outside the member set.
+
+        An explicit member keeps Cargo's precedence over an exclusion, so it is
+        never skipped here.
+
+        Returns
+        -------
+        bool
+            ``True`` when an exclusion prefix covers ``parts``.
+        """
+        if parts in self.explicit:
+            return False
+        return any(parts[: len(prefix)] == prefix for prefix in self.excluded if prefix)
 
 
 def require_workspace_pointer(

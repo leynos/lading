@@ -52,6 +52,7 @@ class _Expansion:
     unmatched: UnmatchedPolicy
     link_predicate: LinkPredicate
     reject_intermediate_links: bool = False
+    case_sensitive: bool = False
     found: set[tuple[str, ...]] = dc.field(default_factory=set)
     matched_any: bool = False
     _pending: list[tuple[tuple[str, ...], tuple[str, ...]]] = dc.field(
@@ -131,9 +132,15 @@ class _Expansion:
         if entries is None:
             return
         for entry in entries:
-            if not fnmatch.fnmatch(entry.name, component):
+            if not self._matches(entry.name, component):
                 continue
             yield entry.name, self._entry_stat(entry)
+
+    def _matches(self, name: str, component: str) -> bool:
+        """Return whether ``name`` matches ``component`` under the policy."""
+        if self.case_sensitive:
+            return fnmatch.fnmatchcase(name, component)
+        return fnmatch.fnmatch(name, component)
 
     def _expand_recursive(
         self,

@@ -128,3 +128,36 @@ def test_update_dependency_sections_workspace_dev_and_build() -> None:
     assert build_deps["beta"]["version"].value == "3.0.0", (
         "[workspace.build-dependencies] beta.version should be rewritten"
     )
+
+
+def test_package_alias_does_not_rewrite_a_workspace_dependency(
+    tmp_path: Path,
+) -> None:
+    """A package alias and an unrelated workspace dependency stay separate."""
+    manifest_path = tmp_path / "Cargo.toml"
+    manifest_path.write_text(
+        "[workspace.dependencies]\n"
+        'shared = { package = "serde", version = "1.0.0" }\n\n'
+        "[dependencies]\n"
+        'shared = { package = "alpha", path = "crates/alpha", version = "0.1.0" }\n',
+        encoding="utf-8",
+    )
+
+    content = bump_manifests.render_manifest(
+        manifest_path,
+        (),
+        "1.2.3",
+        bump_manifests.ManifestRenderOptions(
+            dependency_sections={"dependencies": {"shared"}},
+            workspace_sections={"dependencies": {"alpha"}},
+        ),
+    )
+
+    assert content is not None, "the local dependency version must change"
+    document = parse_toml(content)
+    assert document["dependencies"]["shared"]["version"] == "1.2.3", (
+        "the aliased local dependency must be updated"
+    )
+    assert document["workspace"]["dependencies"]["shared"]["version"] == "1.0.0", (
+        "the unrelated workspace dependency must keep its requirement"
+    )

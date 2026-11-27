@@ -12,7 +12,7 @@ The module is bump-only and holds no command state.
 
 import collections.abc as cabc
 import dataclasses as dc
-import itertools
+import fnmatch
 import os
 import typing as typ
 from pathlib import Path, PurePosixPath
@@ -43,6 +43,15 @@ def expand_member_patterns(
     excludes: cabc.Sequence[str],
 ) -> dict[tuple[str, ...], str]:
     """Expand member patterns, apply exclusions, and return declared members.
+
+    Parameters
+    ----------
+    root : Path
+        Canonical workspace root.
+    members : cabc.Sequence[str]
+        Literal member paths or globs, expanded case-sensitively as Cargo does.
+    excludes : cabc.Sequence[str]
+        Literal path prefixes; Cargo does not expand wildcards here.
 
     Returns
     -------
@@ -114,20 +123,24 @@ def _reject_hidden_wildcard(pattern: str, *, key: str) -> None:
 def _parent_selector(part: str) -> str | None:
     """Return ``.`` or ``..`` when ``part`` can select a parent directory.
 
+    Cargo matches a wildcard component against the whole directory name, so a
+    pattern such as ``.[a-z]*`` cannot select ``.`` or ``..`` and is accepted.
+
     Returns
     -------
     str | None
-        The literal prefix that names a parent directory, or ``None`` when the
-        component cannot reach one.
+        The special entry the component actually matches, or ``None``.
     """
-    if not part.startswith(".") or not _GLOB_METACHARACTERS.intersection(part):
+    if not _GLOB_METACHARACTERS.intersection(part) or part == "**":
         return None
-    literal = "".join(
-        itertools.takewhile(
-            lambda character: character not in _GLOB_METACHARACTERS, part
-        )
-    )
-    return literal if literal in {".", ".."} else None
+    for special in (".", ".."):
+        if not part.startswith("."):
+            # A wildcard component without a literal leading dot never selects
+            # a dot entry: directory iteration never yields ``.`` or ``..``.
+            continue
+        if fnmatch.fnmatchcase(special, part):
+            return special
+    return None
 
 
 def _examine_excluded_member(
@@ -178,6 +191,7 @@ def _member_matches(
             expect=MatchExpectation.DIRECTORY,
             unmatched=UnmatchedPolicy.ERROR,
             reject_intermediate_links=True,
+            case_sensitive=True,
         ),
     )
 

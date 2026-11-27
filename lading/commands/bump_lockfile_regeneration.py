@@ -128,12 +128,10 @@ def regenerate_lockfiles(
             )
             raise
         _LOGGER.info("Regenerating %d Cargo lockfile(s)", len(manifests))
-        lockfiles, failures = _collect_lockfile_results(
-            manifests, workspace_root, command_runner, clock
+        regeneration = _Regeneration(
+            workspace_root=workspace_root, runner=command_runner, clock=clock
         )
-        _record_regeneration_results(lockfiles, failures)
-        if failures:
-            _raise_aggregated_failure(manifests, failures)
+        lockfiles = _regenerate_manifests(manifests, regeneration)
     finally:
         elapsed = clock() - started_at
         metrics.observe_duration(REGENERATE_DURATION_METRIC, elapsed)
@@ -192,12 +190,13 @@ def regenerate_planned(
     started_at = clock()
     try:
         _LOGGER.info("Regenerating %d Cargo lockfile(s)", len(plan.manifests))
-        lockfiles, failures = _collect_lockfile_results(
-            plan.manifests, plan.root, command_runner, clock
+        regeneration = _Regeneration(
+            workspace_root=plan.root,
+            runner=command_runner,
+            clock=clock,
+            environ=environ,
         )
-        _record_regeneration_results(lockfiles, failures)
-        if failures:
-            _raise_aggregated_failure(plan.manifests, failures)
+        _regenerate_manifests(plan.manifests, regeneration)
     finally:
         metrics.observe_duration(REGENERATE_DURATION_METRIC, clock() - started_at)
     return plan.lockfiles
@@ -237,19 +236,27 @@ def _require_unchanged_environment(
         raise LockfileRegenerationError(message)
 
 
+def _regenerate_manifests(
+    manifests: tuple[Path, ...],
+    regeneration: _Regeneration,
+) -> list[Path]:
+    """Attempt every manifest, record the outcome, and raise any aggregate."""
+    lockfiles, failures = _collect_lockfile_results(manifests, regeneration)
+    _record_regeneration_results(lockfiles, failures)
+    if failures:
+        _raise_aggregated_failure(manifests, failures)
+    return lockfiles
+
+
 def _collect_lockfile_results(
     manifests: tuple[Path, ...],
-    workspace_root: Path,
-    command_runner: CommandRunner,
-    clock: cabc.Callable[[], float],
+    regeneration: _Regeneration,
 ) -> tuple[list[Path], list[tuple[Path, LockfileRegenerationError]]]:
     """Attempt every manifest and partition the outcomes into a pair."""
     lockfiles: list[Path] = []
     failures: list[tuple[Path, LockfileRegenerationError]] = []
     for manifest in manifests:
-        result = _attempt_single_lockfile_update(
-            workspace_root, manifest, command_runner, clock
-        )
+        result = _attempt_single_lockfile_update(manifest, regeneration)
         if result.error is not None:
             failures.append((manifest, result.error))
         elif result.lockfile is not None:
@@ -318,6 +325,16 @@ def _build_aggregate_failure_message(
 
 
 @dc.dataclass(frozen=True, slots=True)
+class _Regeneration:
+    """Inputs shared by one regeneration attempt."""
+
+    workspace_root: Path
+    runner: CommandRunner
+    clock: cabc.Callable[[], float]
+    environ: cabc.Mapping[str, str] | None = None
+
+
+@dc.dataclass(frozen=True, slots=True)
 class _LockfileUpdateResult:
     """Outcome of attempting one manifest's lockfile update."""
 
@@ -326,16 +343,14 @@ class _LockfileUpdateResult:
 
 
 def _attempt_single_lockfile_update(
-    workspace_root: Path,
     manifest: Path,
-    command_runner: CommandRunner,
-    clock: cabc.Callable[[], float],
+    regeneration: _Regeneration,
 ) -> _LockfileUpdateResult:
     """Attempt one manifest's lockfile update and return the outcome."""
-    manifest_started_at = clock()
+    manifest_started_at = regeneration.clock()
     _LOGGER.info("Regenerating Cargo lockfile for %s", manifest)
     try:
-        _run_workspace_lockfile_update(workspace_root, manifest, command_runner)
+        _run_workspace_lockfile_update(manifest, regeneration)
     except LockfileRegenerationError as exc:
         # Keep going: attempting the remaining manifests gives the
         # operator one aggregated repair list instead of a re-run per
@@ -345,19 +360,29 @@ def _attempt_single_lockfile_update(
     _LOGGER.info(
         "Regenerated Cargo lockfile for %s in %.3fs",
         manifest,
-        clock() - manifest_started_at,
+        regeneration.clock() - manifest_started_at,
     )
     return _LockfileUpdateResult(lockfile=manifest.parent / "Cargo.lock", error=None)
 
 
 def _run_workspace_lockfile_update(
-    workspace_root: Path,
     manifest_path: Path,
-    runner: CommandRunner,
+    regeneration: _Regeneration,
 ) -> None:
-    """Invoke cargo for one manifest and surface failures consistently."""
+    """Invoke cargo for one manifest and surface failures consistently.
+
+    ``regeneration.environ`` is the mapping regeneration validated against;
+    passing it to the runner keeps the executed Cargo environment identical to
+    the checked one. ``None`` inherits the process environment, which is also
+    what validation reads when no explicit mapping is supplied.
+
+    Raises
+    ------
+    LockfileRegenerationError
+        If Cargo cannot be spawned or exits nonzero.
+    """
     try:
-        exit_code, stdout, stderr = runner(
+        exit_code, stdout, stderr = regeneration.runner(
             (
                 "cargo",
                 "update",
@@ -365,7 +390,8 @@ def _run_workspace_lockfile_update(
                 "--manifest-path",
                 str(manifest_path),
             ),
-            cwd=workspace_root,
+            cwd=regeneration.workspace_root,
+            env=regeneration.environ,
         )
     except (CommandSpawnError, ValueError) as exc:
         message = f"Cargo lockfile regeneration failed for {manifest_path}: {exc}"

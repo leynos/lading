@@ -386,16 +386,19 @@ When a rejected write plan is detected, the command exits with status 1, writes
 every intended target and any external file unchanged. A missing workspace
 README for crates that adopt it is a rejected plan too, so it produces the same
 `Preflight error:` diagnostic rather than a separate message. Validation
-completes before the first write. Per-file replacement is atomic, but the
-command does not roll back writes after an actual execution failure, and it
-does not defend against a concurrent process changing paths between validation
-and writing. When lockfile regeneration is enabled,
-`CARGO_RESOLVER_LOCKFILE_PATH` must be unset, and no Cargo configuration file
-Cargo would read may set `resolver.lockfile-path`, including through that
-configuration's `include` entries; either route is rejected because Cargo would
-write a lockfile the plan did not validate. Unset the variable, or remove the
-setting from the reported configuration file, before bumping.
-`--no-rebuild-lockfiles` neither plans lockfiles nor checks either route.
+completes before the first write. Each file Lading writes is replaced
+atomically, but the command does not roll back writes after an actual execution
+failure, and it does not defend against a concurrent process changing paths
+between validation and writing. This atomicity covers Lading's own writes only:
+Cargo truncates `Cargo.lock` before writing new contents, so a failure during
+`cargo update` can leave that file empty or partial. When lockfile regeneration
+is enabled, `CARGO_RESOLVER_LOCKFILE_PATH` must be unset, and no Cargo
+configuration file Cargo would read may set `resolver.lockfile-path`, including
+through that configuration's `include` entries; either route is rejected
+because Cargo would write a lockfile the plan did not validate. Unset the
+variable, or remove the setting from the reported configuration file, before
+bumping. `--no-rebuild-lockfiles` neither plans lockfiles nor checks either
+route.
 
 Configured lockfile manifests are resolved to the effective workspace root that
 Cargo reports. A member manifest therefore contributes the outer workspace

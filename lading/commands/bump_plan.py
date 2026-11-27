@@ -145,6 +145,10 @@ class PlanBuilder:
             return self._absent_key(path)
         except OSError:
             return ("path", os.path.normcase(str(path.path)))
+        if status.st_ino == 0:
+            # A platform may report no inode for distinct files on one device;
+            # the normalized path then keeps those targets distinct.
+            return ("path", os.path.normcase(str(path.path)))
         return ("file", status.st_dev, status.st_ino)
 
     def _absent_key(self, path: ConfinedPath) -> _ProposalKey:
@@ -152,6 +156,8 @@ class PlanBuilder:
         try:
             parent = path.path.parent.stat()
         except OSError:
+            return ("path", os.path.normcase(str(path.path)))
+        if parent.st_ino == 0:
             return ("path", os.path.normcase(str(path.path)))
         return (
             "absent",
@@ -343,8 +349,22 @@ def changes_from_plan(
         manifests=_paths_for(plan, WriteCategory.MANIFEST),
         documents=_paths_for(plan, WriteCategory.DOCUMENTATION),
         transposed_readmes=tuple(sorted(_paths_for(plan, WriteCategory.README))),
-        lockfiles=tuple(lockfiles),
+        lockfiles=_root_first(lockfiles),
     )
+
+
+def _root_first(lockfiles: cabc.Sequence[Path]) -> tuple[Path, ...]:
+    """Return lockfiles with the shallowest (workspace-root) file first.
+
+    Cargo's execution order is unchanged; only the report is ordered so the
+    root lockfile leads and nested destinations follow lexicographically.
+
+    Returns
+    -------
+    tuple[Path, ...]
+        The report order.
+    """
+    return tuple(sorted(lockfiles, key=lambda path: (len(path.parts), path.as_posix())))
 
 
 def _paths_for(plan: BumpPlan, category: WriteCategory) -> tuple[Path, ...]:

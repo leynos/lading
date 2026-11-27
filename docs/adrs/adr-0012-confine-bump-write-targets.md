@@ -133,10 +133,14 @@ decision; the guarantee covers the lockfiles the plan names.
 
 ### Limits
 
-The guarantee is **validation before mutation**. Per-file replacement is
-atomic, and a rejected plan leaves every target unchanged, but a failure during
-an actual write or subprocess call is not rolled back. A concurrent process
-that changes a path after validation is likewise out of scope. These limits are
+The guarantee is **validation before mutation**. Per-file replacement is atomic
+for the files Lading itself writes, and a rejected plan leaves every target
+unchanged, but a failure during an actual write or subprocess call is not
+rolled back. Cargo's own lockfile regeneration is outside that atomicity: Cargo
+truncates `Cargo.lock` before writing the new contents, so a failed
+`cargo update` can leave a partial lockfile. A concurrent process that changes
+a path after validation is likewise out of scope. A concurrent process that
+changes a path after validation is likewise out of scope. These limits are
 stated in the user guide rather than implied away.
 
 ## Consequences
@@ -285,6 +289,34 @@ An injected graph may spell its root through a symlink alias. README
 preparation now derives the crate directory with `graph_relative_manifest`, the
 same rebasing manifest preparation uses, so an opted-in crate is confined
 beneath the canonical root instead of being refused as outside it.
+
+### 2026-11-27: Provenance identities, Cargo matching rules and property evidence
+
+Proposal identity treats a zero inode as no identity and falls back to the
+normalized path, because a platform may report inode zero for distinct files on
+one device. Member glob components match case-sensitively on every platform
+(Cargo's rule), while documentation globs keep the platform's usual matching. A
+hidden wildcard component is rejected only when it can actually select `.` or
+`..`; `.[a-z]*` and `**` cannot and are accepted. Implicit-member discovery
+applies `[workspace].exclude` literal prefixes before reading a dependency
+manifest, so an excluded nested workspace is neither validated nor used as a
+source of inherited dependency names. Dependency paths containing a NUL are
+rejected before filesystem access, and lockfile regeneration runs Cargo with
+the same environment mapping it validated.
+
+The root manifest's package dependency sections and its `[workspace.<section>]`
+tables are rendered from separate name sets, so a package alias cannot rewrite
+an unrelated workspace dependency that happens to share the alias. Canonical
+containment compares the resolved candidate and its ancestors with `samefile`,
+which accepts alternate spellings only for the same directory and is immune to
+case-insensitive path comparison on Windows. The atomicity claim is limited to
+the files Lading itself writes; Cargo truncates `Cargo.lock` before writing new
+contents.
+
+Hypothesis properties now cover the lexical validator, confined glob expansion,
+`PlanBuilder` composition and commit order, and fence rewrite idempotence.
+Empty path components collapse the same way Cargo collapses them, so they are
+accepted rather than added as rejection cases.
 
 ## Alternatives considered
 

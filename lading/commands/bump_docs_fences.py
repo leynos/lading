@@ -212,9 +212,10 @@ _LIST_PREFIX: typ.Final[re.Pattern[str]] = re.compile(r"^ *(?:[-+*]|\d{1,9}[.)])
 def _continuation_indent(prefix: str) -> str:
     """Return the indentation a transformed body line needs.
 
-    Block-quote markers are repeated. A list marker is replaced by spaces of
-    the same width so the body stays in the list item without another bullet,
-    while any enclosing or following block quote is preserved.
+    Block-quote markers are repeated. A list marker is replaced by spaces that
+    reach the same column so the body stays in the list item without another
+    bullet, while any enclosing or following block quote is preserved. Tabs
+    advance to the next multiple of four columns, as CommonMark specifies.
 
     Returns
     -------
@@ -223,22 +224,36 @@ def _continuation_indent(prefix: str) -> str:
     """
     result: list[str] = []
     rest = prefix
+    column = 0
     while rest:
         quote = _QUOTE_PREFIX.match(rest)
         if quote is not None:
-            result.append(quote.group(0))
+            piece = quote.group(0)
+            result.append(piece)
+            column = _advance_columns(piece, column)
             rest = rest[quote.end() :]
             continue
         list_marker = _LIST_PREFIX.match(rest)
         if list_marker is not None:
-            result.append(" " * list_marker.end())
+            piece = list_marker.group(0)
+            marker_end = _advance_columns(piece, column)
+            result.append(" " * (marker_end - column))
+            column = marker_end
             rest = rest[list_marker.end() :]
             continue
         break
     if not rest.strip():
         result.append(rest)
         return "".join(result)
-    return f"{''.join(result)}{' ' * len(rest)}"
+    remainder_end = _advance_columns(rest, column)
+    return f"{''.join(result)}{' ' * (remainder_end - column)}"
+
+
+def _advance_columns(text: str, column: int = 0) -> int:
+    """Return the column reached after ``text`` when tabs stop every four."""
+    for character in text:
+        column = column + 1 if character != "\t" else (column // 4 + 1) * 4
+    return column
 
 
 def _is_closing_fence(line: str, prefix: str, marker: str) -> bool:

@@ -7,6 +7,7 @@ path dependencies still load.
 """
 
 import collections.abc as cabc
+import errno
 import typing as typ
 from pathlib import Path
 
@@ -37,7 +38,7 @@ def _symlinked_member(tmp_path: Path) -> None:
     root = tmp_path.resolve() / "workspace"
     outside = tmp_path.resolve() / "outside"
     write_package(outside, "dep")
-    (root / "dep").symlink_to(outside, target_is_directory=True)
+    _symlink_or_skip(root / "dep", outside)
 
 
 def _absolute_dependency(root: Path) -> None:
@@ -75,28 +76,44 @@ def _workspace_dependency(root: Path) -> None:
     )
 
 
+def _symlink_or_skip(path: Path, target: Path) -> None:
+    """Create a directory symlink, skipping only an unsupported or denied host."""
+    try:
+        path.symlink_to(target, target_is_directory=True)
+    except NotImplementedError:
+        pytest.skip("directory symlinks are unavailable on this host")
+    except OSError as exc:
+        if exc.errno not in {errno.EPERM, errno.EACCES}:
+            raise
+        pytest.skip(f"symlink creation is unavailable here: {exc}")
+
+
 @pytest.mark.parametrize(
-    ("prepare", "detail"),
+    ("prepare", "detail", "fixture"),
     [
-        pytest.param(lambda _root, _tmp: None, "regular file", id="fifo"),
+        pytest.param(lambda _root, _tmp: None, "regular file", "fifo", id="fifo"),
         pytest.param(
             lambda _root, tmp: _symlinked_member(tmp),
             "symlink",
+            "prepared",
             id="symlinked-dependency",
         ),
         pytest.param(
             lambda root, _tmp: _absolute_dependency(root),
             "regular file",
+            "directory",
             id="absolute-in-workspace",
         ),
         pytest.param(
             lambda root, _tmp: _target_table_dependency(root),
             "regular file",
+            "directory",
             id="target-table",
         ),
         pytest.param(
             lambda root, _tmp: _workspace_dependency(root),
             "regular file",
+            "directory",
             id="workspace-dependencies",
         ),
     ],
@@ -105,14 +122,28 @@ def test_an_unsafe_implicit_manifest_is_rejected_before_cargo(
     tmp_path: Path,
     prepare: cabc.Callable[[Path, Path], None],
     detail: str,
+    *,
+    fixture: str,
 ) -> None:
-    """An unsafe implicit member is rejected before Cargo reads it."""
+    """An unsafe implicit member is rejected before Cargo reads it.
+
+    The absolute-path, target-table and workspace-inheritance cases need only
+    a non-regular manifest, so they use a directory named ``Cargo.toml`` and
+    run even where ``mkfifo`` is unavailable. The FIFO case selects the FIFO
+    shape explicitly.
+    """
     root = tmp_path.resolve() / "workspace"
     root.mkdir(parents=True, exist_ok=True)
     write_workspace(root)
     prepare(root, tmp_path)
-    if detail == "regular file":
-        make_fifo(root / "dep" / "Cargo.toml")
+    manifest = root / "dep" / "Cargo.toml"
+    match fixture:
+        case "fifo":
+            manifest.parent.mkdir(parents=True, exist_ok=True)
+            make_fifo(manifest)
+        case "directory":
+            manifest.parent.mkdir(parents=True, exist_ok=True)
+            manifest.mkdir()
     runner = runner_for(payload(root, ("app", "dep")))
 
     with pytest.raises(UnsafeBumpTargetError) as excinfo:
@@ -279,4 +310,32 @@ def test_a_broken_dependency_manifest_is_rejected(
     )
     assert not runner.metadata_calls(), (
         "the broken manifest must be rejected before Cargo runs"
+    )
+
+
+def test_an_excluded_nested_workspace_is_not_read(tmp_path: Path) -> None:
+    """An excluded nested workspace is not a member and is left unread."""
+    root = tmp_path.resolve()
+    (root / "Cargo.toml").write_text(
+        '[workspace]\nmembers = ["app"]\nexclude = ["vendor/tool"]\n',
+        encoding="utf-8",
+    )
+    (root / "app").mkdir()
+    (root / "app" / "Cargo.toml").write_text(
+        '[package]\nname = "app"\nversion = "0.1.0"\n\n'
+        '[dependencies]\ntool = { path = "../vendor/tool" }\n',
+        encoding="utf-8",
+    )
+    nested = root / "vendor" / "tool"
+    nested.mkdir(parents=True)
+    (nested / "Cargo.toml").write_text(
+        '[package]\nname = "tool"\nversion = "0.1.0"\n\nworkspace = "../.."\n',
+        encoding="utf-8",
+    )
+    runner = runner_for(payload(root, ("app",)))
+
+    graph = load_bump_workspace(root, runner=typ.cast("CommandRunner", runner))
+
+    assert {crate.name for crate in graph.crates} == {"app"}, (
+        "the excluded nested workspace must not enter the member set"
     )

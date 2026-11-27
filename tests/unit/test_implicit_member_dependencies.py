@@ -12,6 +12,7 @@ import pytest
 
 from lading.utils.confinement import BumpPreflightError, UnsafeBumpTargetError
 from lading.workspace.confined_discovery import load_bump_workspace
+from lading.workspace.implicit_paths import resolve_dependency
 from tests.unit.implicit_member_helpers import (
     load,
     make_fifo,
@@ -283,3 +284,13 @@ def test_a_pointer_reached_in_the_finishing_pass_is_validated(
         "the late-discovered member pointer must be checked"
     )
     assert not runner.metadata_calls(), "the pointer must be rejected before Cargo runs"
+
+
+def test_a_nul_byte_in_a_dependency_path_is_rejected(tmp_path: Path) -> None:
+    """A decoded NUL is a preflight error naming the escaped path."""
+    with pytest.raises(UnsafeBumpTargetError) as excinfo:
+        resolve_dependency(tmp_path.resolve(), (), "dep\x00evil")
+
+    assert "NUL" in str(excinfo.value), (
+        "the diagnostic must identify the NUL byte before filesystem access"
+    )
