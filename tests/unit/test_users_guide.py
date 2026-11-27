@@ -67,17 +67,27 @@ def test_users_guide_documents_key_cli_flags_and_env_vars() -> None:
     assert not missing_env, f"users guide missing env var terms: {missing_env}"
 
 
-_TOML_FENCE = re.compile(r"^```toml\n(?P<body>.*?)^```$", re.DOTALL | re.MULTILINE)
+# The shared loader rejects every unmarked fence in a document, and the user
+# guide predates that contract for its other fences, so select the one marked
+# example directly while keeping the same marker convention.
+_MARKED_EXAMPLE = re.compile(
+    r"<!--\s*tested-example:\s*(?P<identifier>[a-z0-9-]+)\s*-->\s*\n"
+    r"```(?P<language>[\w-]*)\n(?P<body>.*?)^```$",
+    re.DOTALL | re.MULTILINE,
+)
 
 
 def test_users_guide_downstream_example_keeps_its_version() -> None:
-    """The guide's downstream-application example is not re-versioned."""
+    """The guide's marked downstream-application example is not re-versioned."""
     content = Path("docs/users-guide.md").read_text(encoding="utf-8")
-    examples = [match.group("body") for match in _TOML_FENCE.finditer(content)]
-    app_example = next((body for body in examples if 'name = "my-app"' in body), None)
+    examples = {
+        match.group("identifier"): match.group("body")
+        for match in _MARKED_EXAMPLE.finditer(content)
+    }
+    app_example = examples.get("bump-docs-downstream-package")
 
     assert app_example is not None, (
-        "the guide must document a downstream-application example"
+        "the guide must mark its downstream-application example as tested"
     )
     updated, changed = bump_docs_fences.update_toml_snippet_versions(
         app_example, {"alpha"}, "1.2.3"

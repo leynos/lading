@@ -446,6 +446,7 @@ own usage. Bumping the library to `1.2.3` leaves this snippet at its own
 version, while a separate `[dependencies]` snippet that requires the library
 still moves to `1.2.3`:
 
+<!-- tested-example: bump-docs-downstream-package -->
 ```toml
 [package]
 name = "my-app"
