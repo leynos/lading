@@ -68,20 +68,54 @@ def test_loader_reads_a_marked_example_after_a_list_fence_outdent(
     )
 
 
-def test_loader_reads_a_marker_in_a_nested_list_item(tmp_path: Path) -> None:
-    """A marker indented inside nested list items is recognised."""
-    path = write_document(
-        tmp_path,
-        "- outer\n  - inner\n    - <!-- tested-example: nested -->\n"
-        "      ```bash\n      echo ok\n      ```\n",
-    )
+@pytest.mark.parametrize(
+    ("document", "identifier"),
+    [
+        pytest.param(
+            "- outer\n  - inner\n    - <!-- tested-example: nested -->\n"
+            "      ```bash\n      echo ok\n      ```\n",
+            "nested",
+            id="nested-list-item",
+        ),
+        pytest.param(
+            "- - <!-- tested-example: deep -->\n    ```bash\n    echo ok\n    ```\n",
+            "deep",
+            id="nested-markers-one-line",
+        ),
+    ],
+)
+def test_loader_reads_a_marker_in_nested_containers(
+    tmp_path: Path, document: str, identifier: str
+) -> None:
+    """A marker inside nested list containers is recognised."""
+    path = write_document(tmp_path, document)
 
     examples = load_tested_examples(path)
 
-    assert set(examples) == {"nested"}, (
-        "the marker inside the nested list item must be recognised"
+    assert set(examples) == {identifier}, (
+        "the marker inside the nested containers must be recognised"
     )
-    assert examples["nested"].body == "echo ok", "the nested example must be parsed"
+    assert examples[identifier].body == "echo ok", "the nested example must be parsed"
+
+
+@pytest.mark.parametrize(
+    "document",
+    [
+        pytest.param("> ~~~python\n> print(1)\n> ~~~\n", id="block-quote"),
+        pytest.param(
+            "> 10. Example\n>     ~~~python\n>     print(1)\n>     ~~~\n",
+            id="quoted-ordered-list",
+        ),
+    ],
+)
+def test_loader_rejects_an_unmarked_fence_in_a_container(
+    tmp_path: Path, document: str
+) -> None:
+    """A fenced example in a block-quote container is still a fence."""
+    path = write_document(tmp_path, document)
+
+    with pytest.raises(ValueError, match="unmarked fenced example"):
+        load_tested_examples(path)
 
 
 def test_loader_does_not_read_a_quote_indented_literal_fence(
@@ -104,17 +138,6 @@ def test_loader_does_not_read_a_quote_indented_literal_fence(
 def test_loader_rejects_an_unmarked_tilde_fence(tmp_path: Path) -> None:
     """A tilde fence without a marker fails the load."""
     path = write_document(tmp_path, "~~~bash\necho one\n~~~\n")
-
-    with pytest.raises(ValueError, match="unmarked fenced example"):
-        load_tested_examples(path)
-
-
-def test_loader_rejects_an_unmarked_block_quote_fence(tmp_path: Path) -> None:
-    """A fenced example nested in a block quote is still a fence."""
-    path = write_document(
-        tmp_path,
-        "> ~~~python\n> print(1)\n> ~~~\n",
-    )
 
     with pytest.raises(ValueError, match="unmarked fenced example"):
         load_tested_examples(path)
@@ -263,19 +286,6 @@ def test_loader_rejects_a_body_line_that_ends_the_list(tmp_path: Path) -> None:
         load_tested_examples(path)
 
 
-def test_loader_rejects_an_unmarked_fence_inside_a_quoted_list(
-    tmp_path: Path,
-) -> None:
-    """A fence inside a quoted ordered list is still an unmarked fence."""
-    path = write_document(
-        tmp_path,
-        "> 10. Example\n>     ~~~python\n>     print(1)\n>     ~~~\n",
-    )
-
-    with pytest.raises(ValueError, match="unmarked fenced example"):
-        load_tested_examples(path)
-
-
 def test_loader_uses_the_established_list_indentation(tmp_path: Path) -> None:
     """Extra marker indentation does not widen the list's content indentation."""
     path = write_document(
@@ -319,21 +329,6 @@ def test_loader_restores_the_outer_list_indentation(tmp_path: Path) -> None:
     assert example.body == "print(1)", (
         "the example must continue in the outer list after the nested item"
     )
-
-
-def test_loader_reads_a_marker_after_nested_list_markers(tmp_path: Path) -> None:
-    """Two list containers may open on the same line as a marker."""
-    path = write_document(
-        tmp_path,
-        "- - <!-- tested-example: deep -->\n    ```bash\n    echo ok\n    ```\n",
-    )
-
-    examples = load_tested_examples(path)
-
-    assert set(examples) == {"deep"}, (
-        "the marker after both list markers must be recognised"
-    )
-    assert examples["deep"].body == "echo ok", "the nested example must be parsed"
 
 
 def test_loader_clears_list_state_between_separate_quotes(
