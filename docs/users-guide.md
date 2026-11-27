@@ -1001,8 +1001,24 @@ independent of each process's `HOME` and `XDG_CACHE_HOME`. A POSIX host must
 therefore provide a passwd entry and a writable home for the account that runs
 `lading bump`; a container invoked with a numeric UID and no account entry must
 add one, and an account whose home is read-only must provision the derived lock
-directory as a private, account-owned directory. Editors and tools that ignore
-advisory locks can still race the run after validation.
+directory as a private, account-owned directory.
+
+The lock directory is
+`<passwd home>/.local/state/lading/workspace-write-locks`. To provision it for
+an account whose home is not otherwise writable:
+
+```sh
+home=$(getent passwd "$ACCOUNT" | cut -d: -f6)
+install -d -m 0700 "$home/.local/state/lading/workspace-write-locks"
+chown "$ACCOUNT:$ACCOUNT" \
+  "$home/.local/state/lading/workspace-write-locks"
+```
+
+Every parent directory must be searchable by the account, and the lock
+directory itself must be owned by it with mode `0700`. Lading fails closed with
+the derived path in the message when it cannot create or validate that
+directory. Editors and tools that ignore advisory locks can still race the run
+after validation.
 
 For example, the `rstest-bdd` published GPUI fixture can opt into rewriting its
 dependency requirements and staged package patch paths:

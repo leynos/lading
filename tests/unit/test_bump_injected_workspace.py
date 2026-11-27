@@ -5,6 +5,7 @@ manifest paths become write targets, so they must satisfy the same contract as
 a graph loaded from Cargo before any manifest is read or written.
 """
 
+import os
 from pathlib import Path
 
 import msgspec
@@ -309,3 +310,22 @@ def test_stale_injected_graph_fails_before_any_write(tmp_path: Path) -> None:
     assert {path: path.read_bytes() for path in tracked} == originals, (
         "a stale graph must be rejected before any manifest or fixture is written"
     )
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="requires POSIX FIFOs")
+def test_rewrite_versions_reject_a_manifest_swapped_for_a_fifo(
+    tmp_path: Path,
+) -> None:
+    """A member manifest swapped for a FIFO after initialization is rejected."""
+    root, manifest = _workspace_with_member_manifest(
+        tmp_path, '[package]\nname = "alpha"\nversion = "0.1.0"\n'
+    )
+    graph = WorkspaceGraph(workspace_root=root, crates=(_crate(manifest),))
+    context = bump._initialize_bump_context(
+        root, bump.BumpOptions(configuration=_make_config(), workspace=graph)
+    )
+    manifest.unlink()
+    os.mkfifo(manifest)
+
+    with pytest.raises(ManifestRewriteError, match="Could not read manifest"):
+        bump_prepare_manifest_rewrites._pre_bump_versions_from_manifests(context)

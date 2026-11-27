@@ -3,6 +3,7 @@
 import collections.abc as cabc
 import os
 import re
+import stat
 import tempfile
 import typing as typ
 from contextlib import suppress
@@ -403,8 +404,41 @@ def parse_manifest(manifest_path: Path) -> TOMLDocument:
     >>> parse_manifest(path)["version"]
     '0.1.0'
     """
-    content = manifest_path.read_text(encoding="utf-8")
+    content = _read_manifest_text(manifest_path)
     return parse_toml(content)
+
+
+def _read_manifest_text(manifest_path: Path) -> str:
+    """Read manifest text without blocking on a substituted non-regular file.
+
+    Confinement rejects a non-regular target when it runs, but another process
+    can replace the path before this read. Opening non-blocking and checking
+    the opened descriptor's type keeps a FIFO from blocking the run while it
+    holds the workspace lock.
+
+    Parameters
+    ----------
+    manifest_path : Path
+        Filesystem path to the manifest to read.
+
+    Returns
+    -------
+    str
+        The decoded manifest text.
+
+    Raises
+    ------
+    OSError
+        If the path cannot be opened, the opened descriptor is not a regular
+        file, or the text cannot be read or decoded.
+    """
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NONBLOCK", 0)
+    descriptor = os.open(manifest_path, flags)
+    with os.fdopen(descriptor, "r", encoding="utf-8") as handle:
+        if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
+            message = f"Manifest path is not a regular file: {manifest_path}"
+            raise OSError(message)
+        return handle.read()
 
 
 def select_table(
