@@ -27,7 +27,11 @@ from lading.utils.confinement import (
     confine_relative_path,
     relative_to_root,
 )
-from lading.workspace.metadata import CargoMetadataError, load_cargo_metadata
+from lading.workspace.metadata import (
+    CargoMetadataError,
+    MetadataQuery,
+    load_cargo_metadata,
+)
 
 if typ.TYPE_CHECKING:  # pragma: no cover - import-time typing aids only
     from lading.runtime import CommandRunner
@@ -262,8 +266,7 @@ def _reported_workspace_root(
         metadata = load_cargo_metadata(
             root,
             runner=runner,
-            no_deps=True,
-            manifest_path=manifest.path,
+            query=MetadataQuery(no_deps=True, manifest_path=manifest.path),
         )
     except CargoMetadataError as exc:
         message = (

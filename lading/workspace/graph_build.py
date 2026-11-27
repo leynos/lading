@@ -77,9 +77,9 @@ def load_workspace(
     >>> graph.crates  # doctest: +SKIP
     (...)
     """  # ruff: ignore[docstring-extraneous-exception]  # propagated from load_cargo_metadata/build_workspace_graph
-    from lading.workspace.metadata import load_cargo_metadata
+    from lading.workspace.metadata import MetadataQuery, load_cargo_metadata
 
-    metadata = load_cargo_metadata(workspace_root, locked=locked)
+    metadata = load_cargo_metadata(workspace_root, query=MetadataQuery(locked=locked))
     return build_workspace_graph(metadata)
 
 

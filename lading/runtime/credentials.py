@@ -30,16 +30,15 @@ import logging
 import tomllib
 from pathlib import Path
 
+from lading.toml_coerce import optional_string_field
+
 LOGGER = logging.getLogger(__name__)
 _CREDENTIAL_FILES = ("credentials", "credentials.toml")
 
 
 def _token_of(table: object) -> str:
     """Return ``table``'s ``token`` string, or ``""`` when it has none."""
-    if not isinstance(table, cabc.Mapping):
-        return ""
-    token = table.get("token")
-    return token if isinstance(token, str) else ""
+    return optional_string_field(table, "token") or ""
 
 
 def _tokens_in(document: cabc.Mapping[str, object]) -> list[str]:
@@ -65,11 +64,11 @@ def credential_file_tokens(cargo_home: Path | None) -> tuple[str, ...]:
         The distinct token values, longest first. An unreadable or malformed
         file is skipped with a warning that never includes its contents.
     """
-    if cargo_home is None:
-        return ()
+    paths = (
+        () if cargo_home is None else (cargo_home / name for name in _CREDENTIAL_FILES)
+    )
     values: set[str] = set()
-    for name in _CREDENTIAL_FILES:
-        path = cargo_home / name
+    for path in paths:
         if not path.is_file():
             continue
         try:

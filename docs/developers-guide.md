@@ -2298,6 +2298,12 @@ responsibilities live in dedicated modules, imported by their original homes:
 - `lading.cli_entrypoint` — process startup, configuration loading, dispatch,
   and translation of preflight and workspace failures into exit codes (imported
   by `cli`).
+- `lading.cli_runner` — selection of the cmd-mox, plain or redacting command
+  runner for one invocation (`_select_runner`, re-exported by `cli`, where
+  tests replace it).
+- `lading.cli_environment` — the Cargo environment of a digest-checked publish
+  and the scope that hides its registry tokens; `cli_entrypoint` prints errors
+  and results through it.
 
 ### In-process metrics (`lading.utils.metrics`)
 

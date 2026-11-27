@@ -647,6 +647,9 @@ reason = "Import preamble only: both modules use os, pathlib and collections.abc
 [[tool.duplication_gate.allow]]
 members = ["lading/commands/bump_manifest_rewrite_filesystem.py::_is_existing_literal_candidate", "scripts/format_markdown.py::_present"]
 reason = "Keep the manifest resolver and PEP 723 formatter presence probes separate: callers preserve distinct domain errors, and importing application utilities would couple the standalone formatter to the lading package."
+[[tool.duplication_gate.allow]]
+members = ["lading/commands/publish_failures.py", "lading/commands/bump_pipeline.py"]
+reason = "Type-checking import blocks, each listing the types that module alone needs in the conventional grouped order. The publish failure handlers and the bump pipeline share no behaviour; merging their blocks would create a shared typing module that couples publish and bump, which is the cross-layer coupling these blocks exist to avoid."
 [tool.df12_skylos]
 roots = ["lading"]
 python = "3.14"

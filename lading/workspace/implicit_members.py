@@ -24,6 +24,7 @@ from pathlib import Path
 from tomlkit import parse
 from tomlkit.exceptions import TOMLKitError
 
+from lading.toml_coerce import optional_string_field
 from lading.utils.confinement import (
     BumpPreflightError,
     BumpTargetExaminationError,
@@ -383,7 +384,7 @@ def _workspace_paths(
     for name, specification in table.items():
         if name not in inherited:
             continue
-        path = _specification_path(specification)
+        path = _path_of(specification)
         if path is not None:
             yield path
 
@@ -415,14 +416,9 @@ def _specification_paths(
     table: cabc.Mapping[str, typ.Any],
 ) -> cabc.Iterator[str]:
     """Yield the path of every table-valued dependency specification."""
-    return (
-        path for path in map(_specification_path, table.values()) if path is not None
-    )
+    return (path for path in map(_path_of, table.values()) if path is not None)
 
 
-def _specification_path(specification: object) -> str | None:
+def _path_of(specification: object) -> str | None:
     """Return a dependency specification's path, if it declares one."""
-    if not isinstance(specification, cabc.Mapping):
-        return None
-    path = specification.get("path")
-    return path if isinstance(path, str) else None
+    return optional_string_field(specification, "path")

@@ -17,7 +17,6 @@ across the CLI adapter and the command module.
 """
 
 import collections.abc as cabc
-import importlib
 import os
 import typing as typ
 from contextlib import AbstractContextManager, nullcontext
@@ -89,9 +88,10 @@ from .cli_options import (
 from .cli_options import (
     WorkspaceRootOption as WorkspaceRootOption,
 )
+from .cli_runner import _CMD_MOX_STUB_ENV as _CMD_MOX_STUB_ENV
+from .cli_runner import _select_runner as _select_runner
 from .commands import publish_staging as publish_staging
-from .runtime import CommandRunner, subprocess_runner
-from .runtime.redacting_runner import redacting_runner
+from .runtime import subprocess_runner as subprocess_runner
 from .utils import normalize_workspace_root
 from .utils.confinement import BumpPreflightError as BumpPreflightError
 from .utils.redaction import use_secrets
@@ -107,64 +107,14 @@ from .workspace import metadata as metadata_module
 
 if typ.TYPE_CHECKING:
     from .commands.publish_cargo_config import CargoEnvironment
+    from .runtime import CommandRunner
 
-_CMD_MOX_STUB_ENV = "LADING_USE_CMD_MOX_STUB"
-_CMD_MOX_TRUTHY_VALUES = frozenset({"1", "true", "yes", "on"})
 
 # ``python -m lading.cli`` executes this module a second time as ``__main__``
 # after ``lading/__init__`` imported it. Registering the command decorators on
 # the shared application twice raises a collision, so the second execution
 # registers on a throwaway application; dispatch still uses the shared one.
 app = _shared_app if __name__ == "lading.cli" else create_app()
-
-
-def _select_runner(
-    secrets: cabc.Sequence[str] | None = None, *, cargo_home: Path | None = None
-) -> CommandRunner:
-    """Return the command runner selected for this CLI invocation.
-
-    Parameters
-    ----------
-    secrets : cabc.Sequence[str] | None
-        ``None`` selects the plain runner, so a run without
-        ``--expect-digests`` is unchanged even with a token in the environment.
-        A sequence, even an empty one, selects the redacting runner, which is
-        what ``--expect-digests`` needs: tokens can also arrive later, through a
-        call's environment overrides.
-    cargo_home : Path | None
-        The Cargo home the redacting runner resolves each command's own home
-        from, so the credentials file a command actually uses is hidden too.
-
-    Returns
-    -------
-    CommandRunner
-        The cmd-mox runner under test, else a (possibly redacting) subprocess
-        runner.
-
-    Raises
-    ------
-    SystemExit
-        If the cmd-mox runner is requested but cannot be imported.
-    """
-    stub_value = os.environ.get(_CMD_MOX_STUB_ENV, "")
-    if stub_value.lower() in _CMD_MOX_TRUTHY_VALUES:
-        try:
-            module = importlib.import_module("lading.testing.cmd_mox_runner")
-        except ModuleNotFoundError as exc:
-            message = (
-                f"{_CMD_MOX_STUB_ENV} is set, but the cmd-mox test runner "
-                "could not be imported. Install the test dependencies or unset "
-                f"{_CMD_MOX_STUB_ENV}."
-            )
-            raise SystemExit(message) from exc
-        return typ.cast("CommandRunner", module.cmd_mox_runner)
-    # Read here, at the composition root, so no other module touches the
-    # ambient environment. Without a token the plain runner is used unchanged.
-    # Without digests the plain runner is used whatever the environment holds,
-    # exactly as before the option existed.
-    if secrets is None:
-        return subprocess_runner
-    return redacting_runner(secrets, cargo_home=cargo_home)
 
 
 type WorkspaceLoader = cabc.Callable[[Path], WorkspaceGraph]
@@ -177,7 +127,6 @@ def _run_with_context(
         str,
     ],
     *,
-    command_runner: CommandRunner | None = None,
     workspace_loader: WorkspaceLoader | None = None,
     environment: CargoEnvironment | None = None,
 ) -> str:
@@ -189,8 +138,6 @@ def _run_with_context(
         Canonical workspace root.
     runner : cabc.Callable[[Path, LadingConfig, WorkspaceGraph, CommandRunner], str]
         Command body invoked with the loaded configuration and workspace.
-    command_runner : CommandRunner | None
-        Explicit runner; ``None`` selects the CLI runner.
     workspace_loader : WorkspaceLoader | None
         Workspace discovery function. ``None`` uses :func:`load_workspace`;
         bump passes the confined, read-only loader.
@@ -207,7 +154,7 @@ def _run_with_context(
     """
     secrets = None if environment is None else environment.secrets
     home = None if environment is None else environment.cargo_home
-    active_runner = command_runner or _select_runner(secrets, cargo_home=home)
+    active_runner = _select_runner(secrets, cargo_home=home)
     hidden = nullcontext() if secrets is None else use_secrets(secrets)
     configuration_scope: AbstractContextManager[object] = nullcontext()
     try:
@@ -217,10 +164,10 @@ def _run_with_context(
         # the command; an already-active configuration needs no new scope.
         configuration = config.load_configuration(workspace_root)
         configuration_scope = config.use_configuration(configuration)
-    loader = (
-        partial(load_workspace, locked=environment is not None)
-        if workspace_loader is None
-        else workspace_loader
+    # Only a digest-checked publish locks discovery; every other command keeps
+    # the plain loader exactly as before.
+    loader = workspace_loader or (
+        load_workspace if environment is None else partial(load_workspace, locked=True)
     )
     with configuration_scope, hidden, metadata_module.use_command_runner(active_runner):
         workspace_model = loader(workspace_root)

@@ -148,3 +148,38 @@ def string_mapping(
             )
         case _:
             raise _reject(value, field_name, "a TOML table", error)
+
+
+def optional_string_field(table: object, key: str) -> str | None:
+    """Return ``table[key]`` when ``table`` is a mapping holding a string there.
+
+    TOML documents read leniently (credentials files, dependency tables) may
+    hold anything in a position that should be a table or a string; such a
+    value is simply absent rather than an error.
+
+    Parameters
+    ----------
+    table : object
+        The value that should be a table.
+    key : str
+        The field to read from it.
+
+    Returns
+    -------
+    str | None
+        The string, or ``None`` when ``table`` is not a mapping or the field is
+        missing or not a string.
+
+    Examples
+    --------
+    >>> optional_string_field({"token": "abc"}, "token")
+    'abc'
+    >>> optional_string_field({"token": 1}, "token") is None
+    True
+    >>> optional_string_field(["token"], "token") is None
+    True
+    """
+    if not isinstance(table, cabc.Mapping):
+        return None
+    value = table.get(key)
+    return value if isinstance(value, str) else None

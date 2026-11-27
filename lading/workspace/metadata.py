@@ -19,6 +19,7 @@ the same calls through the cmd-mox adapter in
 import collections.abc as cabc
 import contextlib
 import contextvars
+import dataclasses as dc
 import json
 import typing as typ
 
@@ -101,37 +102,59 @@ def _active_command_runner(runner: CommandRunner | None = None) -> CommandRunner
     return active_runner
 
 
-def _metadata_command(
-    *,
-    no_deps: bool,
-    manifest_path: Path | None = None,
-    locked: bool = False,
-) -> tuple[str, ...]:
-    """Return the ``cargo metadata`` argument tuple for the supplied options."""
-    args = list(_CARGO_METADATA_NO_DEPS_ARGS if no_deps else _CARGO_METADATA_ARGS)
-    if manifest_path is not None:
-        args.extend(("--manifest-path", str(manifest_path)))
-    if locked:
-        args.append("--locked")
-    return (_CARGO_PROGRAM, *args)
+@dc.dataclass(frozen=True, slots=True)
+class MetadataQuery:
+    """What one ``cargo metadata`` run is asked for.
+
+    Attributes
+    ----------
+    no_deps : bool
+        Pass ``--no-deps`` so Cargo reports only the workspace members it can
+        read from the manifests. Bump discovery uses this to keep the metadata
+        phase read-only and cheap; publish keeps the full dependency graph.
+    manifest_path : Path | None
+        Pass ``--manifest-path`` so Cargo resolves the workspace containing a
+        specific manifest. Lockfile planning uses this to learn the effective
+        workspace root of each configured or discovered manifest.
+    locked : bool
+        Pass ``--locked``, so discovery fails rather than updating a stale
+        ``Cargo.lock``. ``lading publish --expect-digests`` sets it.
+
+    Examples
+    --------
+    >>> MetadataQuery(no_deps=True, locked=True).command()
+    ('cargo', 'metadata', '--format-version', '1', '--no-deps', '--locked')
+    """
+
+    no_deps: bool = False
+    manifest_path: Path | None = None
+    locked: bool = False
+
+    def command(self) -> tuple[str, ...]:
+        """Return the ``cargo metadata`` argument tuple for this query.
+
+        Returns
+        -------
+        tuple[str, ...]
+            The program and its arguments.
+        """
+        args = list(
+            _CARGO_METADATA_NO_DEPS_ARGS if self.no_deps else _CARGO_METADATA_ARGS
+        )
+        if self.manifest_path is not None:
+            args.extend(("--manifest-path", str(self.manifest_path)))
+        if self.locked:
+            args.append("--locked")
+        return (_CARGO_PROGRAM, *args)
 
 
 def _invoke_cargo_metadata(
-    command_runner: CommandRunner,
-    root_path: Path | None,
-    *,
-    no_deps: bool,
-    manifest_path: Path | None = None,
-    locked: bool = False,
+    command_runner: CommandRunner, root_path: Path | None, query: MetadataQuery
 ) -> tuple[int, str, str]:
     """Run ``cargo metadata`` and return (exit_code, stdout, stderr) as text."""
     try:
         exit_code, stdout, stderr = command_runner(
-            _metadata_command(
-                no_deps=no_deps, manifest_path=manifest_path, locked=locked
-            ),
-            cwd=root_path,
-            echo_stdout=False,
+            query.command(), cwd=root_path, echo_stdout=False
         )
     except CommandSpawnError as exc:
         if exc.program == _CARGO_PROGRAM:
@@ -159,9 +182,7 @@ def load_cargo_metadata(
     workspace_root: Path | str | None = None,
     *,
     runner: CommandRunner | None = None,
-    no_deps: bool = False,
-    manifest_path: Path | None = None,
-    locked: bool = False,
+    query: MetadataQuery | None = None,
 ) -> cabc.Mapping[str, typ.Any]:
     """Execute ``cargo metadata`` and parse the resulting JSON payload.
 
@@ -171,17 +192,8 @@ def load_cargo_metadata(
         Directory to run ``cargo metadata`` in; ``None`` uses cargo's default.
     runner : CommandRunner | None
         Explicit command runner to use instead of the ambient/default runner.
-    no_deps : bool, optional
-        Pass ``--no-deps`` so Cargo reports only the workspace members it can
-        read from the manifests. Bump discovery uses this to keep the metadata
-        phase read-only and cheap; publish keeps the full dependency graph.
-    manifest_path : Path | None, optional
-        Pass ``--manifest-path`` so Cargo resolves the workspace containing a
-        specific manifest. Lockfile planning uses this to learn the effective
-        workspace root of each configured or discovered manifest.
-    locked : bool
-        Whether to pass ``--locked``, so discovery fails rather than updating a
-        stale ``Cargo.lock``. ``lading publish --expect-digests`` sets it.
+    query : MetadataQuery | None
+        The flags to pass; ``None`` asks for the full dependency graph.
 
     Returns
     -------
@@ -209,11 +221,7 @@ def load_cargo_metadata(
     root_path = normalize_workspace_root(workspace_root)
     command_runner = _active_command_runner(runner)
     exit_code, stdout_text, stderr_text = _invoke_cargo_metadata(
-        command_runner,
-        root_path,
-        no_deps=no_deps,
-        manifest_path=manifest_path,
-        locked=locked,
+        command_runner, root_path, MetadataQuery() if query is None else query
     )
     if exit_code != 0:
         raise CargoMetadataInvocationError(exit_code, stdout_text, stderr_text)
