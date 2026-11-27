@@ -1,9 +1,9 @@
 """Tests for the canonical Cargo dependency-section vocabulary.
 
 Issue #103: the section names live once in
-:data:`lading.commands.bump_toml.DEPENDENCY_SECTIONS`; the kind mapping in
-``bump`` and the snippet rewriting in ``bump_docs`` must stay in agreement
-with it.
+:data:`lading.commands.bump_toml_dependencies.DEPENDENCY_SECTIONS`; the kind
+mapping in ``bump`` and the snippet rewriting in ``bump_docs`` must stay in
+agreement with it.
 
 Issue #370: the documentation pass must reach the same dependency locations as
 the manifest pass, so the property below also generates ``[workspace.*]`` and
@@ -17,7 +17,7 @@ import hypothesis.strategies as st
 from hypothesis import given, settings
 from tomlkit import parse as parse_toml
 
-from lading.commands import bump_docs, bump_manifests, bump_toml
+from lading.commands import bump_docs, bump_manifests, bump_toml, bump_toml_dependencies
 
 if typ.TYPE_CHECKING:
     from syrupy.assertion import SnapshotAssertion
@@ -50,7 +50,7 @@ _DECOY_PREFIXES: tuple[_Prefix, ...] = (
 _CANONICAL_LOCATIONS: tuple[_Prefix, ...] = tuple(
     (*prefix, section)
     for prefix in _CANONICAL_PREFIXES
-    for section in bump_toml.DEPENDENCY_SECTIONS
+    for section in bump_toml_dependencies.DEPENDENCY_SECTIONS
 )
 _DECOY_LOCATIONS: tuple[_Prefix, ...] = (
     *((section,) for section in _DECOY_SECTIONS),
@@ -62,7 +62,7 @@ def test_kind_mapping_agrees_with_canonical_sections() -> None:
     """Every mapped section is canonical and every canonical section is mapped."""
     mapped = set(bump_manifests._DEPENDENCY_SECTION_BY_KIND.values())
 
-    assert mapped == set(bump_toml.DEPENDENCY_SECTIONS), (
+    assert mapped == set(bump_toml_dependencies.DEPENDENCY_SECTIONS), (
         "the kind mapping and the canonical section list must agree exactly"
     )
 
@@ -71,7 +71,7 @@ def test_workspace_dependency_sections_use_canonical_vocabulary() -> None:
     """The workspace manifest update targets exactly the canonical sections."""
     sections = bump_manifests._workspace_dependency_sections(["alpha", "beta"])
 
-    assert tuple(sections) == bump_toml.DEPENDENCY_SECTIONS, (
+    assert tuple(sections) == bump_toml_dependencies.DEPENDENCY_SECTIONS, (
         "workspace updates must target the canonical sections in order"
     )
     assert all(names == {"alpha", "beta"} for names in sections.values()), (

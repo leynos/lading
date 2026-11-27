@@ -39,7 +39,7 @@ entries. That limitation is shared with the manifest pass. An out-of-order
 import collections.abc as cabc
 import typing as typ
 
-from lading.commands import bump_toml
+from lading.commands import bump_toml, bump_toml_dependencies
 
 if typ.TYPE_CHECKING:  # pragma: no cover - import-time typing aids only
     from tomlkit.toml_document import TOMLDocument
@@ -51,7 +51,7 @@ def _dependency_sections(
     dependency_targets: cabc.Collection[str],
 ) -> dict[str, cabc.Collection[str]]:
     """Map every canonical section name to ``dependency_targets``."""
-    return dict.fromkeys(bump_toml.DEPENDENCY_SECTIONS, dependency_targets)
+    return dict.fromkeys(bump_toml_dependencies.DEPENDENCY_SECTIONS, dependency_targets)
 
 
 def _update_target_tables(
@@ -68,7 +68,9 @@ def _update_target_tables(
         table = bump_toml.select_table(target_root, (selector,))
         if table is None:
             continue
-        changed |= bump_toml.update_dependency_sections(table, sections, target_version)
+        changed |= bump_toml_dependencies.update_dependency_sections(
+            table, sections, target_version
+        )
     return changed
 
 
@@ -110,7 +112,7 @@ def update_toml_snippet_dependencies(
         return False
 
     sections = _dependency_sections(dependency_targets)
-    changed = bump_toml.update_dependency_sections(
+    changed = bump_toml_dependencies.update_dependency_sections(
         document,
         sections,
         target_version,
