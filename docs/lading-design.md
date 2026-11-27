@@ -392,12 +392,15 @@ lading bump <new_version> [--dry-run]
   documentation pass uses the replace-only `bump_toml.replace_string_version`.
 - The `[package].name` gate applies to `[workspace.package]` too. A fence that
   documents only a virtual workspace root has no package name, so it cannot be
-  distinguished from an arbitrary workspace example, and is left unchanged.
-  Documentation that must show this workspace's own root manifest includes the
-  `[package].name` that identifies the bumped crate.
+  distinguished from an arbitrary workspace example, and its
+  `[workspace.package].version` is left unchanged. A virtual manifest has no
+  `[package]` table by definition, so adding one to satisfy the gate would
+  describe a different workspace shape; such a documented version is maintained
+  by hand. A root manifest that is also a package carries `[package].name`, and
+  both of its versions are rewritten when that crate is bumped.
 - Dependency-table location in documentation is owned by
   `lading.commands.bump_docs_dependencies`. It calls the shared
-  `bump_toml.update_dependency_sections` once on the document with workspace
+  `bump_toml_dependencies.update_dependency_sections` once on the document with workspace
   sections enabled and once for each immediate `target` selector, so fence
   rewriting reaches `[workspace.dependencies]` and
   `[target.<spec>.dependencies]` alongside their dev and build variants. The

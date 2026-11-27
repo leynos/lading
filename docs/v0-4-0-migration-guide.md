@@ -34,7 +34,9 @@ from the new `lading.config_manifest_rewrites` module. See
 The bump documentation pass is also narrower. It no longer inserts or rewrites
 a package version in a TOML fence that does not name a bumped crate, so a guide
 that mixed policy metadata or downstream manifests with real usage snippets
-needs its published snippets reviewed; see
+needs its published snippets reviewed. Only the package version is retained: a
+dependency requirement in the same fence still moves when it names a bumped
+crate; see
 [section 6](#6-review-documentation-snippets-for-over-broad-rewriting).
 
 The number is derived rather than announced: 0.3.1 is the most recent release,
@@ -276,9 +278,12 @@ version = "0.1.0"
 ```
 
 `[workspace.package]` follows the same gate. A fence that documents only a
-virtual workspace root has no `[package].name` to identify it, so it is left
-unchanged. When the fence is meant to describe this workspace's own root
-manifest, include the `[package].name` of the bumped crate.
+virtual workspace root has no `[package].name` to identify it, so its
+`[workspace.package].version` is left unchanged. A virtual manifest has no
+`[package]` table by definition, so this fence cannot satisfy the gate without
+describing a different workspace shape; maintain its documented version by
+hand. A root manifest that is also a package carries `[package].name`, and both
+its versions are rewritten when that crate is bumped.
 
 ## What changed
 

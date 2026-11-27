@@ -125,8 +125,9 @@ def update_toml_snippet_versions(
     update: a package or workspace-package version is replaced only when it is
     an existing string and the snippet's ``[package].name`` names a bumped
     crate. A fence that documents metadata, an unrelated application, or
-    ``version.workspace = true`` is returned unchanged. Dependency
-    requirements for the bumped crates are rewritten independently.
+    ``version.workspace = true`` keeps its package version unchanged;
+    dependency requirements in the same fence are still rewritten when they
+    name a bumped crate.
 
     Parameters
     ----------
