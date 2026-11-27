@@ -204,6 +204,18 @@ plan of work.
   byte-for-byte equality with the fixture, and the proxy test makes one call
   covering both the skipped entry and its rewritten sibling. The alias claim
   was corrected in the plan and the docs, and pinned by parametrized tests.
+- [x] (2026-11-27) The original-issue assessment (`ISSUE-370-A1`) returned not
+  clear with five findings. Four were new: an inline dependency *section*
+  (`dependencies = { ... }`) is skipped and was undocumented; two overclaims
+  remained in prose (the module docstring promising the fence and manifest
+  "cannot drift apart", and "other crates … left untouched" in the guide); no
+  test proved an out-of-order `target` parent is still traversed; and the same
+  size finding. All are addressed: the inline-section shape is documented,
+  distinguished from a supported inline entry, and pinned in the
+  unsupported-shapes parametrization; both prose claims are corrected; and
+  `test_documentation_pass_rewrites_under_out_of_order_target_parent` proves
+  the positive case. The assessment also retracted its earlier alias-parity
+  demand, confirming the key-matching contract stands.
 
 ## Surprises & discoveries
 

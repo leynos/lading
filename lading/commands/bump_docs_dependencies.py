@@ -1,8 +1,9 @@
 """Dependency-section rewriting for documentation TOML fences.
 
-The documentation pass covers the same dependency locations as the manifest
-pass, so a fence in a Markdown file and the `Cargo.toml` it documents cannot
-drift apart. A rewrite visits:
+The documentation pass covers the same dependency *tables* as the manifest
+pass, so a fence that documents a workspace or target table is rewritten the
+same way the manifest is. It does not make the two files identical: keys are
+matched as written, so an aliased entry is not resolved here. A rewrite visits:
 
 - the top-level ``[dependencies]``, ``[dev-dependencies]``, and
   ``[build-dependencies]`` tables;
@@ -11,19 +12,25 @@ drift apart. A rewrite visits:
   ``target``, such as ``[target.'cfg(unix)'.dependencies]``.
 
 Only the dependency keys named by the caller are rewritten, and only their
-``version`` requirement; other keys and other crates are left untouched. Three
-shapes are skipped without error because they cannot be updated in place:
+``version`` requirement. Keys are matched literally: the caller supplies crate
+names, and this module has no Cargo metadata to map a crate to an aliased
+manifest key. Four shapes are skipped without error because they cannot be
+updated in place:
 
 - ``target`` given as an inline table (``target = { ... }``) or as a scalar,
   which is not a table the traversal can descend;
 - a selector whose value is an inline table rather than a standard table;
+- a dependency section written as an inline table, such as
+  ``dependencies = { alpha = "1.0.0" }``; an inline dependency *entry* such as
+  ``alpha = { version = "1.0.0" }`` is supported;
 - a dependency table nested more deeply than one selector level, such as
   ``[target.'cfg(unix)'.nested.dependencies]``, whose Cargo meaning this module
   does not model.
 
 A dependency entry that tomlkit parses as an ``OutOfOrderTableProxy`` is also
 skipped: the shared updater recognizes only ``Table`` and ``InlineTable``
-entries. That limitation is shared with the manifest pass.
+entries. That limitation is shared with the manifest pass. An out-of-order
+``target`` parent is not skipped; only an out-of-order entry is.
 """
 
 import collections.abc as cabc

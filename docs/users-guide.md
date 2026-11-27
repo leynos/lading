@@ -357,7 +357,7 @@ dependency, matching the manifest pass:
 
 Only the dependency keys named in the fence are rewritten, and only their
 `version` requirement; a requirement operator such as `^` or `~` is preserved.
-Other crates and other keys are left untouched.
+Keys that are not named are left untouched.
 
 Keys are matched as written. The documentation pass has no Cargo metadata, so
 it cannot resolve an alias: for a workspace crate `alpha`, a fence entry
@@ -376,6 +376,10 @@ fence is still rewritten:
   `'cfg(unix)' = { dependencies = { ... } }`;
 - a dependency table nested below one selector level, such as
   `[target.'cfg(unix)'.nested.dependencies]`;
+- a dependency *section* written as an inline table, such as
+  `[target.'cfg(unix)']` followed by `dependencies = { alpha = "1.0.0" }`. An
+  inline dependency *entry* such as `alpha = { version = "1.0.0" }` is
+  supported and rewritten;
 - a dependency entry whose sub-table is reopened after another header:
   `[target.'cfg(unix)'.dependencies.alpha]`, then
   `[target.'cfg(unix)'.dependencies]`, then
@@ -383,6 +387,9 @@ fence is still rewritten:
   there as an out-of-order table, so it keeps its version while a plain sibling
   entry such as `beta` in the same section is rewritten. Without the third
   header `alpha` reads as an ordinary table and is rewritten normally.
+
+An out-of-order `target` header is not a limit: a `[target]` line written after
+its selectors is still traversed.
 
 Target-specific tables inside a `Cargo.toml` are not rewritten by
 `lading bump`; only their documentation counterparts are. Where the same

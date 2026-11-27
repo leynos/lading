@@ -177,6 +177,9 @@ _UNSUPPORTED_FENCE_SNIPPETS = {
     "dotted-nested-selector": (
         "[target.'cfg(unix)'.nested.dependencies]\nalpha = \"1.0.0\"\n"
     ),
+    "inline-dependency-section": (
+        "[target.'cfg(unix)']\ndependencies = { alpha = \"1.0.0\" }\n"
+    ),
     "malformed-toml": "[target.'cfg(unix)'.dependencies\nalpha = \"1.0.0\"\n",
 }
 
@@ -273,6 +276,19 @@ def test_documentation_pass_visits_every_selector_and_keeps_decoys() -> None:
     assert cfg_selector["decoy-dependencies"]["alpha"] == "1.0.0", (
         "a decoy section under a selector must not be rewritten"
     )
+
+
+def test_documentation_pass_rewrites_under_out_of_order_target_parent() -> None:
+    """A `target` parent declared after its sub-tables is still traversed."""
+    text = _toml_fence(
+        "[target.'cfg(unix)'.dependencies]\nalpha = \"1.0.0\"\n[target]\n"
+    )
+
+    updated, changed = _rewrite_fence(text)
+
+    assert changed is True, "an out-of-order [target] parent must still be traversed"
+    document = parse_toml(_fence_body(updated))
+    assert document["target"]["cfg(unix)"]["dependencies"]["alpha"] == "2.0.0", updated
 
 
 def test_documentation_pass_skips_out_of_order_dependency_entry() -> None:
