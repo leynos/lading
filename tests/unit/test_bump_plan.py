@@ -648,7 +648,20 @@ def test_an_unchanged_case_only_target_still_reports_the_ambiguity(
     builder = PlanBuilder(root=root)
     builder.propose(_confined(root, "README.md"), "same\n", WriteCategory.README)
 
-    with pytest.raises(BumpPreflightError):
+    with pytest.raises(BumpPreflightError) as excinfo:
         builder.propose(
             _confined(root, "readme.md"), "different\n", WriteCategory.README
         )
+
+    message = str(excinfo.value)
+    assert "README.md" in message, "the diagnostic must name the first spelling"
+    assert "readme.md" in message, "the diagnostic must name the case-only spelling"
+    assert upper.read_text(encoding="utf-8") == "same\n", (
+        "the rejection must not modify the existing target"
+    )
+    assert lower.read_text(encoding="utf-8") == "same\n", (
+        "the rejection must not modify the case-only target"
+    )
+    assert sorted(path.name for path in root.iterdir()) == ["README.md", "readme.md"], (
+        "the rejection must not create or remove directory entries"
+    )
