@@ -27,6 +27,8 @@ __all__ = [
 
 MIN_FENCE_LENGTH: typ.Final[int] = 3
 MAX_FENCE_INDENT: typ.Final[int] = 3
+MAX_LIST_PADDING: typ.Final[int] = 4
+TAB_WIDTH: typ.Final[int] = 4
 _CONTAINER_MARKERS: typ.Final[re.Pattern[str]] = re.compile(
     r"^(?:(?:>\s?)|(?:[-+*]|\d{1,9}[.)])\s+)+"
 )
@@ -115,17 +117,21 @@ def closes_fence(
 
 
 def indentation(line: str) -> int:
-    """Return the number of leading spaces before any other character."""
-    return len(line) - len(line.lstrip(" "))
+    """Return the width of leading whitespace in columns."""
+    stripped = line.lstrip(" \t")
+    return _column_after(line[: len(line) - len(stripped)])
 
 
 def dedent(line: str, indent: int) -> str:
-    """Remove up to ``indent`` leading spaces from ``line``."""
-    removed = 0
-    while removed < indent and line.startswith(" "):
-        line = line[1:]
-        removed += 1
-    return line
+    """Remove up to ``indent`` columns of leading whitespace from ``line``."""
+    column = 0
+    index = 0
+    while index < len(line) and column < indent and line[index] in " \t":
+        column = (
+            column + 1 if line[index] != "\t" else (column // TAB_WIDTH + 1) * TAB_WIDTH
+        )
+        index += 1
+    return line[index:]
 
 
 def list_context(raw: str, levels: list[int]) -> int:
@@ -144,7 +150,8 @@ def list_context(raw: str, levels: list[int]) -> int:
     content = strip_quotes(raw, depth) or ""
     match = _LIST_ITEM.match(content)
     if match is not None:
-        indent = match.end()
+        content_start = _list_content_start(match)
+        indent = _column_after(content[:content_start])
         while levels and levels[-1] >= indent:
             levels.pop()
         levels.append(indent)
@@ -175,27 +182,48 @@ def unmarked_fence_delimiter(
     content = strip_quotes(raw, depth) or ""
     list_item = _LIST_ITEM.match(content)
     if list_item is not None:
-        base = list_item.end()
-        remainder = content[base:]
+        remainder = content[_list_content_start(list_item) :]
+        too_indented = indentation(remainder) > MAX_FENCE_INDENT
     else:
-        base = list_indent
         remainder = content
-    if indentation(remainder) > base + MAX_FENCE_INDENT:
+        too_indented = indentation(remainder) > list_indent + MAX_FENCE_INDENT
+    if too_indented:
         return None
     return fence_delimiter(remainder.strip())
 
 
 def list_item_end(content: str) -> int | None:
-    """Return the end of a leading list-item marker, or ``None``.
+    """Return the content start of a leading list item, or ``None``.
 
     Returns
     -------
     int | None
-        The offset just past the marker and its following whitespace, or
+        The offset where the item's content begins, after at most one space of
+        marker padding when more than four spaces follow the marker, or
         ``None`` when ``content`` does not start with a list item.
     """
     match = _LIST_ITEM.match(content)
-    return match.end() if match is not None else None
+    return _list_content_start(match) if match is not None else None
+
+
+def _list_content_start(match: re.Match[str]) -> int:
+    """Return the offset where a matched list item's content begins."""
+    padding_width = _column_after(match.group("space"))
+    if padding_width > MAX_LIST_PADDING:
+        # CommonMark assigns one space as padding and treats the rest as
+        # content indentation, which can make an apparent fence literal code.
+        return match.start("space") + 1
+    return match.end()
+
+
+def _column_after(text: str) -> int:
+    """Return the column reached after ``text`` with four-column tab stops."""
+    column = 0
+    for character in text:
+        column = (
+            column + 1 if character != "\t" else (column // TAB_WIDTH + 1) * TAB_WIDTH
+        )
+    return column
 
 
 def unmarked_fence_end(
@@ -219,6 +247,9 @@ def unmarked_fence_end(
     for end in range(index + 1, len(lines)):
         content = strip_quotes(lines[end], depth)
         if content is None:
+            return end
+        if content.strip() and indentation(content) < list_indent:
+            # An outdented line ends the list item, and with it the fence.
             return end
         if closes_fence(content, character, length, list_indent):
             return end + 1

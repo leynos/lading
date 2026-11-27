@@ -95,6 +95,26 @@ def test_loader_ignores_a_malformed_marker_inside_an_unmarked_fence(
     )
 
 
+def test_loader_reads_a_marked_example_after_a_list_fence_outdent(
+    tmp_path: Path,
+) -> None:
+    """A list-item fence ends at its outdent, so a later example is read."""
+    path = _write(
+        tmp_path,
+        "- ```text\n  ignored\n\n"
+        "<!-- tested-example: real -->\n```bash\necho real\n```\n",
+    )
+
+    examples = load_tested_examples(path, require_markers=False)
+
+    assert set(examples) == {"real"}, (
+        "the marked example after the outdented list fence must be read"
+    )
+    assert examples["real"].body == "echo real", (
+        "the marked example must still be parsed"
+    )
+
+
 def test_loader_rejects_a_malformed_marker(tmp_path: Path) -> None:
     """A marker without an identifier fails the load."""
     path = _write(
