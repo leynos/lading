@@ -345,7 +345,7 @@ def test_bump_rejects_an_invalid_lockfile_manifest_on_a_same_version_run(
     )
     docs = workspace.root / "docs"
     docs.mkdir()
-    (docs / "guide.md").write_text(_documented_version("0.1.0"), encoding="utf-8")
+    (docs / "guide.md").write_text(_documented_version("0.0.9"), encoding="utf-8")
     runner = RecordingCommandRunner(
         metadata=workspace.metadata,
         metadata_by_manifest=lambda manifest: {"workspace_root": str(tmp_path)},
@@ -363,7 +363,7 @@ def test_bump_rejects_an_invalid_lockfile_manifest_on_a_same_version_run(
         expected=lockfile_manifest,
     )
     assert (docs / "guide.md").read_text(encoding="utf-8") == _documented_version(
-        "0.1.0"
+        "0.0.9"
     ), "the outdated documentation file must not be rewritten"
     assert runner.update_calls() == [], (
         "an invalid lockfile plan must not run cargo update"
@@ -503,17 +503,18 @@ def test_bump_rejects_hard_linked_documentation_targets(
 
 
 def _final_manifest_symlink(workspace: CliWorkspace, tmp_path: Path) -> str:
-    """Replace a member manifest with a symlink to an external manifest."""
+    """Keep the valid member first and make a later member's manifest a link."""
     outside = tmp_path / "outside"
     outside.mkdir(exist_ok=True)
     external = outside / "Cargo.toml"
     external.write_text(
-        '[package]\nname = "alpha"\nversion = "0.1.0"\n', encoding="utf-8"
+        '[package]\nname = "beta"\nversion = "0.1.0"\n', encoding="utf-8"
     )
-    manifest = workspace.root / "crates" / "alpha" / "Cargo.toml"
-    manifest.unlink()
-    manifest.symlink_to(external)
-    return "crates/alpha/Cargo.toml"
+    beta = workspace.root / "crates" / "beta"
+    beta.mkdir()
+    (beta / "Cargo.toml").symlink_to(external)
+    _declare_members(workspace, "crates/alpha", "crates/beta")
+    return "crates/beta/Cargo.toml"
 
 
 def _dangling_member_link(workspace: CliWorkspace, tmp_path: Path) -> str:
@@ -542,7 +543,7 @@ def _unmatched_member_glob(workspace: CliWorkspace, tmp_path: Path) -> str:
     ("prepare", "expected"),
     [
         pytest.param(
-            _final_manifest_symlink, "crates/alpha/Cargo.toml", id="final-symlink"
+            _final_manifest_symlink, "crates/beta/Cargo.toml", id="final-symlink"
         ),
         pytest.param(_dangling_member_link, "crates/dangling", id="dangling-link"),
         pytest.param(_in_root_alias, "crates/alias", id="in-root-alias"),

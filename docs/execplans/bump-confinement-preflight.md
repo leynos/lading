@@ -126,10 +126,11 @@ guarantee.
 
 ## Constraints
 
-- No new runtime dependency is required beyond `tomlkit`, recorded in the
-  decision log: Cargo accepts TOML 1.1 syntax that `tomllib` rejects. The rest
-  of the policy uses `os.lstat`, `os.scandir`, `fnmatch`, `pathlib`, and `stat`
-  from the standard library.
+- No new runtime dependency is introduced. `tomlkit` was already declared at
+  `tomlkit>=0.13,<0.16`, and this change raises its floor to `tomlkit>=0.15`
+  because Cargo accepts TOML 1.1 syntax that `tomllib` rejects; the decision
+  log records the version change. The rest of the policy uses `os.lstat`,
+  `os.scandir`, `fnmatch`, `pathlib`, and `stat` from the standard library.
 - Publish discovery and publish behaviour must not change. Only the bump path
   gains the confined loader and `--no-deps` metadata call.
 - Existing public APIs and behaviour that tests pin (output format, change
@@ -588,12 +589,19 @@ Scenario: Bumping rejects an escaping configured lockfile manifest
   unmatched member glob. Member-pattern declaration moved to
   `member_declarations.py`, bringing `confined_discovery.py` within the plan's
   400-line limit.
-- [x] 2026-11-27: Second assessment round cleared. The same-version lockfile
-  test now documents an older version, and a control test proves the valid plan
+- [x] 2026-11-27: Second assessment round repairs. The same-version lockfile
+  test documents an older version, and a control test proves the valid plan
   would rewrite that file, so the rejection is shown to withhold a pending
   write. The command-line composition root was split into `cli_app`,
-  `cli_helpers`, and `cli_entrypoint`, bringing `lading/cli.py` from 734 to 351
-  lines; the dispatch and app test seams moved to the modules that own them.
+  `cli_helpers`, and `cli_entrypoint`, bringing `lading/cli.py` from 734 to 359
+  lines; the dispatch and app test seams moved to the modules that own them, and
+  `python -m lading.cli` registers commands once.
+- [x] 2026-11-27: Third assessment round repairs. The rejection fixture now
+  starts at `0.0.9` as well, the final-manifest symlink case keeps a valid
+  `alpha` member ordered before the symlinked `beta` member, and the plan
+  records `tomlkit` as a floor raise on an existing dependency rather than a
+  new one. The rejection test fails against the previous planning gate, so the
+  same-version evidence is non-vacuous.
 - [ ] EP-M5 release: tag and release `v0.4.0b1` after review convergence, then
   record the tag commit on issue #409.
 
@@ -762,11 +770,12 @@ Scenario: Bumping rejects an escaping configured lockfile manifest
   the shared app, pure helpers, and process entry point moved into `cli_app.py`,
   `cli_helpers.py`, and `cli_entrypoint.py`; the command adapters and the
   patched runner and workspace-loader seams remain in `cli.py`.
-- `tomlkit` is a new runtime dependency, a deviation from the original
-  constraint that no new dependency was needed. Cargo accepts TOML 1.1 syntax
-  such as multiline inline tables, which `tomllib` rejects, and a configuration
-  Cargo can read must not abort the preflight. It is declared as
-  `tomlkit>=0.15,<0.16` in `pyproject.toml`, and `uv.lock` records it.
+- `tomlkit` was already a declared runtime dependency at `>=0.13,<0.16`; the
+  Cargo-configuration parser raises its floor to `>=0.15,<0.16` because Cargo
+  accepts TOML 1.1 syntax such as multiline inline tables, which `tomllib`
+  rejects. The `pyproject.toml` requirement change and its `uv.lock` recording
+  are the only files outside `lading/`, `tests/`, and `docs/` that this work
+  touches, besides the release version bump already authorized by the plan.
 
 ## Outcomes & retrospective
 
@@ -793,5 +802,6 @@ here and on issue #409 once the release tag is pushed.
   wildcards, and observing the write itself.
 - 2026-11-27: Recorded the assessment decisions on lockfile validation without
   a manifest change, README adoption through an injected alias, and the
-  `tomlkit` dependency deviation. Recorded the same-version control fixture and
-  the `cli.py` split that follows the 400-line constraint.
+  `tomlkit` requirement-floor change. Recorded the same-version control
+  fixture, the `cli.py` split that follows the 400-line constraint, and the
+  final correction to the dependency record.
