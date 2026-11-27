@@ -48,13 +48,12 @@ def workspace_write_lock(
         finally:
             held_locks[root_key] = depth
         return
-    with _acquire_workspace_write_lock(workspace_root, root_key, held_locks):
+    with _acquire_workspace_write_lock(root_key, held_locks):
         yield
 
 
 @contextlib.contextmanager
 def _acquire_workspace_write_lock(
-    workspace_root: Path,
     root_key: str,
     held_locks: dict[str, int],
 ) -> cabc.Generator[None]:

@@ -78,24 +78,3 @@ def record_manifest_rewrite_metrics(
                 dry_run=dry_run_label,
                 error_category=labels.error_category,
             )
-
-
-def record_manifest_rewrite_planned(*, dry_run: bool) -> None:
-    """Count a successfully prepared rewrite plan.
-
-    Records one ``planning`` / ``planned`` counter with the ``none`` error
-    category. The dry-run label is the bounded string ``"true"`` or
-    ``"false"``; this function does not record a duration.
-
-    Parameters
-    ----------
-    dry_run : bool
-        Whether the bump command is running without writes.
-    """
-    metrics.increment_counter(
-        MANIFEST_REWRITE_RUN_METRIC,
-        phase="planning",
-        outcome="planned",
-        dry_run=str(dry_run).lower(),
-        error_category="none",
-    )
