@@ -194,6 +194,16 @@ def test_documentation_pass_skips_unsupported_target_shapes(snippet: str) -> Non
     assert updated == text, "an unsupported shape must leave the fence unchanged"
 
 
+def test_documentation_pass_rewrites_supported_locations_beside_unsupported() -> None:
+    """An unreachable location does not stop a supported one in the same fence."""
+    text = _toml_fence('target = "nonsense"\n[dependencies]\nalpha = "1.0.0"\n')
+
+    updated, changed = _rewrite_fence(text)
+
+    assert changed is True, "the supported top-level section must still be rewritten"
+    assert parse_toml(_fence_body(updated))["dependencies"]["alpha"] == "2.0.0", updated
+
+
 def test_documentation_pass_is_idempotent() -> None:
     """A second pass over already-rewritten text reports no further change."""
     text = _toml_fence(

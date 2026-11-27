@@ -359,16 +359,22 @@ Only the dependency keys named in the fence are rewritten, and only their
 `version` requirement; a requirement operator such as `^` or `~` is preserved.
 Other crates and other keys are left untouched.
 
-A fence in one of these shapes is skipped, and the fence text stays as it is:
+A fence can also show a location this pass cannot reach. That location is left
+unchanged and no error is reported, while any supported location in the same
+fence is still rewritten:
 
 - `target` given as an inline table (`target = { ... }`) or as a string;
 - `[target]` with an inline selector value, such as
   `'cfg(unix)' = { dependencies = { ... } }`;
 - a dependency table nested below one selector level, such as
   `[target.'cfg(unix)'.nested.dependencies]`;
-- a dependency entry split across several headers, such as
-  `[target.'cfg(unix)'.dependencies.alpha]` followed by another
-  `[target.'cfg(unix)'.dependencies]` header.
+- a dependency entry whose sub-table is reopened after another header:
+  `[target.'cfg(unix)'.dependencies.alpha]`, then
+  `[target.'cfg(unix)'.dependencies]`, then
+  `[target.'cfg(unix)'.dependencies.alpha.package]`. `tomlkit` reads `alpha`
+  there as an out-of-order table, so it keeps its version while a plain sibling
+  entry such as `beta` in the same section is rewritten. Without the third
+  header `alpha` reads as an ordinary table and is rewritten normally.
 
 Target-specific tables inside a `Cargo.toml` are not rewritten by
 `lading bump`; only their documentation counterparts are. A bump rewrites the
