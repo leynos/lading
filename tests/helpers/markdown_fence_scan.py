@@ -61,6 +61,12 @@ def strip_quotes(line: str, depth: int) -> str | None:
         if match is None:
             return None
         remainder = remainder[match.end() :]
+    if remainder.startswith("\t"):
+        # A tab advances to the next four-column stop. The marker's content
+        # column is two per level, so keep the tab's remaining columns.
+        marker_column = depth * 2
+        tab_end = (marker_column // TAB_WIDTH + 1) * TAB_WIDTH
+        remainder = " " * (tab_end - marker_column) + remainder[1:]
     return remainder
 
 
@@ -111,7 +117,7 @@ def closes_fence(
     allowed = container_indent + MAX_FENCE_INDENT
     if indentation(line) > allowed:
         return False
-    stripped = line.strip()
+    stripped = line.rstrip("\r\n").strip(" \t")
     run = len(stripped) - len(stripped.lstrip(character))
     return run >= length and stripped == character * run
 
@@ -127,10 +133,16 @@ def dedent(line: str, indent: int) -> str:
     column = 0
     index = 0
     while index < len(line) and column < indent and line[index] in " \t":
-        column = (
-            column + 1 if line[index] != "\t" else (column // TAB_WIDTH + 1) * TAB_WIDTH
-        )
-        index += 1
+        if line[index] == " ":
+            column += 1
+            index += 1
+            continue
+        tab_end = (column // TAB_WIDTH + 1) * TAB_WIDTH
+        if tab_end <= indent:
+            column = tab_end
+            index += 1
+            continue
+        return " " * (tab_end - indent) + line[index + 1 :]
     return line[index:]
 
 
@@ -150,7 +162,7 @@ def list_context(raw: str, levels: list[int]) -> int:
     content = strip_quotes(raw, depth) or ""
     match = _LIST_ITEM.match(content)
     if match is not None:
-        content_start = _list_content_start(match)
+        content_start = _list_content_start(content, match)
         indent = _column_after(content[:content_start])
         while levels and levels[-1] >= indent:
             levels.pop()
@@ -182,7 +194,7 @@ def unmarked_fence_delimiter(
     content = strip_quotes(raw, depth) or ""
     list_item = _LIST_ITEM.match(content)
     if list_item is not None:
-        remainder = content[_list_content_start(list_item) :]
+        remainder = content[_list_content_start(content, list_item) :]
         too_indented = indentation(remainder) > MAX_FENCE_INDENT
     else:
         remainder = content
@@ -203,22 +215,24 @@ def list_item_end(content: str) -> int | None:
         ``None`` when ``content`` does not start with a list item.
     """
     match = _LIST_ITEM.match(content)
-    return _list_content_start(match) if match is not None else None
+    return _list_content_start(content, match) if match is not None else None
 
 
-def _list_content_start(match: re.Match[str]) -> int:
+def _list_content_start(content: str, match: re.Match[str]) -> int:
     """Return the offset where a matched list item's content begins."""
-    padding_width = _column_after(match.group("space"))
-    if padding_width > MAX_LIST_PADDING:
+    marker_end = match.start("space")
+    marker_column = _column_after(content[:marker_end])
+    padding_width = _column_after(match.group("space"), marker_column)
+    if padding_width - marker_column > MAX_LIST_PADDING:
         # CommonMark assigns one space as padding and treats the rest as
         # content indentation, which can make an apparent fence literal code.
-        return match.start("space") + 1
+        return marker_end + 1
     return match.end()
 
 
-def _column_after(text: str) -> int:
+def _column_after(text: str, start_column: int = 0) -> int:
     """Return the column reached after ``text`` with four-column tab stops."""
-    column = 0
+    column = start_column
     for character in text:
         column = (
             column + 1 if character != "\t" else (column // TAB_WIDTH + 1) * TAB_WIDTH

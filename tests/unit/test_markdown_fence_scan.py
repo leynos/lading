@@ -6,7 +6,9 @@ cases here pin the CommonMark rules that the tested-example loader relies on.
 """
 
 from tests.helpers.markdown_fence_scan import (
+    dedent,
     indentation,
+    strip_quotes,
     unmarked_fence_delimiter,
     unmarked_fence_end,
 )
@@ -54,4 +56,43 @@ def test_tab_indented_closing_fence_does_not_close() -> None:
 
     assert unmarked_fence_end(lines, 0, 0) == 4, (
         "the tab-indented line must not close the fence"
+    )
+
+
+def test_quote_marker_tab_keeps_its_remaining_columns() -> None:
+    """A tab after a quote marker leaves the columns beyond the marker."""
+    assert strip_quotes(">\t~~~python", 1) == "  ~~~python", (
+        "the marker consumes two columns of the tab's four"
+    )
+    assert unmarked_fence_delimiter(">\t~~~python", 0) == ("~", 3), (
+        "the remaining two columns still open a fence"
+    )
+
+
+def test_non_breaking_space_does_not_close_a_fence() -> None:
+    """Only spaces and tabs may pad a closing fence."""
+    lines = ["~~~text", "~~~\u00a0", "payload", "~~~"]
+
+    assert unmarked_fence_end(lines, 0, 0) == 4, (
+        "a non-breaking space is content, so the fence stays open"
+    )
+
+
+def test_dedent_retains_the_columns_beyond_a_partial_tab() -> None:
+    """A tab crossing the dedent boundary keeps its remaining columns."""
+    assert dedent("\tpass\n", 2) == "  pass\n", (
+        "only two of the tab's four columns may be removed"
+    )
+    assert dedent("\tpass\n", 4) == "pass\n", (
+        "a fully consumed tab leaves no indentation"
+    )
+
+
+def test_tabbed_list_padding_is_measured_from_the_marker_column() -> None:
+    """List padding is measured from where the marker ends, not column zero."""
+    assert unmarked_fence_delimiter("-   \t~~~python", 0) is None, (
+        "seven columns of padding leave indented code, not a fence"
+    )
+    assert unmarked_fence_delimiter("- \t~~~python", 0) == ("~", 3), (
+        "three columns of padding still open a fence"
     )
