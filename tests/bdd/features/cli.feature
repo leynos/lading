@@ -114,6 +114,15 @@ Feature: Lading CLI scaffolding
     And the documentation file "README.md" does not contain "version = \"1.2.3\""
     And the CLI output lists documentation path "- README.md (documentation)" once
 
+  Scenario: Bumping resolves documented dependency aliases by package
+    Given a workspace directory with configuration
+    And cargo metadata describes a sample workspace
+    And the workspace README documents a renamed dependency and a colliding key
+    And bump.documentation.globs contains "README.md"
+    When I invoke lading bump 1.2.3 with that workspace
+    Then the documentation file "README.md" contains "config_layer = { package = \"alpha\", version = \"1.2.3\" }"
+    And the documentation file "README.md" contains "alpha = { package = \"unrelated\", version = \"3.0.0\" }"
+
   Scenario: Bumping transposes workspace README to crates
     Given a workspace directory with configuration
     And cargo metadata describes a sample workspace

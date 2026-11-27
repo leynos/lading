@@ -210,21 +210,18 @@ def test_documentation_pass_rewrites_supported_locations_beside_unsupported() ->
 @pytest.mark.parametrize(
     ("entry", "expected_changed", "expected_version"),
     [
-        ('alpha-core = { package = "alpha", version = "1.0.0" }', False, "1.0.0"),
-        ('alpha = { package = "serde", version = "1.0.0" }', True, "2.0.0"),
+        ('alpha-core = { package = "alpha", version = "1.0.0" }', True, "2.0.0"),
+        ('alpha = { package = "serde", version = "1.0.0" }', False, "1.0.0"),
     ],
-    ids=["aliased-key", "workspace-key-with-foreign-package"],
+    ids=["aliased-key", "key-with-foreign-package"],
 )
-def test_documentation_pass_matches_fence_keys_literally(
+def test_documentation_pass_resolves_package_identity(
     entry: str, *, expected_changed: bool, expected_version: str
 ) -> None:
-    """Fence keys are matched as written; aliases are not resolved.
+    """Fence entries are identified by their ``package`` field, then their key.
 
-    Documented limit: the documentation pass is given crate names and has no
-    Cargo metadata, so it cannot map a crate to an aliased manifest key. The
-    manifest pass resolves that mapping from the workspace graph before calling
-    the same updater, so both passes match keys literally; only the manifest
-    pass knows which key an alias denotes.
+    An alias whose package is a bump target is rewritten, while a key that
+    names a target but declares a different package is left alone.
     """
     text = _toml_fence(f"[target.'cfg(unix)'.dependencies]\n{entry}\n")
 
@@ -291,36 +288,129 @@ def test_documentation_pass_rewrites_under_out_of_order_target_parent() -> None:
     assert document["target"]["cfg(unix)"]["dependencies"]["alpha"] == "2.0.0", updated
 
 
-def test_documentation_pass_skips_out_of_order_dependency_entry() -> None:
-    """An ``OutOfOrderTableProxy`` dependency entry keeps its recorded version.
+def test_documentation_pass_rewrites_out_of_order_dependency_entry() -> None:
+    """An ``OutOfOrderTableProxy`` dependency entry is rewritten in place.
 
-    Documented limitation: the shared updater recognizes ``Table`` and
-    ``InlineTable`` entries only, so an entry split across several headers is
-    skipped. The same skip applies to manifest rewriting, so the two passes
-    still agree; this test records the behaviour rather than endorsing it.
+    The shared updater mutates the proxy's ``version`` field, so an entry split
+    across several headers receives the target version like any other shape.
     """
     text = _toml_fence(
         "[target.'cfg(unix)'.dependencies.alpha]\n"
         'version = "1.0.0"\n'
         "[target.'cfg(unix)'.dependencies]\n"
         'beta = "1.0.0"\n'
-        "[target.'cfg(unix)'.dependencies.alpha.package]\n"
-        'name = "alpha"\n'
+        "[target.'cfg(unix)'.dependencies.alpha.metadata]\n"
+        'note = "alpha"\n'
     )
 
-    # Both names in one call: the proxy entry is skipped while the plain
-    # sibling in the same section is rewritten, so a pass that reached nothing
-    # could not report a change.
+    # Both names in one call: the proxy entry and the plain sibling in the
+    # same section must both be rewritten.
     updated, changed = bump_docs.rewrite_markdown_toml_fences(
         text, {"alpha", "beta"}, "2.0.0"
     )
 
-    assert changed is True, "the plain sibling entry must be rewritten"
+    assert changed is True, "both entries must be rewritten"
     document = parse_toml(_fence_body(updated))
     section = document["target"]["cfg(unix)"]["dependencies"]
     assert section["beta"] == "2.0.0", updated
-    assert section["alpha"]["version"] == "1.0.0", (
-        f"the out-of-order proxy entry must keep its version: {updated!r}"
+    assert section["alpha"]["version"] == "2.0.0", (
+        f"the out-of-order proxy entry must reach the target version: {updated!r}"
+    )
+
+
+_ALIAS_FENCE = (
+    "# Sample\n\n```toml\n[dependencies]\n"
+    'alias = { package = "alpha", version = "0.1.0" }\n'
+    'alpha = { package = "unrelated", version = "3.0.0" }\n'
+    "```\n"
+)
+
+
+@dc.dataclass(frozen=True, slots=True)
+class _AliasScenario:
+    """Parameters for a documented-alias bump scenario.
+
+    Attributes
+    ----------
+    test_id : str
+        Identifier used in assertion messages and the pytest parameter id.
+    exclude : tuple[str, ...]
+        Crate names excluded from the bump.
+    dry_run : bool
+        Whether the bump previews without writing.
+    expected_alias : str
+        The quoted version the documented alias must record afterwards.
+    expected_documents : int
+        The documentation-file count the summary must report.
+    """
+
+    test_id: str
+    exclude: tuple[str, ...] = ()
+    dry_run: bool = False
+    expected_alias: str = '"1.2.3"'
+    expected_documents: int = 1
+
+
+@pytest.mark.parametrize(
+    "scenario",
+    [
+        _AliasScenario(test_id="alias-updated"),
+        _AliasScenario(
+            test_id="excluded-crate",
+            exclude=("alpha",),
+            expected_alias='"0.1.0"',
+            expected_documents=0,
+        ),
+        _AliasScenario(
+            test_id="dry-run",
+            dry_run=True,
+            expected_alias='"0.1.0"',
+        ),
+    ],
+    ids=lambda scenario: scenario.test_id,
+)
+def test_run_resolves_documented_aliases(
+    tmp_path: pathlib.Path,
+    snapshot: SnapshotAssertion,
+    scenario: _AliasScenario,
+) -> None:
+    """Documentation identity follows ``package``, ``bump.exclude``, and dry runs."""
+    workspace = _make_workspace(tmp_path)
+    readme_path = tmp_path / "README.md"
+    written_readme = _ALIAS_FENCE
+    readme_path.write_text(written_readme, encoding="utf-8")
+    configuration = _make_config(
+        exclude=scenario.exclude,
+        documentation_globs=("README.md",),
+    )
+    options = bump.BumpOptions(configuration=configuration, workspace=workspace)
+    if scenario.dry_run:
+        options = dc.replace(options, dry_run=True)
+
+    message = bump.run(tmp_path, "1.2.3", options=options)
+
+    updated_readme = readme_path.read_text(encoding="utf-8")
+    expected_alias = scenario.expected_alias
+    assert f'alias = {{ package = "alpha", version = {expected_alias} }}' in (
+        updated_readme
+    ), (
+        f"{scenario.test_id}: the documented alias must resolve through its "
+        "package field"
+    )
+    assert 'alpha = { package = "unrelated", version = "3.0.0" }' in updated_readme, (
+        f"{scenario.test_id}: a key that renames another package must stay untouched"
+    )
+    if scenario.dry_run:
+        assert updated_readme == written_readme, (
+            f"{scenario.test_id}: a dry run must leave the documentation file "
+            "unmodified"
+        )
+        documents = scenario.expected_documents
+        assert f"{documents} documentation file(s)" in message, (
+            f"{scenario.test_id}: a dry run must still report the documentation file"
+        )
+    assert message == snapshot, (
+        f"{scenario.test_id}: the bump summary drifted from its recorded snapshot"
     )
 
 

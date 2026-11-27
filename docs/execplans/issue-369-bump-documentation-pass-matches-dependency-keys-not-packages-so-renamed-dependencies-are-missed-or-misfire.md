@@ -1,0 +1,370 @@
+# Identify documentation dependencies by `package`, not key, in `lading bump`
+
+This ExecPlan (execution plan) is a living document. The sections `Constraints`,
+`Tolerances`, `Risks`, `Progress`, `Surprises & discoveries`, `Decision log`,
+`Outcomes & retrospective`, `Conformance basis`, and `Verification plan` must
+be kept up to date as work proceeds.
+
+Status: IN PROGRESS
+
+Branch:
+`issue-369-bump-documentation-pass-matches-dependency-keys-not-packages-so-renamed-dependencies-are-missed-or-misfire`
+
+Issue: <https://github.com/leynos/lading/issues/369>
+
+Roadmap item: none; this is a defect fix tracked directly by the issue.
+
+## Purpose / big picture
+
+`lading bump` updates two kinds of version references: Cargo manifests and TOML
+code fences inside Markdown documentation. The manifest pass resolves a
+dependency to its real package through `cargo metadata`, so an aliased manifest
+entry such as `alpha-core = { package = "alpha", version = "1.0.0" }` is bumped
+when `alpha` is bumped. The documentation pass instead compares the
+dependency's **key** with the set of bumped crate names. Two defects follow:
+
+- A documented alias of a bumped crate is missed. In a Markdown fence,
+  `alias = { package = "alpha", version = "1.0.0" }` stays at `1.0.0` when
+  `alpha` moves to `2.0.0`. ortho-config's user's guide documents exactly this
+  shape (`config_layer = { package = "ortho_config", version = "0.9.0" }`) and
+  had to be bumped by hand.
+- A key that happens to equal a bumped crate name but renames a different
+  package is wrongly changed.
+  `alpha = { package = "unrelated", version = "3.0.0" }` becomes `2.0.0`.
+
+After this change, a TOML fence dependency is identified by its `package` field
+when that field is present, and by its key otherwise, matching the manifest
+pass. On the issue's reproducer,
+`rewrite_markdown_toml_fences(text, {"alpha"}, "2.0.0")` bumps the alias and
+leaves the unrelated package untouched. Manifest rewriting, the `[package]` and
+`[workspace.package]` version fields, and the documentation section scope
+(top-level `[dependencies]`, `[dev-dependencies]`, and `[build-dependencies]`
+only) are unchanged.
+
+## Conformance basis
+
+- Upstream issue: `leynos/lading#369`, including the two-direction reproducer
+  and the expected identity rule.
+- Repository requirements: `AGENTS.md` (test-first change quality, 400-line
+  module ceiling, Ruff complexity 8, en-GB-oxendict prose, documentation
+  maintenance), `docs/lading-design.md` Step 2.2 notes, and
+  `docs/users-guide.md` bump documentation.
+- Existing contract:
+  `lading/commands/bump_manifests.py::_dependency_sections_for_crate` records
+  `dependency.manifest_name` and is not changed by this plan.
+- Governing standard: TOML 1.0 table and inline-table syntax, and Cargo's
+  `package` dependency rename field.
+
+Trace links:
+
+```plaintext
+ISSUE-369-REQ-identity      -> EP-M1 -> tests/unit/test_dependency_sections.py
+ISSUE-369-REQ-inline        -> EP-M1 -> tests/unit/test_dependency_sections.py
+ISSUE-369-REQ-dotted        -> EP-M1 -> tests/unit/test_bump_toml_helpers.py
+ISSUE-369-REQ-pipeline      -> EP-M1 -> tests/unit/test_bump_documentation_updates.py
+ISSUE-369-REQ-cli           -> EP-M1 -> tests/bdd/features/cli.feature
+ISSUE-369-REQ-implementation -> EP-M2 -> lading/commands/bump_docs_fences.py
+ISSUE-369-REQ-mutation      -> EP-M2 -> lading/commands/bump_toml.py
+ISSUE-369-REQ-migration     -> EP-M3 -> docs/users-guide.md
+ISSUE-369-REQ-design        -> EP-M3 -> docs/lading-design.md
+```
+
+## Context and orientation
+
+The repository is a Python project (`requires-python >= 3.14`) with no Rust
+sources. The bump command lives in `lading/commands/`:
+
+- `bump.py` — command entry point and context construction.
+- `bump_pipeline.py` — ordered update stages.
+- `bump_prepare.py` — prepares manifest, documentation, README, and lockfile
+  proposals; `prepare_documentation` passes `context.updated_crate_names` as
+  `DocumentationUpdateRequest.updated_crates`.
+- `bump_docs.py` — documentation glob expansion; re-exports the fence helpers
+  from `bump_docs_fences.py`.
+- `bump_docs_fences.py` — Markdown fence discovery and TOML rewriting.
+  `update_toml_snippet_dependencies` currently calls
+  `bump_toml.update_dependency_table(table, dependency_targets, ...)`, which
+  matches entry keys directly.
+- `bump_toml.py` — shared TOML helpers. `update_dependency_table` iterates
+  names and calls `update_dependency_entry`, which dispatches `InlineTable` and
+  `Table` entries to `assign_dependency_version_field` and treats everything
+  else as a scalar requirement.
+- `bump_manifests.py` — manifest rewriting. `_dependency_sections_for_crate`
+  maps bumped crate names to manifest keys via `dependency.manifest_name`; it
+  is the reference behaviour and is unchanged.
+
+Tests live under `tests/unit`, `tests/bdd`, and `tests/e2e`. Shared workspace
+builders are in `tests/helpers/workspace_builders.py`; BDD fixtures are in
+`tests/bdd/steps/`. `syrupy` snapshots live in `tests/unit/__snapshots__/`.
+`make test` runs pytest with `--doctest-modules`.
+
+`tomlkit` 0.15.1 (locked in `uv.lock`) represents the relevant shapes as
+follows, verified by direct probing:
+
+- `alias = { package = "alpha", version = "1.0.0" }` — the entry is an
+  `InlineTable`.
+- `[dependencies.alias]` with `package`/`version` lines — the entry is a
+  `Table`.
+- `alias.package = "alpha"` plus `alias.version = "1.0.0"` — the entry is an
+  `OutOfOrderTableProxy`, and assigning `entry["version"]` rewrites the
+  original dotted line in place.
+- `[dependencies.alias]`, then an unrelated table, then
+  `[dependencies.beta]` — the **section** is an `OutOfOrderTableProxy`, and
+  `items()`, `in`, indexing, and item assignment all work on it.
+- `package` may legally be absent, empty, or a non-string type in a fence. An
+  absent field means "identify by key"; a present but unusable field means the
+  entry has no identity and must not be bumped.
+
+## Required outcome
+
+1. In documentation fences only, identify each dependency entry by its
+   `package` field when present, and by its key otherwise.
+2. Treat an entry whose `package` field is present but empty or non-string as
+   unidentifiable: never fall back to its key, and never raise.
+3. Preserve every unchanged behaviour: manifest rewriting, `[package]` and
+   `[workspace.package]` handling, exact rendering (field order, dotted syntax,
+   comments, trivia), idempotence, and the scope limit to the three top-level
+   canonical sections.
+4. Support mutating dotted-key dependency entries (an `OutOfOrderTableProxy`)
+   and dependency sections that are themselves out-of-order proxies.
+5. Cover the behaviour with unit, pipeline, and CLI behavioural tests, and
+   document the identity rule and its scope.
+
+Explicit non-goals: supporting `[workspace.dependencies]` or target-specific
+tables in documentation fences, changing the manifest pass, adding
+configuration knobs, or resolving aliases through `cargo metadata` for
+documentation snippets.
+
+## Constraints
+
+- Do not modify `lading/commands/bump_manifests.py` or its key selection.
+- Do not add `package` handling to `bump_toml.update_dependency_table`; it
+  must remain an exact-key operation for manifest callers.
+- Preserve the signatures of `rewrite_markdown_toml_fences`,
+  `update_toml_snippet_versions`, `update_toml_snippet_dependencies`, and
+  `update_documentation_files` (the last is re-exported by `bump_docs.py`).
+- No new runtime dependency. `tomlkit>=0.15,<0.16` is already declared.
+- New and edited production modules stay at or below 400 lines. Ruff
+  complexity ceiling 8; Pylint maximum five positional arguments.
+- Prose uses en-GB-oxendict spelling.
+- Implementation proceeds under the user's explicit instruction to implement
+  the supplied coding plan; the plan's milestones are authoritative.
+
+## Tolerances (exception triggers)
+
+Budgets are measured as net lines (additions minus deletions) against the
+current `HEAD` (`656506d5`). ExecPlan files are excluded from every count.
+
+- Files: more than 10 non-ExecPlan files changed.
+- Code: more than 700 net lines across production code and tests.
+- Configuration: more than 20 net lines (none expected).
+- Documentation: more than 150 net lines excluding ExecPlan files.
+- Interface: any public signature change beyond the annotation widening
+  authorized above.
+- Dependencies: any dependency change.
+- Iterations: a milestone still failing its focused tests after five fix
+  attempts.
+- Ambiguity: two valid interpretations that change observable behaviour.
+
+Stop and escalate if a threshold is reached.
+
+## Risks
+
+- Risk: tomlkit's `OutOfOrderTableProxy` may not expose the same mapping
+  protocol in every shape. Severity: medium. Likelihood: low. Mitigation: the
+  shapes were probed directly; the identity helper only relies on `in` and
+  `get`, and mutation goes through the widened `_TableLike` helper.
+- Risk: iterating `items()` on a section could include entries that are not
+  dependency declarations (for example the section itself when nested
+  differently). Severity: low. Likelihood: low. Mitigation: only top-level
+  canonical sections are selected, and non-table entries are identified by key,
+  matching previous behaviour.
+- Risk: a present-but-empty `package` key might be intended to fall back to
+  the key. Severity: low. Likelihood: low. Mitigation: the issue and this plan
+  specify that a present `package` field is authoritative, so the entry is
+  skipped.
+- Risk: comment/trivia preservation through a proxy assignment. Severity: low.
+  Likelihood: low. Mitigation: assignment reuses the existing
+  `prepare_version_replacement` trivia preservation; a test covers an inline
+  comment on a dotted line.
+
+## Progress
+
+- [x] (2026-11-27) Oriented in the repository; reproduced both defects against
+  `HEAD` with `rewrite_markdown_toml_fences`.
+- [x] (2026-11-27) Probed tomlkit 0.15.1 shapes for inline, nested, dotted,
+  and out-of-order dependency entries and sections.
+- [x] (2026-11-27) EP-M1: Wrote the regression tests (unit identity table,
+  fence reproducer, helper contracts, pipeline snapshots, BDD scenario). Red
+  baseline observed: 11 unit failures plus the BDD scenario failure, covering
+  both defect directions and the dotted-proxy latent defect.
+- [x] (2026-11-27) EP-M2: Implemented `_dependency_identity` and the
+  section-entry filter in `bump_docs_fences.py`; widened the table-like
+  dispatch in `bump_toml.py`. Focused unit tests now pass (46 passed), the
+  pipeline tests pass with three new snapshots, and the BDD scenario passes.
+- [x] (2026-11-27) `make check-fmt`, `make fmt`, `make lint`, `make typecheck`
+  and `make test` all pass. Test gate: 1755 passed, 31 skipped, 108 snapshots.
+  Lint needed three fixes: a `Returns` section on the private helper, a
+  seven-argument test collapsed into an `_AliasScenario` dataclass, and three
+  inline-literal assertions replaced with membership checks.
+- [ ] EP-M3: Update the user guide and design notes, add the plan to the
+  contents index, run the Markdown gates and the full commit gates, and record
+  the results.
+- [ ] Push the branch and open a draft pull request that closes #369.
+
+## Surprises & discoveries
+
+- Observation: tomlkit renders a dotted dependency pair (`alias.package`,
+  `alias.version`) as an `OutOfOrderTableProxy`, not a `Table`. The current
+  `update_dependency_entry` therefore treats it as a scalar requirement, finds
+  no string value, and silently does nothing. This is a second latent defect
+  that the issue does not name: dotted aliases were unreachable even by exact
+  key. Evidence: the probe transcript in `Context and orientation`.
+- Observation: a dependency section is an `OutOfOrderTableProxy` whenever its
+  sub-tables are separated by another table. The existing
+  `select_table`/`update_dependency_table` path handles this for exact keys, so
+  section traversal must also handle it.
+- Observation: `_TABLE_LIKE_TYPES` in `bump_toml.py` omits `InlineTable`; the
+  documentation identity helper needs all three table-like shapes.
+
+## Decision log
+
+- Decision: implement the identity rule in `bump_docs_fences.py`, not in
+  `bump_toml.update_dependency_table`. Rationale: the manifest pass must keep
+  exact-key semantics (`manifest_name` already resolves aliases), while the
+  documentation pass has no metadata-derived key mapping. Keeping the rule in
+  the documentation module prevents the two callers from diverging again.
+- Decision: use `"package" in entry` to distinguish an absent field from an
+  unusable one. Rationale: `value_as_string(...) or key` would silently fall
+  back to the key for an empty package, contradicting the specified rule.
+- Decision: widen `assign_dependency_version_field` to `_TableLike` and route
+  `OutOfOrderTableProxy` through the table-like branch of
+  `update_dependency_entry`. Rationale: dotted entries must mutate their
+  `version` field, and the proxy already supports indexing and assignment.
+- Decision: keep `_update_single_dependency_section` as the section unit and
+  give it the identity filter. Rationale: the existing structure already
+  isolates the per-section concern and keeps the public function small.
+- Decision: test rendered text rather than tomlkit types. Rationale: the
+  contract is the rewritten Markdown, not the parser's internal shape.
+
+## Milestones
+
+### EP-M1 — Failing regression tests
+
+Assigned requirements: `ISSUE-369-REQ-identity`, `-inline`, `-dotted`,
+`-pipeline`, `-cli`.
+
+Add tests first and confirm they fail for the expected reason:
+
+- `tests/unit/test_dependency_sections.py`: exact rendered output and changed
+  flags for inline, nested-table, and dotted aliases; a collision with another
+  package; interleaved dotted fields; key-based string and inline entries; a
+  matching key and package; multiple aliases; empty and non-string `package`
+  values; section scope; an already-current snippet; comments and field order.
+- `tests/unit/test_bump_toml_helpers.py`: exact-key contract on
+  `update_dependency_table` and dotted-proxy mutation through
+  `update_dependency_entry`.
+- `tests/unit/test_bump_docs_fences.py`: the issue's reproducer with an alias
+  and a collision in one fence.
+- `tests/unit/test_bump_documentation_updates.py`: pipeline updates for alias
+  and collision, `bump.exclude`, dry-run behaviour, and the documentation
+  summary; snapshots only for new summaries.
+- `tests/bdd/features/cli.feature` plus `tests/bdd/steps/`: a scenario where a
+  documented alias is bumped and a colliding key is not, with a step for
+  asserting that a fence does not contain a value.
+
+Acceptance: the new tests fail with the observed defect (alias unchanged,
+collision bumped, dotted alias untouched), while every existing test still
+passes.
+
+### EP-M2 — Implementation
+
+Assigned requirements: `ISSUE-369-REQ-implementation`, `-mutation`.
+
+- Add `_dependency_identity(key, entry)` to `bump_docs_fences.py` and filter
+  keys through it in `_update_single_dependency_section`.
+- Dispatch `OutOfOrderTableProxy` entries through the table-like branch of
+  `update_dependency_entry`, and widen `assign_dependency_version_field` to
+  `_TableLike`.
+- Update docstrings for identity selection and section scope.
+
+Acceptance: all EP-M1 tests pass; `make check-fmt`, `make lint`,
+`make typecheck`, and `make test` pass.
+
+### EP-M3 — Documentation and verification
+
+Assigned requirements: `ISSUE-369-REQ-migration`, `-design`.
+
+- Update the bump paragraph in `docs/users-guide.md`: package-field identity,
+  section scope, an alias example, and a migration note.
+- Update the Step 2.2 implementation notes in `docs/lading-design.md` with the
+  same rule and scope.
+- Add this plan to `docs/contents.md`.
+- Run `make fmt`, `make markdownlint`, `make nixie`, the focused pytest
+  command, and the full gates.
+
+Acceptance: the documentation states the rule and scope without implying
+support for `[workspace.dependencies]` or target-specific tables, and every
+gate passes with recorded evidence.
+
+## Verification plan
+
+Invariants:
+
+1. For every documented dependency entry, the rewritten version changes if and
+   only if the entry's identity is in the target set, its current requirement
+   differs from the target, and its entry shape can carry a version.
+2. Identity is the `package` field when present, and the key otherwise.
+3. A present-but-unusable `package` field (empty or non-string) yields no
+   identity, so the entry is neither bumped nor used as a fallback key.
+4. Entries outside the three canonical top-level sections never change.
+5. `[package].version` and `[workspace.package].version` handling is
+   independent of dependency identity.
+6. Rendering is idempotent, and unchanged fences are byte-identical.
+
+Lemmas:
+
+- L1: `update_dependency_table` remains an exact-key operation, so manifest
+  callers are unaffected by the documentation filter.
+- L2: `OutOfOrderTableProxy` supports `in`, `get`, indexing, and assignment,
+  so the widened dispatch can mutate dotted entries without new machinery.
+- L3: `Table.items()` and `OutOfOrderTableProxy.items()` both enumerate the
+  entries whose identity must be tested.
+
+Axioms: tomlkit 0.15.1's documented mapping behaviour for `Table`,
+`InlineTable`, and `OutOfOrderTableProxy`; MarkdownIt's fence tokenisation
+(unchanged by this plan).
+
+Methods and evidence:
+
+- Parameterized pytest examples for the finite identity truth table (inline,
+  nested table, dotted, scalar, empty package, non-string package, multiple
+  aliases, collisions, section scope, already-current), asserting exact
+  rendered text. Discharges invariants 1–5. Negative controls: the collision
+  and the empty-package cases must remain byte-identical.
+- A fence-level example (the issue reproducer) discharges the end-to-end
+  documentation contract and the changed flag.
+- Pipeline tests through `bump.run` discharge the wiring, `bump.exclude`, and
+  dry-run behaviour; snapshots pin the summary only.
+- The BDD CLI scenario provides a user-observable witness that a real command
+  invocation updates the alias and leaves the collision untouched.
+- A property/flakiness consideration: the existing
+  `test_snippet_rewrite_visits_exactly_canonical_sections` hypothesis test plus
+  the new examples cover the section partition; an open-ended generator adds no
+  evidence for the finite identity rule, so it is not required.
+- Non-vacuity: the red baseline transcript (alias unchanged, collision
+  changed) demonstrates that the assertions fail against the current
+  implementation for the intended reason. The dotted-proxy test would fail
+  under the current dispatch because the version field never changes.
+
+Residual gap: identity is not resolved through `cargo metadata`, so a
+documentation alias whose package is not a workspace member remains unaffected;
+that is intended.
+
+## Outcomes & retrospective
+
+Not yet complete. To be recorded after EP-M3.
+
+## Revision note
+
+- 2026-11-27: Initial draft, created before the failing tests were written.

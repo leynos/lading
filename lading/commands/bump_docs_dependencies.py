@@ -10,15 +10,14 @@ A rewrite visits:
 
 The first two groups match what the manifest pass rewrites. The target tables
 are documentation-only: the manifest pass leaves them alone because Cargo
-applies a target-specific requirement solely to the matching target. Fences are
-also not identical to manifests in another way: keys are matched as written, so
-an aliased entry is not resolved here.
+applies a target-specific requirement solely to the matching target.
 
-Only the dependency keys named by the caller are rewritten, and only their
-``version`` requirement. Keys are matched literally: the caller supplies crate
-names, and this module has no Cargo metadata to map a crate to an aliased
-manifest key. Four shapes are skipped without error because they cannot be
-updated in place:
+A dependency entry is identified by its ``package`` field when that field is
+present, and by its key when the field is absent, matching the manifest pass. A
+present but empty or non-string ``package`` field yields no identity, so the
+entry is skipped rather than matched on its key. Only an identified entry's
+``version`` requirement is rewritten. Four shapes are skipped without error
+because they cannot be updated in place:
 
 - ``target`` given as an inline table (``target = { ... }``) or as a scalar,
   which is not a table the traversal can descend;
@@ -30,14 +29,16 @@ updated in place:
   ``[target.'cfg(unix)'.nested.dependencies]``, whose Cargo meaning this module
   does not model.
 
-A dependency entry that tomlkit parses as an ``OutOfOrderTableProxy`` is also
-skipped: the shared updater recognizes only ``Table`` and ``InlineTable``
-entries. That limitation is shared with the manifest pass. An out-of-order
-``target`` parent is not skipped; only an out-of-order entry is.
+A dependency entry that tomlkit parses as an ``OutOfOrderTableProxy`` is
+supported: the shared entry dispatch rewrites its ``version`` field in place.
+An out-of-order ``target`` parent is supported too.
 """
 
 import collections.abc as cabc
 import typing as typ
+
+from tomlkit.container import OutOfOrderTableProxy
+from tomlkit.items import InlineTable, Table
 
 from lading.commands import bump_toml, bump_toml_dependencies
 
@@ -47,19 +48,63 @@ if typ.TYPE_CHECKING:  # pragma: no cover - import-time typing aids only
 __all__ = ["update_toml_snippet_dependencies"]
 
 
-def _dependency_sections(
+def _dependency_identity(key: str, entry: object) -> str | None:
+    """Return an entry's package rename, or its key when it declares none.
+
+    A ``package`` field that is present but empty or non-string is
+    authoritative, so such an entry has no identity and yields ``None`` rather
+    than falling back to the key.
+
+    Parameters
+    ----------
+    key : str
+        The dependency key as written in the TOML fence.
+    entry : object
+        The parsed dependency entry.
+
+    Returns
+    -------
+    str | None
+        The package the entry renames, its key when no ``package`` field is
+        present, or ``None`` when the field is present but unusable.
+    """
+    if not isinstance(entry, InlineTable | Table | OutOfOrderTableProxy):
+        return key
+    if "package" not in entry:
+        return key
+    return bump_toml.value_as_string(entry.get("package")) or None
+
+
+def _update_dependency_tables(
+    document: TOMLDocument | Table | InlineTable | OutOfOrderTableProxy,
+    prefix: tuple[str, ...],
     dependency_targets: cabc.Collection[str],
-) -> dict[str, cabc.Collection[str]]:
-    """Map every canonical section name to ``dependency_targets``."""
-    return dict.fromkeys(bump_toml_dependencies.DEPENDENCY_SECTIONS, dependency_targets)
+    target_version: str,
+) -> bool:
+    """Rewrite identified entries in each canonical section under ``prefix``."""
+    changed = False
+    for section in bump_toml_dependencies.DEPENDENCY_SECTIONS:
+        table = bump_toml.select_table(document, (*prefix, section))
+        if table is None:
+            continue
+        keys = {
+            key
+            for key, entry in table.items()
+            if _dependency_identity(key, entry) in dependency_targets
+        }
+        if keys and bump_toml_dependencies.update_dependency_table(
+            table, keys, target_version
+        ):
+            changed = True
+    return changed
 
 
 def _update_target_tables(
     document: TOMLDocument,
-    sections: cabc.Mapping[str, cabc.Collection[str]],
+    dependency_targets: cabc.Collection[str],
     target_version: str,
 ) -> bool:
-    """Rewrite dependency entries under each immediate ``target`` selector."""
+    """Rewrite identified entries under each immediate ``target`` selector."""
     target_root = bump_toml.select_table(document, ("target",))
     if target_root is None:
         return False
@@ -68,9 +113,10 @@ def _update_target_tables(
         table = bump_toml.select_table(target_root, (selector,))
         if table is None:
             continue
-        changed |= bump_toml_dependencies.update_dependency_sections(
-            table, sections, target_version
-        )
+        if _update_dependency_tables(
+            table, (), dependency_targets, target_version
+        ):
+            changed = True
     return changed
 
 
@@ -82,8 +128,10 @@ def update_toml_snippet_dependencies(
     r"""Update dependency sections in a TOML snippet document.
 
     The rewrite visits the top-level and ``[workspace.*]`` dependency sections,
-    then each ``[target.<spec>.<section>]`` table. Locations the traversal
-    cannot reach are skipped silently; see the module docstring for the list.
+    then each ``[target.<spec>.<section>]`` table. Each entry is identified by
+    its ``package`` field when that field is present, and by its key when the
+    field is absent. Locations the traversal cannot reach are skipped silently;
+    see the module docstring for the list.
 
     Parameters
     ----------
@@ -111,14 +159,13 @@ def update_toml_snippet_dependencies(
     if not dependency_targets:
         return False
 
-    sections = _dependency_sections(dependency_targets)
-    changed = bump_toml_dependencies.update_dependency_sections(
-        document,
-        sections,
-        target_version,
-        include_workspace_sections=True,
+    changed = _update_dependency_tables(
+        document, (), dependency_targets, target_version
     )
-    # Evaluated even when the first pass already reported a change, so a
+    changed |= _update_dependency_tables(
+        document, ("workspace",), dependency_targets, target_version
+    )
+    # Evaluated even when an earlier pass already reported a change, so a
     # short-circuit ``or`` would hide updates (and regressions) below.
-    changed |= _update_target_tables(document, sections, target_version)
+    changed |= _update_target_tables(document, dependency_targets, target_version)
     return changed

@@ -1,4 +1,29 @@
 # serializer version: 1
+# name: test_run_resolves_documented_aliases[alias-updated]
+  '''
+  Updated version to 1.2.3 in 3 manifest(s) and 1 documentation file(s):
+  - Cargo.toml
+  - crates/alpha/Cargo.toml
+  - crates/beta/Cargo.toml
+  - README.md (documentation)
+  '''
+# ---
+# name: test_run_resolves_documented_aliases[dry-run]
+  '''
+  Dry run; would update version to 1.2.3 in 3 manifest(s) and 1 documentation file(s):
+  - Cargo.toml
+  - crates/alpha/Cargo.toml
+  - crates/beta/Cargo.toml
+  - README.md (documentation)
+  '''
+# ---
+# name: test_run_resolves_documented_aliases[excluded-crate]
+  '''
+  Updated version to 1.2.3 in 2 manifest(s):
+  - Cargo.toml
+  - crates/beta/Cargo.toml
+  '''
+# ---
 # name: test_run_rewrites_workspace_and_target_fences
   '''
   Updated version to 1.2.3 in 3 manifest(s) and 1 documentation file(s):

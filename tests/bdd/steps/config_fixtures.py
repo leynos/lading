@@ -378,3 +378,22 @@ def given_workspace_readme_snippet(workspace_directory: Path, crate_name: str) -
         """
     ).lstrip()
     readme_path.write_text(content, encoding="utf-8")
+
+
+@given("the workspace README documents a renamed dependency and a colliding key")
+def given_workspace_readme_documents_aliases(workspace_directory: Path) -> None:
+    """Write a README fence with a renamed dependency and a colliding key.
+
+    ``config_layer`` renames the workspace crate ``alpha`` and must be bumped;
+    ``alpha`` renames the unrelated package and must keep its own version.
+    """
+    readme_path = workspace_directory / "README.md"
+    readme_path.write_text(
+        "# Usage\n\n"
+        "```toml\n"
+        "[dependencies]\n"
+        'config_layer = { package = "alpha", version = "0.1.0" }\n'
+        'alpha = { package = "unrelated", version = "3.0.0" }\n'
+        "```\n",
+        encoding="utf-8",
+    )
