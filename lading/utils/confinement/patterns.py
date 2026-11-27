@@ -17,7 +17,6 @@ from lading.utils.confinement.errors import UnsafeBumpTargetError
 __all__ = ["validate_relative_pattern"]
 
 _WINDOWS_DRIVE_QUALIFIER: typ.Final[re.Pattern[str]] = re.compile(r"^[A-Za-z]:")
-_PATH_SEPARATORS: typ.Final[re.Pattern[str]] = re.compile(r"[\\/]")
 
 
 def validate_relative_pattern(pattern: str, *, key: str) -> tuple[str, ...]:
