@@ -1,5 +1,6 @@
 """Unit tests for low-level bump TOML table and version helpers."""
 
+import dataclasses as dc
 import os
 from pathlib import Path
 
@@ -125,84 +126,77 @@ def test_replace_string_version_handles_absent_table() -> None:
     )
 
 
-def test_replace_string_version_does_not_insert_a_missing_key() -> None:
-    """A table without a ``version`` key is never given one."""
-    table = parse_toml('[package]\nname = "demo"\n')["package"]
+@dc.dataclass(frozen=True, slots=True)
+class _ReplaceScenario:
+    """One replace-only version case and its expected table rendering."""
 
-    assert bump_toml.replace_string_version(table, "2.0.0") is False, (
-        "the documentation helper must not insert a missing version"
+    test_id: str
+    snippet: str
+    expected_changed: bool
+    expected_table: str
+
+
+_REPLACE_SCENARIOS = (
+    _ReplaceScenario(
+        test_id="missing-key",
+        snippet='[package]\nname = "demo"\n',
+        expected_changed=False,
+        expected_table='name = "demo"\n',
+    ),
+    _ReplaceScenario(
+        test_id="differing-string",
+        snippet='[package]\nversion = "0.1.0"\n',
+        expected_changed=True,
+        expected_table='version = "2.0.0"\n',
+    ),
+    _ReplaceScenario(
+        test_id="equal-string",
+        snippet='[package]\nversion = "2.0.0" # pinned\n',
+        expected_changed=False,
+        expected_table='version = "2.0.0" # pinned\n',
+    ),
+    _ReplaceScenario(
+        test_id="inline-comment-preserved",
+        snippet='[package]\nversion = "0.1.0" # keep\n',
+        expected_changed=True,
+        expected_table='version = "2.0.0" # keep\n',
+    ),
+    _ReplaceScenario(
+        test_id="inherited-dotted",
+        snippet="[package]\nversion.workspace = true\n",
+        expected_changed=False,
+        expected_table="version.workspace = true\n",
+    ),
+    _ReplaceScenario(
+        test_id="inherited-inline",
+        snippet="[package]\nversion = { workspace = true }\n",
+        expected_changed=False,
+        expected_table="version = { workspace = true }\n",
+    ),
+    _ReplaceScenario(
+        test_id="boolean-value",
+        snippet="[package]\nversion = true\n",
+        expected_changed=False,
+        expected_table="version = true\n",
+    ),
+)
+
+
+@pytest.mark.parametrize("scenario", _REPLACE_SCENARIOS, ids=lambda s: s.test_id)
+def test_replace_string_version_only_replaces_a_differing_string(
+    scenario: _ReplaceScenario,
+) -> None:
+    """Only an existing differing string version is replaced."""
+    table = parse_toml(scenario.snippet)["package"]
+
+    changed = bump_toml.replace_string_version(table, "2.0.0")
+
+    assert changed is scenario.expected_changed, (
+        f"{scenario.test_id}: unexpected change result for {scenario.snippet!r}"
     )
-    assert "version" not in table, (
-        "a missing version key must stay missing after the replace-only helper"
+    assert table.as_string() == scenario.expected_table, (
+        f"{scenario.test_id}: unexpected rendering for {scenario.snippet!r}"
     )
-
-
-def test_replace_string_version_replaces_a_differing_string() -> None:
-    """A differing string version is replaced."""
-    table = parse_toml('[package]\nversion = "0.1.0"\n')["package"]
-
-    assert bump_toml.replace_string_version(table, "2.0.0") is True, (
-        "a differing string version should report a change"
-    )
-    assert table["version"] == "2.0.0", "the differing version should be replaced"
-
-
-def test_replace_string_version_detects_an_equal_string() -> None:
-    """An equal string version reports no change and keeps its trivia."""
-    table = parse_toml('[package]\nversion = "2.0.0" # pinned\n')["package"]
-
-    assert bump_toml.replace_string_version(table, "2.0.0") is False, (
-        "a version already at the target should report no change"
-    )
-    assert "# pinned" in table.as_string(), (
-        "an untouched version must keep its inline comment"
-    )
-
-
-def test_replace_string_version_preserves_inline_trivia() -> None:
-    """Replacing a value keeps its trailing comment."""
-    table = parse_toml('[package]\nversion = "0.1.0" # keep\n')["package"]
-
-    assert bump_toml.replace_string_version(table, "2.0.0") is True, (
-        "the differing version should be replaced"
-    )
-    assert table.as_string() == 'version = "2.0.0" # keep\n', (
-        "the trailing comment and spacing must survive the replacement"
-    )
-
-
-def test_replace_string_version_leaves_inherited_dotted_tables_alone() -> None:
-    """``version.workspace = true`` is a table, not a string to replace."""
-    table = parse_toml("[package]\nversion.workspace = true\n")["package"]
-
-    assert bump_toml.replace_string_version(table, "2.0.0") is False, (
-        "a dotted inheritance table must not be replaced"
-    )
-    assert table.as_string() == "version.workspace = true\n", (
-        "dotted inheritance must survive unchanged"
-    )
-
-
-def test_replace_string_version_leaves_inline_tables_alone() -> None:
-    """An inline ``{ workspace = true }`` value is not a string to replace."""
-    table = parse_toml("[package]\nversion = { workspace = true }\n")["package"]
-
-    assert bump_toml.replace_string_version(table, "2.0.0") is False, (
-        "an inline inheritance table must not be replaced"
-    )
-    assert table.as_string() == "version = { workspace = true }\n", (
-        "inline inheritance must survive unchanged"
-    )
-
-
-def test_replace_string_version_leaves_booleans_alone() -> None:
-    """A boolean version value is not a string to replace."""
-    table = parse_toml("[package]\nversion = true\n")["package"]
-
-    assert bump_toml.replace_string_version(table, "2.0.0") is False, (
-        "a boolean version must not be replaced"
-    )
-    assert table["version"] is True, "a boolean version must keep its type"
 
 
 def test_replace_string_version_works_with_out_of_order_table() -> None:
