@@ -385,3 +385,18 @@ def test_package_gate_agrees_with_the_selected_table() -> None:
     assert bump_toml.value_as_string(package.get("name")) == "alpha", (
         "the gate must read the package name through value_as_string"
     )
+
+
+def test_inline_package_tables_are_left_alone() -> None:
+    """The documentation pass does not descend into inline tables."""
+    snippet = (
+        'package = { name = "alpha", version = "0.1.0" }\n\n'
+        '[workspace.package]\nversion = "0.1.0"\n'
+    )
+
+    updated, changed = _rewrite(snippet)
+
+    assert not changed, (
+        "inline shapes are outside the documentation pass, as select_table documents"
+    )
+    assert updated == snippet, "an inline package table must round-trip"

@@ -102,13 +102,15 @@ class _LoadState:
     path: Path
     require_markers: bool
     examples: dict[str, MarkedExample]
-    list_levels: list[int] = dc.field(default_factory=list)
+    list_levels: dict[int, list[int]] = dc.field(default_factory=dict)
 
 
 def _load_line(state: _LoadState, index: int) -> int:
     """Load one line, returning the next index to inspect."""
     raw = state.lines[index]
-    list_indent = list_context(raw, state.list_levels)
+    depth = quote_depth(raw)
+    levels = state.list_levels.setdefault(depth, [])
+    list_indent = list_context(raw, levels)
     marker = _marker_at(raw, state.path, index, list_indent)
     if marker is None:
         return _skip_line(state, index, list_indent)
@@ -160,7 +162,7 @@ def _marker_at(
     """Return the marker on ``raw``, or ``None`` when it carries none."""
     depth = quote_depth(raw)
     content = strip_quotes(raw, depth) or ""
-    item_end = list_item_end(content)
+    item_end = list_item_end(content, list_indent)
     marker_text = (content[item_end:] if item_end is not None else content).strip()
     container_indent = list_indent
     if not marker_text.startswith("<!-- tested-example:"):

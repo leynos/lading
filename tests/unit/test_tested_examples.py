@@ -115,6 +115,39 @@ def test_loader_reads_a_marked_example_after_a_list_fence_outdent(
     )
 
 
+def test_loader_reads_a_marker_in_a_nested_list_item(tmp_path: Path) -> None:
+    """A marker indented inside nested list items is recognised."""
+    path = _write(
+        tmp_path,
+        "- outer\n  - inner\n    - <!-- tested-example: nested -->\n"
+        "      ```bash\n      echo ok\n      ```\n",
+    )
+
+    examples = load_tested_examples(path)
+
+    assert set(examples) == {"nested"}, (
+        "the marker inside the nested list item must be recognised"
+    )
+    assert examples["nested"].body == "echo ok", "the nested example must be parsed"
+
+
+def test_loader_does_not_read_a_quote_indented_literal_fence(
+    tmp_path: Path,
+) -> None:
+    """Four content spaces inside a quote are indented code, not a fence."""
+    path = _write(
+        tmp_path,
+        "- item\n\n>     ```text\n>     literal\n\n"
+        "<!-- tested-example: real -->\n```bash\necho real\n```\n",
+    )
+
+    examples = load_tested_examples(path)
+
+    assert set(examples) == {"real"}, (
+        "the literal fence must not be reported and the real example must load"
+    )
+
+
 def test_loader_rejects_a_malformed_marker(tmp_path: Path) -> None:
     """A marker without an identifier fails the load."""
     path = _write(

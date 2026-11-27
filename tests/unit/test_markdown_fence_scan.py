@@ -8,6 +8,8 @@ cases here pin the CommonMark rules that the tested-example loader relies on.
 from tests.helpers.markdown_fence_scan import (
     dedent,
     indentation,
+    list_item_end,
+    quote_depth,
     strip_quotes,
     unmarked_fence_delimiter,
     unmarked_fence_end,
@@ -119,4 +121,24 @@ def test_non_breaking_space_does_not_open_a_fence() -> None:
     """Only spaces and tabs may precede an opening fence."""
     assert unmarked_fence_delimiter("\u00a0~~~text", 0) is None, (
         "a non-breaking space is content, not indentation"
+    )
+
+
+def test_tab_separated_quote_markers_are_counted_and_stripped() -> None:
+    """A tab between quote markers is structural padding."""
+    assert quote_depth(">\t> x") == 2, (
+        "both quote markers must be counted across the tab"
+    )
+    assert strip_quotes(">\t> x", 2) == "x", (
+        "both markers and their tab padding must be removed"
+    )
+
+
+def test_nested_list_marker_uses_its_container_indent() -> None:
+    """A marker within its nested container is accepted, indented code is not."""
+    assert list_item_end("    - <!-- tested-example: nested -->", 4) == 6, (
+        "four spaces are within a container at column four"
+    )
+    assert list_item_end("        - code", 4) is None, (
+        "eight spaces are more than three beyond the container"
     )

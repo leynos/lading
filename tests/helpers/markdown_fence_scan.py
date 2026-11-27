@@ -43,12 +43,39 @@ def without_container(line: str) -> str:
     return _CONTAINER_MARKERS.sub("", line).strip()
 
 
+def _strip_one_quote(line: str, column: int) -> tuple[str, int, bool] | None:
+    """Strip one block-quote marker, expanding a following tab.
+
+    Returns
+    -------
+    tuple[str, int, bool] | None
+        The remaining text, the column where it starts, and whether a padding
+        space was consumed, or ``None`` when ``line`` opens no marker.
+    """
+    match = _QUOTE_TOKEN.match(line)
+    if match is None:
+        return None
+    consumed = line[: match.end()]
+    new_column = _column_after(consumed, column)
+    padding_consumed = consumed.endswith(" ")
+    remainder = line[match.end() :]
+    if remainder.startswith("\t"):
+        # A tab advances to the next four-column stop. Without a padding
+        # space the tab itself supplies the marker's one-space padding, so
+        # keep only the columns beyond the marker's content column.
+        tab_end = (new_column // TAB_WIDTH + 1) * TAB_WIDTH
+        content_column = new_column if padding_consumed else new_column + 1
+        remainder = " " * max(tab_end - content_column, 0) + remainder[1:]
+    return remainder, new_column, padding_consumed
+
+
 def quote_depth(line: str) -> int:
     """Return the number of block-quote markers that prefix ``line``."""
     depth = 0
     remainder = line
-    while (match := _QUOTE_TOKEN.match(remainder)) is not None:
-        remainder = remainder[match.end() :]
+    column = 0
+    while (step := _strip_one_quote(remainder, column)) is not None:
+        remainder, column, _ = step
         depth += 1
     return depth
 
@@ -57,36 +84,12 @@ def strip_quotes(line: str, depth: int) -> str | None:
     """Remove ``depth`` block-quote markers, or ``None`` when the quote ends."""
     remainder = line
     column = 0
-    padding_consumed = False
     for _ in range(depth):
-        match = _QUOTE_TOKEN.match(remainder)
-        if match is None:
+        step = _strip_one_quote(remainder, column)
+        if step is None:
             return None
-        consumed = remainder[: match.end()]
-        column = _column_after(consumed, column)
-        padding_consumed = consumed.endswith(" ")
-        remainder = remainder[match.end() :]
-    return _strip_quote_tab(
-        remainder, column, padding_consumed=padding_consumed, depth=depth
-    )
-
-
-def _strip_quote_tab(
-    remainder: str,
-    column: int,
-    *,
-    padding_consumed: bool,
-    depth: int,
-) -> str:
-    """Expand a tab that directly follows the final quote marker."""
-    if not depth or not remainder.startswith("\t"):
-        return remainder
-    # A tab advances to the next four-column stop. Without a padding space
-    # the tab itself supplies the marker's one-space padding, so keep only
-    # the columns beyond the marker's content column.
-    tab_end = (column // TAB_WIDTH + 1) * TAB_WIDTH
-    content_column = column if padding_consumed else column + 1
-    return " " * max(tab_end - content_column, 0) + remainder[1:]
+        remainder, column, _ = step
+    return remainder
 
 
 def fence_delimiter(line: str) -> tuple[str, int] | None:
@@ -246,17 +249,25 @@ def _list_item(content: str, container_indent: int) -> re.Match[str] | None:
     return match
 
 
-def list_item_end(content: str) -> int | None:
+def list_item_end(content: str, container_indent: int = 0) -> int | None:
     """Return the content start of a leading list item, or ``None``.
+
+    Parameters
+    ----------
+    content : str
+        The line content after any block-quote markers.
+    container_indent : int, optional
+        The content column of the enclosing container.
 
     Returns
     -------
     int | None
         The offset where the item's content begins, after at most one space of
         marker padding when more than four spaces follow the marker, or
-        ``None`` when ``content`` does not start with a list item.
+        ``None`` when ``content`` does not start with a list item within
+        ``container_indent``.
     """
-    match = _list_item(content, 0)
+    match = _list_item(content, container_indent)
     return _list_content_start(content, match) if match is not None else None
 
 
