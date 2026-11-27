@@ -121,7 +121,7 @@ follows, verified by direct probing:
 ## Required outcome
 
 1. In documentation fences only, identify each dependency entry by its
-   `package` field when present, and by its key otherwise.
+   `package` field when present, and by its key when the field is absent.
 2. Treat an entry whose `package` field is present but empty or non-string as
    unidentifiable: never fall back to its key, and never raise.
 3. Preserve every unchanged behaviour: manifest rewriting, `[package]` and
@@ -423,7 +423,7 @@ replacement helper; that behaviour is unchanged and out of scope.
 ## Outcomes & retrospective
 
 The documentation pass now identifies a fence dependency by its `package` field
-when present and non-empty, and by its key otherwise. The issue's reproducer
+when present, and by its key when the field is absent. The issue's reproducer
 behaves as specified: `alias = { package = "alpha" }` is bumped and
 `alpha = { package = "unrelated" }` is not. The fix also made dotted dependency
 keys reachable for the first time, because `OutOfOrderTableProxy` entries now

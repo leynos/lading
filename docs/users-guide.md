@@ -455,7 +455,7 @@ version = "0.1.0"
 ```
 
 A documented dependency is identified by its `package` field when that field is
-present and non-empty, and by its key otherwise. This matches how the manifest
+present, and by its key when the field is absent. This matches how the manifest
 pass resolves a dependency, so a renamed dependency is bumped under either
 spelling:
 
