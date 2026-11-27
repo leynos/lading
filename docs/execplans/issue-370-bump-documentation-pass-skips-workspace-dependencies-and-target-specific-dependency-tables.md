@@ -225,6 +225,17 @@ plan of work.
   leaving 371 and 163 lines. The dry-run step now compares `read_bytes()`,
   because `read_text` normalizes line endings. The module docstring now
   separates what the two passes share from what is documentation-only.
+- [x] (2026-11-27) The second follow-up accepted the file split and the manifest
+  wording, and raised a real platform gap: the dry-run fixture compared
+  `read_bytes()` against a re-encoding of the source text, which assumes the
+  platform's newline handling and could fail on a system that translates them.
+  The fixture now captures the file's bytes immediately after writing and
+  compares those, so the assertion is against what was actually written.
+- [x] (2026-11-27) Hosted CodeScene failed on the split, reporting code
+  duplication in the new publish-step module: the two "invoked for each crate"
+  assertions and two publish-invocation steps were structurally identical. Both
+  pairs are collapsed, and the local `cs delta` against the base now reports
+  `test_e2e_steps.py` improved from 9.38 to 10.00 with no new issue.
 
 ## Surprises & discoveries
 

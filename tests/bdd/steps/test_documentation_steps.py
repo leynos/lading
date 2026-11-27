@@ -15,18 +15,20 @@ from pytest_bdd import given, parsers, then
 
 @dc.dataclass(frozen=True, slots=True)
 class DocumentationFenceFixture:
-    """The documentation fence a scenario wrote and the text it started with.
+    """The documentation fence a scenario wrote and the bytes it left.
 
     Attributes
     ----------
     crate_name : str
         The crate whose dependency entries the fences declare.
-    original_content : str
-        The complete README text written before the bump ran.
+    original_bytes : bytes
+        The file's bytes read back immediately after writing, so a later
+        comparison is against what was actually written rather than against a
+        re-encoding that would assume the platform's newline handling.
     """
 
     crate_name: str
-    original_content: str
+    original_bytes: bytes
 
 
 def _dependency_fences(crate_name: str, version: str) -> str:
@@ -59,9 +61,11 @@ def given_workspace_readme_workspace_and_target_snippets(
     workspace_directory: Path, crate_name: str
 ) -> DocumentationFenceFixture:
     """Write a README whose fences show a workspace and a target dependency."""
-    content = _dependency_fences(crate_name, "0.1.0")
-    (workspace_directory / "README.md").write_text(content, encoding="utf-8")
-    return DocumentationFenceFixture(crate_name=crate_name, original_content=content)
+    readme_path = workspace_directory / "README.md"
+    readme_path.write_text(_dependency_fences(crate_name, "0.1.0"), encoding="utf-8")
+    return DocumentationFenceFixture(
+        crate_name=crate_name, original_bytes=readme_path.read_bytes()
+    )
 
 
 @then(
@@ -92,6 +96,6 @@ def then_documentation_file_unchanged(
     endings, which would hide a rewrite that changed them.
     """
     contents = (cli_run["workspace"] / "README.md").read_bytes()
-    assert contents == documentation_fence.original_content.encode("utf-8"), (
+    assert contents == documentation_fence.original_bytes, (
         f"a dry run must not modify the documentation file: {contents!r}"
     )
