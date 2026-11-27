@@ -61,16 +61,35 @@ def _documentation_text(cli_run: dict[str, typ.Any], relative_path: str) -> str:
     return (cli_run["workspace"] / relative_path).read_text(encoding="utf-8")
 
 
+def _assert_documentation_fragment(
+    cli_run: dict[str, typ.Any],
+    relative_path: str,
+    fragment: str,
+    *,
+    should_contain: bool,
+) -> None:
+    """Assert the documentation file contains or omits ``fragment``."""
+    normalized = fragment.replace(r"\"", '"')
+    contents = _documentation_text(cli_run, relative_path)
+    if should_contain:
+        assert normalized in contents, (
+            f"the documentation file {relative_path!r} must contain {fragment!r} "
+            "after the bump"
+        )
+    else:
+        assert normalized not in contents, (
+            f"the documentation file {relative_path!r} must not contain "
+            f"{fragment!r} after the bump; got:\n{contents}"
+        )
+
+
 @then(parsers.parse('the documentation file "{relative_path}" contains "{expected}"'))
 def then_documentation_contains(
     cli_run: dict[str, typ.Any], relative_path: str, expected: str
 ) -> None:
     """Assert that ``expected`` appears in the specified documentation file."""
-    normalized_expected = expected.replace(r"\"", '"')
-    contents = _documentation_text(cli_run, relative_path)
-    assert normalized_expected in contents, (
-        f"the documentation file {relative_path!r} must contain {expected!r} "
-        "after the bump"
+    _assert_documentation_fragment(
+        cli_run, relative_path, expected, should_contain=True
     )
 
 
@@ -83,11 +102,8 @@ def then_documentation_does_not_contain(
     cli_run: dict[str, typ.Any], relative_path: str, unexpected: str
 ) -> None:
     """Assert that ``unexpected`` is absent from the documentation file."""
-    normalized_unexpected = unexpected.replace(r"\"", '"')
-    contents = _documentation_text(cli_run, relative_path)
-    assert normalized_unexpected not in contents, (
-        f"the documentation file {relative_path!r} must not contain "
-        f"{unexpected!r} after the bump; got:\n{contents}"
+    _assert_documentation_fragment(
+        cli_run, relative_path, unexpected, should_contain=False
     )
 
 
