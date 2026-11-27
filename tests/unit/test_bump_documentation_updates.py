@@ -6,7 +6,7 @@ import typing as typ
 
 import pytest
 
-from lading.commands import bump, bump_pipeline
+from lading.commands import bump, bump_docs, bump_pipeline
 from lading.commands.bump_readme import ReadmeTranspositionError
 from tests.helpers.path_normalization import normalized
 from tests.helpers.workspace_builders import (
@@ -28,6 +28,56 @@ class _ReadmeTransposeScenario:
     test_id: str
     exclude: tuple[str, ...] = ()
     check_version_unchanged: bool = False
+
+
+def _toml_fence(snippet: str) -> str:
+    """Return ``snippet`` wrapped in a fenced TOML code block."""
+    return f"```toml\n{snippet}```\n"
+
+
+def _rewrite_fence(text: str) -> tuple[str, bool]:
+    """Rewrite fenced TOML for the ``alpha`` crate to version ``2.0.0``."""
+    return bump_docs.rewrite_markdown_toml_fences(text, {"alpha"}, "2.0.0")
+
+
+def _assert_alpha_rewritten(text: str) -> None:
+    """Assert the documentation pass rewrites ``alpha`` inside ``text``."""
+    updated, changed = _rewrite_fence(text)
+    assert changed is True, f"the documentation pass must rewrite {text!r}"
+    assert 'alpha = "2.0.0"' in updated, updated
+
+
+def test_documentation_pass_rewrites_workspace_and_target_tables() -> None:
+    """The two dependency locations reported in issue #370 are rewritten."""
+    _assert_alpha_rewritten(_toml_fence('[workspace.dependencies]\nalpha = "1.0.0"\n'))
+    _assert_alpha_rewritten(
+        _toml_fence("[target.'cfg(unix)'.dependencies]\nalpha = \"1.0.0\"\n")
+    )
+
+
+@pytest.mark.parametrize(
+    "section", ["dependencies", "dev-dependencies", "build-dependencies"]
+)
+def test_documentation_pass_rewrites_workspace_sections(section: str) -> None:
+    """Every canonical section is rewritten under ``[workspace]``."""
+    _assert_alpha_rewritten(_toml_fence(f'[workspace.{section}]\nalpha = "1.0.0"\n'))
+
+
+@pytest.mark.parametrize(
+    "selector",
+    ["'cfg(unix)'", '"cfg(windows)"', "x86_64-unknown-linux-gnu"],
+    ids=["single-quoted-cfg", "double-quoted-cfg", "bare-triple"],
+)
+@pytest.mark.parametrize(
+    "section", ["dependencies", "dev-dependencies", "build-dependencies"]
+)
+def test_documentation_pass_rewrites_target_selector_variants(
+    selector: str, section: str
+) -> None:
+    """Target-specific tables are rewritten for every selector and section."""
+    _assert_alpha_rewritten(
+        _toml_fence(f'[target.{selector}.{section}]\nalpha = "1.0.0"\n')
+    )
 
 
 def test_readme_transposition_failure_propagates_from_preparation(

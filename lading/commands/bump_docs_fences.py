@@ -15,6 +15,9 @@ from tomlkit import parse as parse_toml
 from tomlkit.exceptions import TOMLKitError
 
 from lading.commands import bump_toml
+from lading.commands.bump_docs_dependencies import (
+    update_toml_snippet_dependencies as update_toml_snippet_dependencies,
+)
 
 if typ.TYPE_CHECKING:  # pragma: no cover - import-time typing aids only
     from markdown_it.token import Token
@@ -317,53 +320,6 @@ def _try_assign_version_at_path(
     return bump_toml.assign_version(
         bump_toml.select_table(document, path), target_version
     )
-
-
-def _update_single_dependency_section(
-    document: TOMLDocument,
-    section: str,
-    dependency_targets: cabc.Collection[str],
-    target_version: str,
-) -> bool:
-    """Update a single dependency section if it exists."""
-    table = bump_toml.select_table(document, (section,))
-    if table is None:
-        return False
-    return bump_toml.update_dependency_table(table, dependency_targets, target_version)
-
-
-def update_toml_snippet_dependencies(
-    document: TOMLDocument,
-    dependency_targets: cabc.Collection[str],
-    target_version: str,
-) -> bool:
-    """Update dependency sections in a TOML snippet document.
-
-    Parameters
-    ----------
-    document
-        A parsed TOML document to modify in place.
-    dependency_targets
-        Names of crates whose dependency entries should be updated.
-    target_version
-        The version string to apply to matching entries.
-
-    Returns
-    -------
-    bool
-        True if any dependency entries were updated.
-
-    """
-    if not dependency_targets:
-        return False
-
-    changed = False
-    for section in bump_toml.DEPENDENCY_SECTIONS:
-        if _update_single_dependency_section(
-            document, section, dependency_targets, target_version
-        ):
-            changed = True
-    return changed
 
 
 def update_toml_snippet_versions(

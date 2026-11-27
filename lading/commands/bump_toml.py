@@ -254,7 +254,7 @@ def update_dependency_table(
 
 
 def update_section(
-    document: TOMLDocument,
+    document: TOMLDocument | _TableLike,
     path: tuple[str, ...],
     names: cabc.Collection[str],
     target_version: str,
@@ -263,8 +263,8 @@ def update_section(
 
     Parameters
     ----------
-    document : TOMLDocument
-        The parsed TOML manifest document.
+    document : TOMLDocument | _TableLike
+        The parsed TOML manifest document, or a table to descend from.
     path : tuple[str, ...]
         Tuple of keys identifying the table path (e.g., ``("workspace",
         "dependencies")``).
@@ -291,7 +291,7 @@ def update_section(
 
 
 def update_dependency_sections(
-    document: TOMLDocument,
+    document: TOMLDocument | _TableLike,
     dependency_sections: cabc.Mapping[str, cabc.Collection[str]],
     target_version: str,
     *,
@@ -301,8 +301,8 @@ def update_dependency_sections(
 
     Parameters
     ----------
-    document : TOMLDocument
-        The parsed TOML manifest document.
+    document : TOMLDocument | _TableLike
+        The parsed TOML manifest document, or a table to descend from.
     dependency_sections : cabc.Mapping[str, cabc.Collection[str]]
         Mapping of section names to crate names to update.
     target_version : str
@@ -332,7 +332,7 @@ def update_dependency_sections(
 
 
 def _update_named_sections(
-    document: TOMLDocument,
+    document: TOMLDocument | _TableLike,
     sections: cabc.Mapping[str, cabc.Collection[str]],
     target_version: str,
     prefix: tuple[str, ...] = (),

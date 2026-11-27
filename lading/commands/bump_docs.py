@@ -37,9 +37,9 @@ import collections.abc as cabc
 import dataclasses as dc
 import typing as typ
 
+from lading.commands.bump_docs_dependencies import update_toml_snippet_dependencies
 from lading.commands.bump_docs_fences import (
     rewrite_markdown_toml_fences,
-    update_toml_snippet_dependencies,
     update_toml_snippet_versions,
 )
 from lading.utils.confinement import (
