@@ -1,11 +1,11 @@
 """Documentation coverage tests for the end-user guide."""
 
-import re
 import typing as typ
 from pathlib import Path
 
 from lading import config as config_module
 from lading.commands import bump_docs_fences
+from tests.helpers.tested_examples import load_tested_examples
 
 if typ.TYPE_CHECKING:
     from syrupy.assertion import SnapshotAssertion
@@ -67,33 +67,21 @@ def test_users_guide_documents_key_cli_flags_and_env_vars() -> None:
     assert not missing_env, f"users guide missing env var terms: {missing_env}"
 
 
-# The shared loader rejects every unmarked fence in a document, and the user
-# guide predates that contract for its other fences, so select the one marked
-# example directly while keeping the same marker convention.
-_MARKED_EXAMPLE = re.compile(
-    r"<!--\s*tested-example:\s*(?P<identifier>[a-z0-9-]+)\s*-->\s*\n"
-    r"```(?P<language>[\w-]*)\n(?P<body>.*?)^```$",
-    re.DOTALL | re.MULTILINE,
-)
-
-
 def test_users_guide_downstream_example_keeps_its_version() -> None:
     """The guide's marked downstream-application example is not re-versioned."""
-    content = Path("docs/users-guide.md").read_text(encoding="utf-8")
-    examples = {
-        match.group("identifier"): match.group("body")
-        for match in _MARKED_EXAMPLE.finditer(content)
-    }
+    # The guide predates the tested-example contract for its other fences, so
+    # load only the examples it has marked so far.
+    examples = load_tested_examples(Path("docs/users-guide.md"), require_markers=False)
     app_example = examples.get("bump-docs-downstream-package")
 
     assert app_example is not None, (
         "the guide must mark its downstream-application example as tested"
     )
     updated, changed = bump_docs_fences.update_toml_snippet_versions(
-        app_example, {"alpha"}, "1.2.3"
+        app_example.body, {"alpha"}, "1.2.3"
     )
     assert not changed, "the documented application version must not be rewritten"
-    assert updated == app_example, (
+    assert updated == app_example.body, (
         "the documented downstream example must survive the pass unchanged"
     )
 

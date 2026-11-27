@@ -37,6 +37,24 @@ def test_loader_rejects_an_unmarked_fence(tmp_path: Path) -> None:
         load_tested_examples(path)
 
 
+def test_loader_can_skip_unmarked_fences_on_request(tmp_path: Path) -> None:
+    """A document being migrated loads its marked examples only."""
+    path = _write(
+        tmp_path,
+        "```bash\necho one\n```\n\n"
+        "<!-- tested-example: migrated -->\n```bash\necho two\n```\n",
+    )
+
+    examples = load_tested_examples(path, require_markers=False)
+
+    assert set(examples) == {"migrated"}, (
+        "only the marked example should be returned when unmarked fences are skipped"
+    )
+    assert examples["migrated"].body == "echo two", (
+        "the marked example must still be parsed"
+    )
+
+
 def test_loader_rejects_a_malformed_marker(tmp_path: Path) -> None:
     """A marker without an identifier fails the load."""
     path = _write(

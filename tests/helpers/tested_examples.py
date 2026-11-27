@@ -50,13 +50,19 @@ class MarkedExample:
     line: int
 
 
-def load_tested_examples(path: Path) -> dict[str, MarkedExample]:
+def load_tested_examples(
+    path: Path, *, require_markers: bool = True
+) -> dict[str, MarkedExample]:
     """Return every marked example in ``path`` keyed by identifier.
 
     Parameters
     ----------
     path : Path
         Markdown document to scan.
+    require_markers : bool, optional
+        When ``True`` (the default), a fence without a marker is an error.
+        When ``False``, unmarked fences are skipped so a document can adopt
+        the convention one example at a time without rewriting every fence.
 
     Returns
     -------
@@ -66,8 +72,9 @@ def load_tested_examples(path: Path) -> dict[str, MarkedExample]:
     Raises
     ------
     ValueError
-        If a fence has no marker, a marker is malformed or not followed by a
-        fence, a fence is unterminated, or an identifier is duplicated.
+        If ``require_markers`` is true and a fence has no marker, a marker is
+        malformed or not followed by a fence, a fence is unterminated, or an
+        identifier is duplicated.
     """
     lines = path.read_text(encoding="utf-8").splitlines()
     examples: dict[str, MarkedExample] = {}
@@ -76,7 +83,8 @@ def load_tested_examples(path: Path) -> dict[str, MarkedExample]:
     while index < len(lines):
         raw = lines[index]
         list_indent = _list_context(raw, list_levels)
-        _reject_unmarked_fence(raw, path, index, list_indent)
+        if require_markers:
+            _reject_unmarked_fence(raw, path, index, list_indent)
         marker = _marker_at(raw, path, index, list_indent)
         if marker is None:
             index += 1
