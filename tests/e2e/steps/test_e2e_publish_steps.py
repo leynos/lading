@@ -10,12 +10,14 @@ from pathlib import Path
 
 from pytest_bdd import parsers, then, when
 
-from tests.e2e.helpers import workspace_builder
 from tests.e2e.helpers.e2e_steps_helpers import (
     _CliRunResult,
     filter_records,
     run_lading_in_e2e_workspace,
 )
+
+if typ.TYPE_CHECKING:
+    from tests.e2e.helpers import workspace_builder
 
 
 @when(
@@ -88,6 +90,21 @@ def when_run_lading_publish_allow_dirty(
     return run_lading_in_e2e_workspace(repo_root, e2e_state, "publish")
 
 
+def _crate_names_called(publish_spies: dict[str, typ.Any], record: str) -> list[str]:
+    """Return the crate directory each ``record`` invocation ran in."""
+    return [
+        Path(env["PWD"]).name
+        for _label, _args, env in filter_records(publish_spies, record)
+    ]
+
+
+def _assert_one_call_per_crate(publish_spies: dict[str, typ.Any], record: str) -> None:
+    """Assert ``record`` ran exactly once in every crate directory."""
+    workspace: workspace_builder.NonTrivialWorkspace = publish_spies["workspace"]
+    called = _crate_names_called(publish_spies, record)
+    assert sorted(called) == sorted(workspace.crate_names), called
+
+
 @then("cargo preflight was run for the workspace")
 def then_cargo_preflight_ran(publish_spies: dict[str, typ.Any]) -> None:
     """Assert publish executed cargo check and cargo test pre-flight commands."""
@@ -116,32 +133,20 @@ def then_publish_order(publish_spies: dict[str, typ.Any], expected: str) -> None
         >>> then_publish_order(publish_spies, "core, utils, app")  # doctest: +SKIP
     """
     expected_names = [name.strip() for name in expected.split(",") if name.strip()]
-    package_calls = filter_records(publish_spies, "cargo::package")
-    seen = []
-    for _label, _args, env in package_calls:
-        cwd = Path(env["PWD"])
-        seen.append(cwd.name)
+    seen = _crate_names_called(publish_spies, "cargo::package")
     assert seen == expected_names, f"expected {expected_names!r}, got {seen!r}"
 
 
 @then("cargo package was invoked for each crate")
 def then_cargo_package_invoked(publish_spies: dict[str, typ.Any]) -> None:
     """Assert cargo package was invoked once per crate."""
-    workspace: workspace_builder.NonTrivialWorkspace = publish_spies["workspace"]
-    package_calls = filter_records(publish_spies, "cargo::package")
-    assert len(package_calls) == len(workspace.crate_names), package_calls
-    called = {Path(env["PWD"]).name for _label, _args, env in package_calls}
-    assert called == set(workspace.crate_names), called
+    _assert_one_call_per_crate(publish_spies, "cargo::package")
 
 
 @then("cargo publish --dry-run was invoked for each crate")
 def then_cargo_publish_invoked(publish_spies: dict[str, typ.Any]) -> None:
     """Assert cargo publish --dry-run was invoked once per crate."""
-    workspace: workspace_builder.NonTrivialWorkspace = publish_spies["workspace"]
-    publish_calls = filter_records(publish_spies, "cargo::publish")
-    assert len(publish_calls) == len(workspace.crate_names), publish_calls
-    called = {Path(env["PWD"]).name for _label, _args, env in publish_calls}
-    assert called == set(workspace.crate_names), called
+    _assert_one_call_per_crate(publish_spies, "cargo::publish")
 
 
 @then("cargo publish uses --allow-dirty in the default publish flow")
