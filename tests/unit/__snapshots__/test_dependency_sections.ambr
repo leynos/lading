@@ -13,11 +13,67 @@
   alpha = "2.0.0"
   other = "0.9.0"
   
+  [workspace.dependencies]
+  alpha = "2.0.0"
+  other = "0.9.0"
+  
+  [workspace.dev-dependencies]
+  alpha = "2.0.0"
+  other = "0.9.0"
+  
+  [workspace.build-dependencies]
+  alpha = "2.0.0"
+  other = "0.9.0"
+  
+  [target.'cfg(unix)'.dependencies]
+  alpha = "2.0.0"
+  other = "0.9.0"
+  
+  [target.'cfg(unix)'.dev-dependencies]
+  alpha = "2.0.0"
+  other = "0.9.0"
+  
+  [target.'cfg(unix)'.build-dependencies]
+  alpha = "2.0.0"
+  other = "0.9.0"
+  
+  [target."cfg(windows)".dependencies]
+  alpha = "2.0.0"
+  other = "0.9.0"
+  
+  [target."cfg(windows)".dev-dependencies]
+  alpha = "2.0.0"
+  other = "0.9.0"
+  
+  [target."cfg(windows)".build-dependencies]
+  alpha = "2.0.0"
+  other = "0.9.0"
+  
+  [target.x86_64-unknown-linux-gnu.dependencies]
+  alpha = "2.0.0"
+  other = "0.9.0"
+  
+  [target.x86_64-unknown-linux-gnu.dev-dependencies]
+  alpha = "2.0.0"
+  other = "0.9.0"
+  
+  [target.x86_64-unknown-linux-gnu.build-dependencies]
+  alpha = "2.0.0"
+  other = "0.9.0"
+  
   [decoy-dependencies]
   alpha = "1.0.0"
   other = "0.9.0"
   
   [tooling]
+  alpha = "1.0.0"
+  other = "0.9.0"
+  
+  [workspace.tooling]
+  alpha = "1.0.0"
+  other = "0.9.0"
+  
+  [target.'cfg(unix)'.decoy-dependencies]
   alpha = "1.0.0"
   other = "0.9.0"
   

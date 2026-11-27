@@ -354,12 +354,14 @@ def then_internal_dependencies_updated(e2e_state: dict[str, typ.Any]) -> None:
 
 @then('the workspace README contains version "1.0.0"')
 def then_readme_contains_version(e2e_state: dict[str, typ.Any]) -> None:
-    """Assert the workspace README TOML snippet reflects the bumped version."""
+    """Assert the workspace README TOML snippets reflect the bumped version."""
     workspace: workspace_builder.NonTrivialWorkspace = e2e_state["workspace"]
     readme = (workspace.root / "README.md").read_text(encoding="utf-8")
-    assert 'core = "1.0.0"' in readme, readme
-    assert 'utils = "1.0.0"' in readme, readme
-    assert 'app = "1.0.0"' in readme, readme
+    assert '[dependencies]\ncore = "1.0.0"\nutils = "1.0.0"\napp = "1.0.0"' in readme, (
+        readme
+    )
+    assert '[workspace.dependencies]\ncore = "1.0.0"' in readme, readme
+    assert "[target.'cfg(unix)'.dependencies]\ncore = \"1.0.0\"" in readme, readme
 
 
 @then("the Git working tree has uncommitted changes")

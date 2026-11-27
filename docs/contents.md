@@ -39,6 +39,9 @@ branch, recording the plan, progress, decisions, and retrospective for a change.
 - [Bump confinement preflight](execplans/bump-confinement-preflight.md) -
   delivered plan for confining every bump write target and validating the
   complete write plan before mutation.
+- [Documentation dependency tables in bump][execplan-issue-370] - delivered plan
+  for rewriting `[workspace.*]` and `[target.<spec>.*]` dependency tables in
+  documentation fences, matching the manifest pass.
 
 ## Decision records
 
@@ -107,3 +110,4 @@ branch, recording the plan, progress, decisions, and retrospective for a change.
 [adr-011]: adrs/adr-0011-cyclopts-4-cli-result-and-diagnostic-boundary.md
 [adr-012]: adrs/adr-0012-confine-bump-write-targets.md
 [execplan-regenerate-lockfiles]: execplans/regenerate-lockfiles.md
+[execplan-issue-370]: execplans/issue-370-bump-documentation-pass-skips-workspace-dependencies-and-target-specific-dependency-tables.md

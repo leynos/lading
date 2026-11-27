@@ -166,8 +166,19 @@ plan of work.
   `test_dependency_sections.py` and `test_bump_manifest_writing.py` suites pass
   (29 tests, 6 snapshots unchanged); `make lint` reports 10.00/10 and
   `make typecheck` is clean.
-- [ ] EP-M3: property, unit, behavioural, and end-to-end coverage.
-- [ ] EP-M4: documentation updates and the full gate sequence.
+- [x] EP-M3 (2026-11-27) Coverage landed: the Hypothesis property now
+  generates root, `workspace`, and three target prefixes (single-quoted
+  `cfg(unix)`, double-quoted `cfg(windows)`, bare triple) crossed with the
+  three canonical sections, plus four decoy locations; the snapshot was
+  regenerated after review. Unsupported shapes, idempotence, multi-selector
+  traversal, and the `OutOfOrderTableProxy` limitation have example tests. The
+  manifest guard, the `bump.run` case with its own snapshot, the BDD live and
+  dry-run scenarios, and the end-to-end fixture extension all pass.
+- [x] EP-M4 (2026-11-27) Documentation updated in `docs/users-guide.md`,
+  `docs/lading-design.md`, and `docs/developers-guide.md`. The full gate
+  sequence passed in order: `make fmt`, `make check-fmt`, `make lint`
+  (10.00/10), `make typecheck`, `make test` (1755 passed, 31 skipped, 106
+  snapshots), `make markdownlint`, `make nixie`.
 
 ## Surprises & discoveries
 
@@ -187,6 +198,22 @@ plan of work.
 - `[target.'cfg(unix)'.dependencies]` placed before a bare `[target]` header
   produces an `OutOfOrderTableProxy` for `target`, which `select_table`
   accepts. Key iteration and item assignment both work on the proxy.
+- An `OutOfOrderTableProxy` *section* still updates its plain scalar entries,
+  so the limitation is narrower than first assumed: only a dependency **entry**
+  that resolves to a proxy is skipped. That needs a third header reopening the
+  entry, for example `[target.'cfg(unix)'.dependencies.alpha]`, then
+  `[target.'cfg(unix)'.dependencies]`, then
+  `[target.'cfg(unix)'.dependencies.alpha.package]`. Without the third header
+  `tomlkit` yields a plain `Table` and the entry is rewritten normally. The
+  first probe of this shape only covered the workspace case and misreported
+  which entry was skipped; the target case was measured directly before the
+  test was written.
+- The regenerated snapshot caught a defect in the new property fixture: the
+  decoy section names were appended to `_DECOY_LOCATIONS` as bare strings, so
+  `"".join` split them into characters and rendered
+  `[d.e.c.o.y.-.d.e.p.e.n.d.e.n.c.i.e.s]`. The property still passed, because
+  the corrupted table was correctly left alone. Reviewing the snapshot diff,
+  not the green run, is what surfaced it.
 
 ## Decision log
 
@@ -211,6 +238,17 @@ plan of work.
   rewrite tables whose meaning this tool cannot verify. Skipping is silent, in
   keeping with the manifest pass, which likewise ignores tables it does not
   model. Date/Author: 2026-11-27, implementation session.
+- Decision: widen `bump_toml._update_named_sections` as well as the two public
+  functions named in the plan. Rationale: `update_dependency_sections` forwards
+  its `document` argument to that helper, so widening only the public signature
+  would leave a type error at the forward. The change is still annotation-only
+  and adds no executable line. Date/Author: 2026-11-27, implementation session.
+- Decision: keep `update_toml_snippet_dependencies` importable from
+  `bump_docs_fences` rather than dropping it from that module's `__all__`.
+  Rationale: it is a public name on both modules today and the repository's
+  compatibility policy forbids removing public re-exports without a migration;
+  the module-level import costs one line and preserves the documented surface.
+  Date/Author: 2026-11-27, implementation session.
 - Decision: leave manifest target tables alone and guard that with a test.
   Rationale: the ticket is about documentation; extending manifest rewriting to
   target tables would change `lading bump` output for existing users and is not
@@ -240,10 +278,13 @@ Obligations and their discharge:
    that rewrote nothing would fail.
 4. Invariant: unsupported shapes are skipped without error and without
    changing text. Method: parametrized examples for scalar and inline `target`
-   values, inline selector values, and out-of-order entry proxies; each asserts
-   `changed is False` and identical text. Non-vacuity: each parametrization
-   also includes a supported shape in the same test module that asserts an
-   update, and the sibling assertions pin the positive direction.
+   values, inline selector values, a deeper dotted selector, and malformed
+   TOML; each asserts `changed is False` and identical text. The
+   `OutOfOrderTableProxy` limitation gets its own test, which asserts the proxy
+   entry is skipped and a plain sibling entry in the same section is rewritten,
+   so a function that reached nothing would fail. Non-vacuity: the sibling
+   assertion pins the positive direction, and the shared helper is exercised by
+   fifteen supported locations elsewhere in the module.
 5. Lemma: repeated application is idempotent. Method: an example test applying
    `rewrite_markdown_toml_fences` twice and asserting the second call reports
    `changed is False` with identical text.
@@ -364,7 +405,32 @@ answer:   [target.'cfg(unix)'.dependencies]          -> Table
 
 ## Outcomes & retrospective
 
-To be completed.
+Delivered as planned. `update_toml_snippet_dependencies` now visits the
+top-level dependency sections, their `[workspace.*]` counterparts, and every
+immediate `[target.<spec>.<section>]` table. The two snippets from the issue
+report a change and render `alpha = "2.0.0"`. `bump_toml` gained only
+annotation widening across three signatures, so manifest behaviour, public
+names, and defaults are unchanged; a new guard test pins that a target-specific
+table inside a `Cargo.toml` keeps its version. `bump_docs_fences.py` fell from
+411 to 372 lines, under the 400-line limit, and the new module is 112 lines.
+
+The failing-first requirement was met before any production change: thirteen
+parametrized cases at the `rewrite_markdown_toml_fences` boundary failed with
+`changed is False` and were transcribed into `Progress`.
+
+Verification evidence: the property test exercises fifteen canonical locations
+and four decoys across forty generated documents per run; the snapshot pins the
+full rendered rewrite; the two BDD scenarios cover live and dry-run behaviour
+with mocked Cargo and git; and the end-to-end suite rewrites a real README
+through the real CLI. `make test` ran 1755 tests with 106 snapshots.
+
+Lessons: (1) a snapshot regenerated for a new fixture must be read, not just
+accepted — the character-split decoy header passed every assertion; (2) probing
+one nesting level (workspace) does not predict another (target) when `tomlkit`
+proxy behaviour is involved, so each documented limitation needs its own
+measurement; (3) the df12 pylint tier rejects four or more substring assertions
+in one test and requires a reason on every type-check suppression, which pushes
+test assertions toward structure rather than text.
 
 ## Revision note
 

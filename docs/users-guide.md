@@ -342,7 +342,37 @@ READMEs appear in the output with the `(readme)` suffix described above.
 
 If `bump.documentation.globs` is configured, `lading` also searches those
 Markdown files for TOML code fences and updates version values that refer to
-workspace crates.
+workspace crates. A rewrite visits every location a reader is told to declare a
+dependency, matching the manifest pass:
+
+- the top-level `[dependencies]`, `[dev-dependencies]`, and
+  `[build-dependencies]` tables;
+- their `[workspace.dependencies]`, `[workspace.dev-dependencies]`, and
+  `[workspace.build-dependencies]` counterparts;
+- every `[target.<spec>.dependencies]` table whose selector sits directly under
+  `target`, in each of the three section variants. The selector may be quoted
+  (`[target.'cfg(unix)'.dependencies]`), double-quoted
+  (`[target."cfg(windows)".dependencies]`), or a bare triple
+  (`[target.x86_64-unknown-linux-gnu.dependencies]`).
+
+Only the dependency keys named in the fence are rewritten, and only their
+`version` requirement; a requirement operator such as `^` or `~` is preserved.
+Other crates and other keys are left untouched.
+
+A fence in one of these shapes is skipped, and the fence text stays as it is:
+
+- `target` given as an inline table (`target = { ... }`) or as a string;
+- `[target]` with an inline selector value, such as
+  `'cfg(unix)' = { dependencies = { ... } }`;
+- a dependency table nested below one selector level, such as
+  `[target.'cfg(unix)'.nested.dependencies]`;
+- a dependency entry split across several headers, such as
+  `[target.'cfg(unix)'.dependencies.alpha]` followed by another
+  `[target.'cfg(unix)'.dependencies]` header.
+
+Target-specific tables inside a `Cargo.toml` are not rewritten by
+`lading bump`; only their documentation counterparts are. A bump rewrites the
+unconditional section that carries the same dependency.
 
 #### Confinement preflight
 
@@ -820,7 +850,9 @@ relative path resolves against the shell's current directory.
 ### `[bump.documentation]`
 
 - `globs`: array of strings, default `[]`. Glob patterns for Markdown files
-  whose TOML code fences should be updated.
+  whose TOML code fences should be updated. Every dependency table location a
+  bump recognizes is rewritten, including `[workspace.*]` and
+  `[target.<spec>.*]`; see the bump section above for the list and its limits.
 
 ### `[publish]`
 

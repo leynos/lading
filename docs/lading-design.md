@@ -377,6 +377,21 @@ lading bump <new_version> [--dry-run]
   `tomlkit`, updating `[package]`, `[workspace.package]`, and dependency
   entries that reference workspace crates. Existing requirement operators and
   inline trivia remain intact.
+- Dependency-table location in documentation is owned by
+  `lading.commands.bump_docs_dependencies`. It calls the shared
+  `bump_toml.update_dependency_sections` once on the document with workspace
+  sections enabled and once for each immediate `target` selector, so fence
+  rewriting reaches `[workspace.dependencies]` and
+  `[target.<spec>.dependencies]` alongside their dev and build variants. The
+  manifest pass keeps to the unconditional sections: a target-specific
+  requirement inside a `Cargo.toml` is left alone, because Cargo applies it
+  only to the matching target and the bump already rewrites the unconditional
+  entry that carries the same dependency.
+- Shapes the documentation traversal cannot reach are skipped silently, in
+  keeping with the manifest pass: a `target` value given as an inline table or
+  a scalar, a selector whose value is an inline table, a dependency table below
+  one selector level, and a dependency entry that `tomlkit` parses as an
+  `OutOfOrderTableProxy`.
 - The publish workflow stages a clean workspace copy in a temporary directory
   before packaging. The staging directory must live outside the source tree to
   avoid recursive copies. Crates that opt into `readme.workspace = true` must

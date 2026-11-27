@@ -333,6 +333,23 @@ def then_documentation_contains(
     )
 
 
+@then(
+    parsers.parse(
+        'the workspace and target documentation fences record version "{version}"'
+    )
+)
+def then_workspace_and_target_fences_record_version(
+    cli_run: dict[str, typ.Any], version: str
+) -> None:
+    """Assert both documented dependency locations carry ``version`` for alpha."""
+    contents = (cli_run["workspace"] / "README.md").read_text(encoding="utf-8")
+    assert "[workspace.dependencies]" in contents, contents
+    assert "[target.'cfg(unix)'.dependencies]" in contents, contents
+    assert contents.count(f'alpha = "{version}"') == 2, (
+        f"expected both fences to record version {version!r}: {contents!r}"
+    )
+
+
 @then(parsers.parse('the crate "{crate_name}" README contains "{expected}"'))
 def then_crate_readme_contains(
     cli_run: dict[str, typ.Any], crate_name: str, expected: str

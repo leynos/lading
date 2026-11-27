@@ -158,13 +158,28 @@ def _write_workspace_readme(
     *,
     version: str,
 ) -> None:
-    """Write a README containing a TOML fence listing crate versions."""
+    """Write a README whose TOML fences list crate versions.
+
+    The fences cover the top-level dependency table, the workspace dependency
+    table, and a target-specific dependency table, so an end-to-end bump proves
+    all three locations documented in a README are rewritten.
+    """
     lines = [
         "# Example workspace",
         "",
         "```toml",
         "[dependencies]",
         *[f'{name} = "{version}"' for name in crate_names],
+        "```",
+        "",
+        "```toml",
+        "[workspace.dependencies]",
+        f'core = "{version}"',
+        "```",
+        "",
+        "```toml",
+        "[target.'cfg(unix)'.dependencies]",
+        f'core = "{version}"',
         "```",
         "",
     ]

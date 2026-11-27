@@ -367,3 +367,34 @@ def given_workspace_readme_snippet(workspace_directory: Path, crate_name: str) -
         """
     ).lstrip()
     readme_path.write_text(content, encoding="utf-8")
+
+
+@given(
+    parsers.parse(
+        "the workspace README contains workspace and target dependency snippets"
+        ' for "{crate_name}"'
+    )
+)
+def given_workspace_readme_workspace_and_target_snippets(
+    workspace_directory: Path, crate_name: str
+) -> None:
+    """Write a README whose fences show a workspace and a target dependency."""
+    import textwrap
+
+    readme_path = workspace_directory / "README.md"
+    content = textwrap.dedent(
+        f"""
+        # Usage
+
+        ```toml
+        [workspace.dependencies]
+        {crate_name} = "0.1.0"
+        ```
+
+        ```toml
+        [target.'cfg(unix)'.dependencies]
+        {crate_name} = "0.1.0"
+        ```
+        """
+    ).lstrip()
+    readme_path.write_text(content, encoding="utf-8")

@@ -22,7 +22,7 @@ shapes are skipped without error because they cannot be updated in place:
   does not model.
 
 A dependency entry that tomlkit parses as an ``OutOfOrderTableProxy`` is also
-skipped: the shared updater recognises only ``Table`` and ``InlineTable``
+skipped: the shared updater recognizes only ``Table`` and ``InlineTable``
 entries. That limitation is shared with the manifest pass.
 """
 
