@@ -370,8 +370,18 @@ READMEs appear in the output with the `(readme)` suffix described above.
 
 If `bump.documentation.globs` is configured, `lading` also searches those
 Markdown files for TOML code fences and updates version values that refer to
-workspace crates. A rewrite visits every location a reader is told to declare a
-dependency:
+workspace crates. Package versions follow a narrower rule than manifest
+versions: a fence's `[package].version` is replaced only when `[package].name`
+names a bumped, non-excluded crate and the existing value is a string. The pass
+never inserts a `version` key, leaves `version.workspace = true`, an inline
+`version = { workspace = true }`, and any other non-string value unchanged, and
+does not re-version an unrelated example manifest.
+`[workspace.package].version` follows the same gate, so a fence that documents
+a virtual workspace root without a `[package].name` is left unchanged.
+Dependency requirements in `dependencies`, `dev-dependencies`, and
+`build-dependencies` are rewritten independently of this gate.
+
+A rewrite visits every location a reader is told to declare a dependency:
 
 - the top-level `[dependencies]`, `[dev-dependencies]`, and
   `[build-dependencies]` tables;
@@ -430,6 +440,17 @@ rewritten by the standard manifest pass; only their documentation counterparts
 are. Where the same dependency is also declared in an unconditional section of
 that manifest, the bump rewrites that entry. A dependency declared only for a
 target keeps its version in the member manifest and must be edited by hand.
+
+For example, a guide may show a downstream application alongside the library's
+own usage. Bumping the library to `1.2.3` leaves this snippet at its own
+version, while a separate `[dependencies]` snippet that requires the library
+still moves to `1.2.3`:
+
+```toml
+[package]
+name = "my-app"
+version = "0.1.0"
+```
 
 #### Confinement preflight
 

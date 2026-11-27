@@ -65,6 +65,24 @@ def test_users_guide_documents_key_cli_flags_and_env_vars() -> None:
     assert not missing_env, f"users guide missing env var terms: {missing_env}"
 
 
+def test_users_guide_documents_documentation_version_policy() -> None:
+    """Guard against drift in the narrowed documentation-pass contract."""
+    content = Path("docs/users-guide.md").read_text(encoding="utf-8")
+    # The Markdown formatter wraps prose, so compare against unwrapped text.
+    unwrapped = " ".join(content.split())
+
+    required_terms = (
+        "`[package].name` names a bumped, non-excluded crate",
+        "never inserts a `version` key",
+        "`version.workspace = true`",
+        "`[workspace.package].version`",
+        "rewritten independently of this gate",
+    )
+
+    missing = [term for term in required_terms if term not in unwrapped]
+    assert not missing, f"users guide missing documentation policy terms: {missing}"
+
+
 def test_users_guide_documents_relay_event_contract() -> None:
     """The relay event contract should remain visible to lading users."""
     content = Path("docs/users-guide.md").read_text(encoding="utf-8")

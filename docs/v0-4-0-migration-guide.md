@@ -31,6 +31,12 @@ from `lading.config`; the records and validation helpers are also available
 from the new `lading.config_manifest_rewrites` module. See
 [Rewriting configured non-member manifests](users-guide.md#rewriting-configured-non-member-manifests).
 
+The bump documentation pass is also narrower. It no longer inserts or rewrites
+a package version in a TOML fence that does not name a bumped crate, so a guide
+that mixed policy metadata or downstream manifests with real usage snippets
+needs its published snippets reviewed; see
+[section 6](#6-review-documentation-snippets-for-over-broad-rewriting).
+
 The number is derived rather than announced: 0.3.1 is the most recent release,
 and a breaking change under pre-1.0 semantic versioning advances the minor
 component, so the next final tag from this tree is 0.4.0. The documented
@@ -46,19 +52,20 @@ decision, recorded below.
 
 ## Who is affected
 
-| Your environment                                                       | Action required                                             |
-| ---------------------------------------------------------------------- | ----------------------------------------------------------- |
-| CPython 3.14 or later, confined workspace                              | None; upgrade as usual.                                     |
-| CPython 3.14 or later, script reads diagnostics from stdout            | Required: read diagnostics from stderr instead.             |
-| CPython 3.14 or later, symlinked member or escaping documentation glob | Required: make the member or glob real, or remain on 0.3.1. |
-| CPython 3.14 or later, unreadable documentation file                   | Required: make the file readable and decodable.             |
-| CPython 3.14 or later, symlinked or non-regular README target          | Required: replace it with a regular file.                   |
-| CPython 3.14 or later, hard-linked write target                        | Required: replace it with an independent copy of the file.  |
-| CPython 3.14 or later, invalid configured lockfile manifest            | Required: make it an existing, confined `Cargo.toml`.       |
-| CPython 3.14 or later, invalid implicit member manifest                | Required: make the path dependency real and regular.        |
-| CPython 3.14 or later, Cargo lockfile-path override                    | Required, with regeneration enabled: unset the variable.    |
-| CPython 3.13                                                           | Required: upgrade the interpreter, or remain on 0.3.1.      |
-| CPython 3.12 or earlier                                                | Required: upgrade the interpreter; 0.3.1 required 3.13.     |
+| Your environment                                                       | Action required                                               |
+| ---------------------------------------------------------------------- | ------------------------------------------------------------- |
+| CPython 3.14 or later, confined workspace                              | None; upgrade as usual.                                       |
+| CPython 3.14 or later, script reads diagnostics from stdout            | Required: read diagnostics from stderr instead.               |
+| CPython 3.14 or later, symlinked member or escaping documentation glob | Required: make the member or glob real, or remain on 0.3.1.   |
+| CPython 3.14 or later, unreadable documentation file                   | Required: make the file readable and decodable.               |
+| CPython 3.14 or later, symlinked or non-regular README target          | Required: replace it with a regular file.                     |
+| CPython 3.14 or later, hard-linked write target                        | Required: replace it with an independent copy of the file.    |
+| CPython 3.14 or later, invalid configured lockfile manifest            | Required: make it an existing, confined `Cargo.toml`.         |
+| CPython 3.14 or later, invalid implicit member manifest                | Required: make the path dependency real and regular.          |
+| CPython 3.14 or later, Cargo lockfile-path override                    | Required, with regeneration enabled: unset the variable.      |
+| CPython 3.14 or later, guide with unrelated or versionless TOML fences | Review: the guide's package versions are no longer rewritten. |
+| CPython 3.13                                                           | Required: upgrade the interpreter, or remain on 0.3.1.        |
+| CPython 3.12 or earlier                                                | Required: upgrade the interpreter; 0.3.1 required 3.13.       |
 
 _Table 1: Required action by interpreter version and workspace shape._
 
@@ -70,7 +77,11 @@ such a workspace fails the same way on any interpreter. A script that reads
 diagnostics from stdout should read stderr instead, because diagnostics moved
 there. A project pinned to a Lading version through a lockfile keeps that
 version until the lockfile is regenerated, so the floor bites when the pin is
-moved rather than when this release is published.
+moved rather than when this release is published. Documentation snippets
+deserve a review rather than a required edit: the narrower documentation pass
+described in
+[section 6](#6-review-documentation-snippets-for-over-broad-rewriting) leaves
+snippets that do not name a bumped crate unchanged.
 
 ## 1. Make bump write targets confined and regular
 
@@ -232,6 +243,43 @@ shapes should be corrected, or migrated, before the interpreter moves:
 uv add 'lading<0.4.0'
 ```
 
+## 6. Review documentation snippets for over-broad rewriting
+
+`lading bump` used to assign the target version to `[package].version` and
+`[workspace.package].version` in every TOML fence it could parse. The
+documentation pass now replaces a version only when the fence's
+`[package].name` names a bumped, non-excluded crate and the existing value is a
+string. It never inserts a version key, never replaces
+`version.workspace = true` or another non-string value, and never re-versions
+an unrelated example manifest. Dependency requirements in `[dependencies]`,
+`[dev-dependencies]`, and `[build-dependencies]` are rewritten independently
+and are unchanged by this migration.
+
+A guide that documents a downstream application keeps that application's own
+version:
+
+<!-- tested-example: migration-docs-unrelated-package -->
+```toml
+[package]
+name = "my-app"
+version = "0.1.0"
+```
+
+A guide that documents a bumped crate's own manifest still moves to the target
+version:
+
+<!-- tested-example: migration-docs-eligible-package -->
+```toml
+[package]
+name = "alpha"
+version = "0.1.0"
+```
+
+`[workspace.package]` follows the same gate. A fence that documents only a
+virtual workspace root has no `[package].name` to identify it, so it is left
+unchanged. When the fence is meant to describe this workspace's own root
+manifest, include the `[package].name` of the bumped crate.
+
 ## What changed
 
 The requirement in the package metadata moved:
@@ -293,7 +341,8 @@ provisioned private account-owned lock directory; dry runs take no lock. See
 [Rewriting configured non-member manifests](users-guide.md#rewriting-configured-non-member-manifests)
 for the lock location and repair guidance. Command summaries still go to
 stdout, and a script that captured both streams together sees no change in
-meaning.
+meaning. A documentation guide whose TOML fences describe bumped crates, or
+which does not configure `bump.documentation.globs`, needs no change either.
 
 ## Migration checklist
 
@@ -311,6 +360,8 @@ meaning.
       `resolver.lockfile-path` setting Cargo would read.
 - [ ] Implement `plan_lockfiles` and `regenerate_planned` on any custom
       lockfile repository.
+- [ ] Review documentation TOML snippets for version rewrites that relied on
+      the broader documentation pass.
 - [ ] Run `lading bump --dry-run` on the migrated workspace before bumping.
 
 The affected-reader table above lists the same work by workspace shape.

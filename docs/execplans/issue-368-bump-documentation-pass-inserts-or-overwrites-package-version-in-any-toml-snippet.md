@@ -231,9 +231,17 @@ Scenario: Bumping restricts documentation version rewriting to bumped crates
 - [x] 2026-11-27: confirmed the three failures against the current tree with
   `rewrite_markdown_toml_fences(text, {"alpha"}, "2.0.0")`.
 - [x] 2026-11-27: renamed the branch and recorded the plan.
-- [ ] EP-M1: failing regressions.
-- [ ] EP-M2: replace-only snippet policy.
-- [ ] EP-M3: documentation, migration note, and gates.
+- [x] EP-M1: failing regressions. Unit, Markdown, property, helper and BDD
+  cases failed for the intended reasons before the production change.
+- [x] EP-M2: replace-only snippet policy. Committed as `be794a22`; full gates
+  green (`check-fmt`, `lint`, `typecheck`, `test`, `markdownlint`, `nixie`).
+- [x] 2026-11-27: extracted the Markdown fence renderer into
+  `lading/commands/bump_docs_markdown.py` as a separate atomic refactor
+  (`30211d18`), restoring both modules under the 400-line ceiling. Full gates
+  green on the refactor tree.
+- [ ] EP-M3: documentation, migration note, and gates. In progress: user
+  guide, design document, migration guide, and their contract tests are
+  written; the final gate run and commit remain.
 
 ## Surprises & discoveries
 
@@ -258,12 +266,44 @@ Scenario: Bumping restricts documentation version rewriting to bumped crates
 - 2026-11-27: add two bounded BDD steps (mixed README fixture and
   exact-once documentation entry) because the existing step catalogue cannot
   express a multi-line fixture or an exact-once assertion.
+- 2026-11-27: `replace_string_version` delegates to `assign_version` after its
+  string gate rather than repeating the assignment block. The duplication gate
+  rejects two copies of the same value-construction logic, and the delegation
+  keeps a single writer for `table["version"]`.
+- 2026-11-27: put the tested documentation example in
+  `docs/v0-4-0-migration-guide.md` rather than `docs/users-guide.md`. The
+  migration guide is the only user-facing document with a complete
+  `tested-example` contract, so its examples are loaded from the shipped text
+  and now executed against `update_toml_snippet_versions`; the user guide
+  states the contract in prose and carries an unmarked illustration, matching
+  every other fence in that guide.
+- 2026-11-27: extract the Markdown renderer into
+  `lading/commands/bump_docs_markdown.py`. The functional change pushed
+  `bump_docs_fences.py` past the 400-line ceiling; the extraction is the
+  sanctioned separate atomic refactor after the functional commit, and both
+  modules are now under the ceiling.
 
 ## Outcomes & retrospective
 
-Pending implementation.
+The documentation pass now follows the ticket's four expected-behaviour
+statements. A metadata-only fence is returned byte-for-byte, an unrelated
+application manifest keeps its own version, `version.workspace = true` and
+inline inheritance survive, and a bumped crate's own string version is still
+replaced with its inline comment intact. `[workspace.package]` is rewritten
+only under the same package-name gate, which is the documented virtual-root
+limit. Dependency-reference rewriting is unchanged and still covered by the
+existing section property test and the e2e README scenario.
+
+Lessons: the declaration of intent in a module docstring is not a contract
+unless a test pins the negative cases. The three failures here were all
+"absent" cases — a missing name, a missing version, a non-string value — and
+none of them had a test. The duplication gate also caught the natural but
+unnecessary second copy of the assignment block that the first implementation
+introduced.
 
 ## Revision note
 
 - 2026-11-27: initial plan, derived from the issue and the implementation
   brief; no upstream deviation recorded.
+- 2026-11-27: recorded the implemented policy, the renderer extraction, the
+  BDD step additions, and the placement of the tested documentation example.

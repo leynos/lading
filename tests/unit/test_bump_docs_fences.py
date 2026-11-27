@@ -10,7 +10,7 @@ import pytest
 from hypothesis import given
 from markdown_it import MarkdownIt
 
-from lading.commands import bump_docs_fences
+from lading.commands import bump_docs_fences, bump_docs_markdown
 
 
 def _list_fence(version: str) -> str:
@@ -263,9 +263,9 @@ def test_an_opener_at_eof_gains_a_separator_before_its_body(
     text, ending = case
     token = MarkdownIt("commonmark").parse(text)[-1]
 
-    rendered = bump_docs_fences.render_fence(
+    rendered = bump_docs_markdown.render_fence(
         token,
-        bump_docs_fences._source_lines(text),
+        bump_docs_markdown.source_lines(text),
         "toml",
         lambda _content: "a = 1\nb = 2",
     )

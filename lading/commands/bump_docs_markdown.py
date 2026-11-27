@@ -20,6 +20,7 @@ __all__ = [
     "extract_fence_indent",
     "render_fence",
     "replace_markdown_fences",
+    "source_lines",
     "token_matches_language",
 ]
 
@@ -29,7 +30,7 @@ _SOURCE_LINE: typ.Final[re.Pattern[str]] = re.compile(
 )
 
 
-def _source_lines(markdown_text: str) -> list[str]:
+def source_lines(markdown_text: str) -> list[str]:
     """Split ``markdown_text`` on CR, LF, and CRLF only.
 
     ``str.splitlines`` also splits on U+2028 and other separators that
@@ -67,7 +68,7 @@ def replace_markdown_fences(
     """
     parser = MarkdownIt("commonmark")
     tokens = parser.parse(markdown_text)
-    lines = _source_lines(markdown_text)
+    lines = source_lines(markdown_text)
     output: list[str] = []
     last_index = 0
     for token in tokens:

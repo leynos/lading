@@ -381,6 +381,20 @@ lading bump <new_version> [--dry-run]
   `tomlkit`, updating `[package]`, `[workspace.package]`, and dependency
   entries that reference workspace crates. Existing requirement operators and
   inline trivia remain intact.
+- Package versions inside a fence follow a narrower policy than manifest
+  versions (issue #368). `[package].version` and `[workspace.package].version`
+  are replaced only when the fence's `[package].name` names a bumped,
+  non-excluded crate and the existing value is a string. The documentation pass
+  never inserts a missing key, never replaces an inherited
+  (`version.workspace = true`, inline `{ workspace = true }`) or non-string
+  value, and does not re-version an unrelated example manifest. Manifests keep
+  using `bump_toml.assign_version`, which inserts or replaces as before; the
+  documentation pass uses the replace-only `bump_toml.replace_string_version`.
+- The `[package].name` gate applies to `[workspace.package]` too. A fence that
+  documents only a virtual workspace root has no package name, so it cannot be
+  distinguished from an arbitrary workspace example, and is left unchanged.
+  Documentation that must show this workspace's own root manifest includes the
+  `[package].name` that identifies the bumped crate.
 - Dependency-table location in documentation is owned by
   `lading.commands.bump_docs_dependencies`. It calls the shared
   `bump_toml.update_dependency_sections` once on the document with workspace
