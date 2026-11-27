@@ -14,6 +14,7 @@ from pathlib import Path
 
 from tests.helpers.markdown_fence_scan import (
     MAX_FENCE_INDENT,
+    clear_deeper_levels,
     closes_fence,
     dedent,
     fence_delimiter,
@@ -103,24 +104,38 @@ class _LoadState:
     require_markers: bool
     examples: dict[str, MarkedExample]
     list_levels: dict[int, list[int]] = dc.field(default_factory=dict)
-    container_depth: int = 0
 
 
 def _load_line(state: _LoadState, index: int) -> int:
     """Load one line, returning the next index to inspect."""
     raw = state.lines[index]
-    depth = quote_depth(raw)
-    if depth < state.container_depth:
-        # Leaving a block quote discards the list levels scoped to it, so a
-        # later quote at the same depth cannot inherit them.
-        for stale in [key for key in state.list_levels if key > depth]:
-            del state.list_levels[stale]
-    state.container_depth = depth
-    levels = state.list_levels.setdefault(depth, [])
-    list_indent = list_context(raw, levels)
+    list_indent = _container_indent(state, raw)
     marker = _marker_at(raw, state.path, index, list_indent)
     if marker is None:
         return _skip_line(state, index, list_indent)
+    return _load_marked(state, index, marker)
+
+
+def _container_indent(state: _LoadState, raw: str) -> int:
+    """Return the enclosing list indentation for ``raw``.
+
+    List levels are scoped to a block-quote depth; leaving a quote discards
+    the levels it owned, so a later quote at the same depth cannot inherit
+    them.
+
+    Returns
+    -------
+    int
+        The content indentation of the enclosing list item, or ``0``.
+    """
+    depth = quote_depth(raw)
+    clear_deeper_levels(state.list_levels, depth)
+    levels = state.list_levels.setdefault(depth, [])
+    return list_context(raw, levels)
+
+
+def _load_marked(state: _LoadState, index: int, marker: _MarkerContext) -> int:
+    """Load the example introduced by ``marker``."""
     if marker.identifier in state.examples:
         message = (
             f"{state.path}:{index + 1}: duplicate tested-example {marker.identifier!r}"

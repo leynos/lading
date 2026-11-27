@@ -11,6 +11,7 @@ import typing as typ
 
 __all__ = [
     "MAX_FENCE_INDENT",
+    "clear_deeper_levels",
     "closes_fence",
     "dedent",
     "fence_delimiter",
@@ -170,6 +171,12 @@ def _expand_tabs(text: str) -> str:
         expanded.append(" " * width)
         column += width
     return "".join(expanded)
+
+
+def clear_deeper_levels(levels: dict[int, list[int]], depth: int) -> None:
+    """Discard list levels scoped to containers deeper than ``depth``."""
+    for stale in [key for key in levels if key > depth]:
+        del levels[stale]
 
 
 def list_context(raw: str, levels: list[int]) -> int:
