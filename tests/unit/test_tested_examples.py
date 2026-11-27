@@ -55,6 +55,46 @@ def test_loader_can_skip_unmarked_fences_on_request(tmp_path: Path) -> None:
     )
 
 
+def test_loader_skips_a_literal_marker_inside_an_unmarked_fence(
+    tmp_path: Path,
+) -> None:
+    """A literal marker inside an unmarked fence is not an example."""
+    path = _write(
+        tmp_path,
+        "````markdown\n"
+        "<!-- tested-example: literal -->\n"
+        "```bash\necho inner\n```\n"
+        "````\n\n"
+        "<!-- tested-example: real -->\n"
+        "```bash\necho outer\n```\n",
+    )
+
+    examples = load_tested_examples(path, require_markers=False)
+
+    assert set(examples) == {"real"}, (
+        "only the marked example outside the unmarked fence should be returned"
+    )
+    assert examples["real"].body == "echo outer", (
+        "the real example must still be parsed"
+    )
+
+
+def test_loader_ignores_a_malformed_marker_inside_an_unmarked_fence(
+    tmp_path: Path,
+) -> None:
+    """A malformed marker inside an unmarked fence does not fail a permissive load."""
+    path = _write(
+        tmp_path,
+        "````markdown\n<!-- tested-example: -->\n````\n",
+    )
+
+    examples = load_tested_examples(path, require_markers=False)
+
+    assert not examples, (
+        "a permissive load must ignore a literal malformed marker in a fence body"
+    )
+
+
 def test_loader_rejects_a_malformed_marker(tmp_path: Path) -> None:
     """A marker without an identifier fails the load."""
     path = _write(

@@ -83,11 +83,16 @@ def load_tested_examples(
     while index < len(lines):
         raw = lines[index]
         list_indent = _list_context(raw, list_levels)
-        if require_markers:
-            _reject_unmarked_fence(raw, path, index, list_indent)
         marker = _marker_at(raw, path, index, list_indent)
         if marker is None:
-            index += 1
+            if require_markers:
+                _reject_unmarked_fence(raw, path, index, list_indent)
+                index += 1
+                continue
+            # Skip the whole fence so a literal marker in its body is not read
+            # as an example.
+            skip_to = _skip_unmarked_fence(lines, index, list_indent)
+            index = skip_to if skip_to is not None else index + 1
             continue
         if marker.identifier in examples:
             message = (
@@ -128,21 +133,20 @@ def _list_context(raw: str, levels: list[int]) -> int:
     return levels[-1] if levels else 0
 
 
-def _reject_unmarked_fence(
+def _unmarked_fence_delimiter(
     raw: str,
-    path: Path,
-    index: int,
     list_indent: int,
-) -> None:
-    """Raise when ``raw`` opens a fence that no marker introduces.
+) -> tuple[str, int] | None:
+    """Return the fence delimiter opening ``raw``, or ``None``.
 
     A delimiter indented beyond its container's limit is literal code, not a
-    fence, so it is left alone.
+    fence, so it is ignored.
 
-    Raises
-    ------
-    ValueError
-        If the line opens a fence that no marker introduces.
+    Returns
+    -------
+    tuple[str, int] | None
+        The fence character and run length, or ``None`` when ``raw`` opens no
+        fence.
     """
     depth = _quote_depth(raw)
     content = _strip_quotes(raw, depth) or ""
@@ -154,10 +158,53 @@ def _reject_unmarked_fence(
         base = list_indent
         remainder = content
     if _indentation(remainder) > base + _MAX_FENCE_INDENT:
-        return
-    if _fence_delimiter(remainder.strip()) is not None:
+        return None
+    return _fence_delimiter(remainder.strip())
+
+
+def _reject_unmarked_fence(
+    raw: str,
+    path: Path,
+    index: int,
+    list_indent: int,
+) -> None:
+    """Raise when ``raw`` opens a fence that no marker introduces.
+
+    Raises
+    ------
+    ValueError
+        If the line opens a fence that no marker introduces.
+    """
+    if _unmarked_fence_delimiter(raw, list_indent) is not None:
         message = f"{path}:{index + 1}: unmarked fenced example"
         raise ValueError(message)
+
+
+def _skip_unmarked_fence(
+    lines: cabc.Sequence[str],
+    index: int,
+    list_indent: int,
+) -> int | None:
+    """Return the index after an unmarked fence opened at ``index``.
+
+    Returns
+    -------
+    int | None
+        The index just past the closing fence, ``len(lines)`` when the fence
+        never closes, or ``None`` when ``index`` does not open a fence.
+    """
+    delimiter = _unmarked_fence_delimiter(lines[index], list_indent)
+    if delimiter is None:
+        return None
+    character, length = delimiter
+    depth = _quote_depth(lines[index])
+    for end in range(index + 1, len(lines)):
+        content = _strip_quotes(lines[end], depth)
+        if content is None:
+            return end
+        if _closes_fence(content, character, length, list_indent):
+            return end + 1
+    return len(lines)
 
 
 def _marker_at(
