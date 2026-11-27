@@ -79,13 +79,14 @@ production modules are executable contracts.
 
 1. `update_toml_snippet_versions` and `rewrite_markdown_toml_fences` leave a
    fence's package version unchanged when the fence does not name a bumped
-   crate in `[package].name`, and report `changed is False` for such a fence
-   only when it also contains no eligible dependency. Dependency requirements
-   are independent of that gate, so a fence that contains an eligible
-   dependency still changes even though its package version does not
-   (requirement 5).
-2. A fence that names a bumped crate and declares a string `version` has that
-   value replaced, preserving inline comments and trivia.
+   crate in `[package].name`, and report `changed is False` when no version or
+   eligible dependency requirement in the fence differs from the target.
+   Dependency requirements are independent of the gate, so a fence that
+   contains an eligible requirement differing from the target still changes
+   even though its package version does not (requirement 5).
+2. A fence that names a bumped crate and declares a string `version` that
+   differs from the target has that value replaced, preserving inline comments
+   and trivia; a value already equal to the target reports no change.
 3. A fence that declares `version.workspace = true`, an inline
    `version = { workspace = true }`, or no `version` key at all keeps its
    package version; an eligible dependency in the same fence may still change.
