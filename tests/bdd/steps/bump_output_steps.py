@@ -1,5 +1,6 @@
 """BDD steps for the bump report lines and documentation-file assertions."""
 
+import re
 import typing as typ
 
 from pytest_bdd import parsers, then
@@ -56,9 +57,17 @@ def then_cli_output_lists_path_once(
     )
 
 
+_TOML_FENCE = re.compile(r"^```toml\n(?P<body>.*?)^```$", re.DOTALL | re.MULTILINE)
+
+
 def _documentation_text(cli_run: dict[str, typ.Any], relative_path: str) -> str:
     """Return the documentation file's complete text."""
     return (cli_run["workspace"] / relative_path).read_text(encoding="utf-8")
+
+
+def _documentation_bytes(cli_run: dict[str, typ.Any], relative_path: str) -> str:
+    """Return the file decoded without newline translation."""
+    return (cli_run["workspace"] / relative_path).read_bytes().decode("utf-8")
 
 
 def _assert_documentation_fragment(
@@ -115,12 +124,14 @@ def then_documentation_does_not_contain(
 def then_documentation_retains_fence(
     cli_run: dict[str, typ.Any], relative_path: str, fence_name: str
 ) -> None:
-    """Assert the named source fence is present byte-for-byte."""
+    """Assert the named source fence survives as one identical fence body."""
     expected = mixed_fence_body(fence_name)
-    contents = _documentation_text(cli_run, relative_path)
-    assert expected in contents, (
-        f"the {fence_name!r} fence must survive the bump unchanged in "
-        f"{relative_path!r}; expected:\n{expected!r}\ngot:\n{contents}"
+    contents = _documentation_bytes(cli_run, relative_path)
+    bodies = [match.group("body") for match in _TOML_FENCE.finditer(contents)]
+    assert bodies.count(expected) == 1, (
+        f"the {fence_name!r} fence must survive the bump as exactly one "
+        f"complete and identical fence in {relative_path!r}; "
+        f"expected body:\n{expected!r}\ngot bodies:\n{bodies!r}"
     )
 
 
