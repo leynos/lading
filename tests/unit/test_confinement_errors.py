@@ -200,3 +200,45 @@ def test_validate_relative_pattern_rejects_a_windows_component_with_a_drive(
     assert "drive or root" in str(excinfo.value), (
         "the diagnostic must explain the component's own drive"
     )
+
+
+def test_relative_to_root_accepts_an_alternative_spelling(
+    tmp_path: Path,
+) -> None:
+    """An alternative spelling that names the same directory is accepted."""
+    root = tmp_path.resolve()
+    (root / "Cargo.toml").write_text("", encoding="utf-8")
+    doubled = Path(f"{root.as_posix()}//Cargo.toml")
+
+    relative = relative_to_root(root, doubled, key="manifest", label="manifest")
+
+    assert relative == Path("Cargo.toml"), (
+        "a redundant separator must not change the validated suffix"
+    )
+
+
+def test_relative_to_root_rejects_a_symlinked_component(tmp_path: Path) -> None:
+    """A lexically contained path through a symlink is not beneath the root."""
+    root = tmp_path.resolve() / "workspace"
+    root.mkdir()
+    outside = tmp_path.resolve() / "outside"
+    outside.mkdir()
+    (root / "link").symlink_to(outside, target_is_directory=True)
+    candidate = root / "link" / "Cargo.toml"
+    candidate.write_text("", encoding="utf-8")
+
+    with pytest.raises(UnsafeBumpTargetError):
+        relative_to_root(root, candidate, key="manifest", label="manifest")
+
+
+def test_relative_to_root_rejects_a_case_only_sibling(tmp_path: Path) -> None:
+    """A sibling that differs only in case is not beneath the root."""
+    root = tmp_path.resolve() / "workspace"
+    root.mkdir()
+    sibling = tmp_path.resolve() / "WORKSPACE"
+    sibling.mkdir()
+    candidate = sibling / "Cargo.toml"
+    candidate.write_text("", encoding="utf-8")
+
+    with pytest.raises(UnsafeBumpTargetError):
+        relative_to_root(root, candidate, key="manifest", label="manifest")

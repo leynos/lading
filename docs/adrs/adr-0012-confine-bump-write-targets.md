@@ -318,6 +318,20 @@ Hypothesis properties now cover the lexical validator, confined glob expansion,
 Empty path components collapse the same way Cargo collapses them, so they are
 accepted rather than added as rejection cases.
 
+### 2026-11-27: Identity-free keys, resolved ancestry and excluded dependencies
+
+When no inode identity is available, a proposal key uses the exact path
+spelling rather than a case-folded one, so case-only targets on a
+case-sensitive Windows directory stay distinct. The lockfile report leads with
+the single shallowest destination and then sorts the remainder
+lexicographically, whatever its depth. `relative_to_root` resolves the nearest
+existing ancestor and proves the root is one of its ancestors by identity, so a
+lexically contained path through a symlink or a case-only sibling is rejected.
+A failed directory-scan iteration is an examination error rather than an absent
+directory. Implicit-member discovery applies literal exclusions to the
+normalized destination before walking or reading an excluded dependency, so an
+excluded nested workspace contributes neither manifests nor inherited names.
+
 ## Alternatives considered
 
 - **Resolve once and check containment.** `Path.resolve()` follows the links it

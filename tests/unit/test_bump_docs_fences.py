@@ -168,8 +168,12 @@ def test_a_tab_indented_list_fence_uses_column_indentation() -> None:
         "a tab after the marker must become four columns of continuation"
     )
     parsed = MarkdownIt("commonmark").parse(updated)
-    assert [token.type for token in parsed].count("fence") == 1, (
+    fences = [token for token in parsed if token.type == "fence"]
+    assert len(fences) == 1, (
         "the rewrite must remain one fenced block inside the list item"
+    )
+    assert 'alpha = "1.2.3"' in fences[0].content, (
+        "the parsed fence must carry the rewritten TOML"
     )
     assert any(token.type == "bullet_list_open" for token in parsed), (
         "the fence must stay inside the list item"

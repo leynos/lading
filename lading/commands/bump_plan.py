@@ -144,11 +144,12 @@ class PlanBuilder:
         except FileNotFoundError:
             return self._absent_key(path)
         except OSError:
-            return ("path", os.path.normcase(str(path.path)))
+            return ("path", str(path.path))
         if status.st_ino == 0:
-            # A platform may report no inode for distinct files on one device;
-            # the normalized path then keeps those targets distinct.
-            return ("path", os.path.normcase(str(path.path)))
+            # A platform may report no inode for distinct files on one device.
+            # The exact spelling keeps case-only targets distinct even on a
+            # case-sensitive Windows directory, where normcase would merge them.
+            return ("path", str(path.path))
         return ("file", status.st_dev, status.st_ino)
 
     def _absent_key(self, path: ConfinedPath) -> _ProposalKey:
@@ -156,7 +157,7 @@ class PlanBuilder:
         try:
             parent = path.path.parent.stat()
         except OSError:
-            return ("path", os.path.normcase(str(path.path)))
+            return ("path", str(path.path))
         if parent.st_ino == 0:
             return ("path", os.path.normcase(str(path.path)))
         return (
@@ -354,17 +355,26 @@ def changes_from_plan(
 
 
 def _root_first(lockfiles: cabc.Sequence[Path]) -> tuple[Path, ...]:
-    """Return lockfiles with the shallowest (workspace-root) file first.
+    """Return lockfiles with the workspace-root file first.
 
     Cargo's execution order is unchanged; only the report is ordered so the
-    root lockfile leads and nested destinations follow lexicographically.
+    shallowest destination leads and the rest follow lexicographically,
+    regardless of their nesting depth.
 
     Returns
     -------
     tuple[Path, ...]
         The report order.
     """
-    return tuple(sorted(lockfiles, key=lambda path: (len(path.parts), path.as_posix())))
+    if not lockfiles:
+        return ()
+    shallowest = min(len(path.parts) for path in lockfiles)
+    roots = [path for path in lockfiles if len(path.parts) == shallowest]
+    if len(roots) != 1:
+        return tuple(sorted(lockfiles, key=Path.as_posix))
+    root = roots[0]
+    rest = sorted((path for path in lockfiles if path != root), key=Path.as_posix)
+    return (root, *rest)
 
 
 def _paths_for(plan: BumpPlan, category: WriteCategory) -> tuple[Path, ...]:

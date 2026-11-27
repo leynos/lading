@@ -104,14 +104,31 @@ def relative_to_root(root: Path, candidate: Path, *, key: str, label: str) -> Pa
     Raises
     ------
     UnsafeBumpTargetError
-        If ``candidate`` is on another drive, outside ``root``, or contains a
-        parent-traversing ``..`` component.
-    """
-    if os.path.normcase(os.path.splitdrive(candidate)[0]) != os.path.normcase(
-        os.path.splitdrive(root)[0]
-    ):
+        If ``candidate`` is on another drive, outside ``root``, resolves
+        elsewhere through a symlink, or contains a parent-traversing ``..``.
+    """  # ruff: ignore[docstring-extraneous-exception]  # raised by helpers
+    _require_same_drive(root, candidate, key=key, label=label)
+    relative = _lexical_relative(root, candidate, key=key, label=label)
+    _require_resolved_containment(candidate, root, key=key, label=label)
+    return relative
+
+
+def _require_same_drive(root: Path, candidate: Path, *, key: str, label: str) -> None:
+    """Reject a candidate on a different drive from the root."""
+    if not _same_drive(root, candidate):
         message = f"{key}: {label} is on a different drive: {candidate}"
         raise UnsafeBumpTargetError(message)
+
+
+def _same_drive(root: Path, candidate: Path) -> bool:
+    """Return whether both paths name the same drive."""
+    return os.path.normcase(os.path.splitdrive(candidate)[0]) == os.path.normcase(
+        os.path.splitdrive(root)[0]
+    )
+
+
+def _lexical_relative(root: Path, candidate: Path, *, key: str, label: str) -> Path:
+    """Return the lexically root-relative path, rejecting escapes."""
     try:
         # ``relpath`` would collapse ``link/..`` lexically, while the operating
         # system resolves it through ``link``. Preserving the component lets
@@ -125,6 +142,30 @@ def relative_to_root(root: Path, candidate: Path, *, key: str, label: str) -> Pa
         message = f"{key}: {label} contains a parent traversal: {candidate}"
         raise UnsafeBumpTargetError(message)
     return relative
+
+
+def _require_resolved_containment(
+    candidate: Path,
+    root: Path,
+    *,
+    key: str,
+    label: str,
+) -> None:
+    """Reject a lexically contained path that resolves outside the root."""
+    if not _is_within_directory_identity(_existing_ancestor(candidate), root):
+        message = (
+            f"{key}: {label} does not resolve beneath the workspace root "
+            f"(a symlink or case-only sibling may be involved): {candidate}"
+        )
+        raise UnsafeBumpTargetError(message)
+
+
+def _existing_ancestor(candidate: Path) -> Path:
+    """Return ``candidate`` or its nearest existing ancestor."""
+    probe = candidate
+    while not os.path.lexists(probe) and probe.parent != probe:
+        probe = probe.parent
+    return probe
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -218,7 +259,11 @@ def _is_within_directory_identity(candidate: Path, root: Path) -> bool:
         ``True`` when the candidate or one of its ancestors is ``root``.
     """
     probe = candidate if os.path.lexists(candidate) else candidate.parent
-    for ancestor in (probe, *probe.parents):
+    try:
+        resolved = Path(os.path.realpath(probe, strict=True))
+    except OSError:
+        return False
+    for ancestor in (resolved, *resolved.parents):
         try:
             if ancestor.samefile(root):
                 return True

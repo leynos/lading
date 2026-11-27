@@ -197,6 +197,9 @@ class _Discovery:
         discovered: list[tuple[str, ...]],
     ) -> None:
         """Record one dependency path that has not been scheduled yet."""
+        lexical = _lexical_parts(self.root, base_parts, raw)
+        if lexical is not None and self._is_excluded(lexical):
+            return
         resolved = resolve_dependency(self.root, base_parts, raw)
         if resolved is None or resolved in self.seen:
             return
@@ -219,6 +222,32 @@ class _Discovery:
         if parts in self.explicit:
             return False
         return any(parts[: len(prefix)] == prefix for prefix in self.excluded if prefix)
+
+
+def _lexical_parts(
+    root: Path,
+    base_parts: tuple[str, ...],
+    raw: str,
+) -> tuple[str, ...] | None:
+    """Return the normalized in-workspace components of ``raw`` without I/O.
+
+    Cargo removes redundant steps before opening a dependency path. Applying
+    an exclusion to that lexical destination lets an excluded dependency be
+    skipped before its components are walked or validated.
+
+    Returns
+    -------
+    tuple[str, ...] | None
+        Components below ``root``, or ``None`` for a path outside it.
+    """
+    candidate = Path(raw)
+    absolute = (
+        candidate if candidate.is_absolute() else root.joinpath(*base_parts, candidate)
+    )
+    try:
+        return Path(os.path.normpath(absolute)).relative_to(root).parts
+    except ValueError:
+        return None
 
 
 def require_workspace_pointer(

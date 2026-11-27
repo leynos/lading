@@ -314,10 +314,14 @@ def test_a_broken_dependency_manifest_is_rejected(
 
 
 def test_an_excluded_nested_workspace_is_not_read(tmp_path: Path) -> None:
-    """An excluded nested workspace is not a member and is left unread."""
-    root = tmp_path.resolve()
+    """An excluded dependency is skipped before its symlinked path is walked."""
+    root = tmp_path.resolve() / "workspace"
+    root.mkdir()
+    outside = tmp_path.resolve() / "outside"
+    (outside / "tool").mkdir(parents=True)
     (root / "Cargo.toml").write_text(
-        '[workspace]\nmembers = ["app"]\nexclude = ["vendor/tool"]\n',
+        '[workspace]\nmembers = ["app"]\nexclude = ["vendor/tool"]\n\n'
+        '[workspace.dependencies]\ninherited = { path = "vendor/inherited-dep" }\n',
         encoding="utf-8",
     )
     (root / "app").mkdir()
@@ -326,10 +330,13 @@ def test_an_excluded_nested_workspace_is_not_read(tmp_path: Path) -> None:
         '[dependencies]\ntool = { path = "../vendor/tool" }\n',
         encoding="utf-8",
     )
-    nested = root / "vendor" / "tool"
-    nested.mkdir(parents=True)
-    (nested / "Cargo.toml").write_text(
-        '[package]\nname = "tool"\nversion = "0.1.0"\n\nworkspace = "../.."\n',
+    # ``vendor`` is a symlink, so walking this dependency path would be
+    # rejected as a symlinked component. The exclusion must skip it first.
+    (root / "vendor").symlink_to(outside, target_is_directory=True)
+    (outside / "tool" / "Cargo.toml").write_text(
+        '[package]\nname = "tool"\nversion = "0.1.0"\n\n'
+        'workspace = "."\n\n'
+        "[dependencies]\ninherited = { workspace = true }\n",
         encoding="utf-8",
     )
     runner = runner_for(payload(root, ("app",)))
@@ -337,5 +344,5 @@ def test_an_excluded_nested_workspace_is_not_read(tmp_path: Path) -> None:
     graph = load_bump_workspace(root, runner=typ.cast("CommandRunner", runner))
 
     assert {crate.name for crate in graph.crates} == {"app"}, (
-        "the excluded nested workspace must not enter the member set"
+        "the excluded nested workspace must not be read or validated"
     )

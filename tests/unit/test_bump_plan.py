@@ -400,10 +400,27 @@ def test_targets_without_an_inode_identity_stay_distinct(
         "a zero inode must fall back to the path, keeping both writes distinct"
     )
 
+    upper = root / "Alpha.md"
+    lower = root / "alpha.md"
+    upper.write_text("original-upper\n", encoding="utf-8")
+    try:
+        lower.write_text("original-lower\n", encoding="utf-8")
+    except OSError:  # pragma: no cover - a case-insensitive filesystem
+        pytest.skip("the filesystem cannot hold case-only sibling names")
+    builder = PlanBuilder(root=root)
+    builder.propose(_confined(root, "Alpha.md"), "upper\n", WriteCategory.MANIFEST)
+    builder.propose(_confined(root, "alpha.md"), "lower\n", WriteCategory.MANIFEST)
+
+    case_plan = builder.build(target_version="1.2.3", lockfiles=None)
+
+    assert len(case_plan.proposals) == 2, (
+        "case-only targets must not merge when no inode identity is available"
+    )
+
 
 def _root_first_report(root: Path) -> list[str]:
     """Return the expected root-first lockfile report order."""
-    names = ("Cargo.lock", "a/Cargo.lock", "z/Cargo.lock")
+    names = ("Cargo.lock", "a/nested/Cargo.lock", "z/Cargo.lock")
     return [(root / name).as_posix() for name in names]
 
 
@@ -423,7 +440,7 @@ def test_lockfile_report_puts_the_root_first(tmp_path: Path) -> None:
         lockfiles=(
             root / "z" / "Cargo.lock",
             root / "Cargo.lock",
-            root / "a" / "Cargo.lock",
+            root / "a" / "nested" / "Cargo.lock",
         ),
     )
 
@@ -434,11 +451,8 @@ def test_lockfile_report_puts_the_root_first(tmp_path: Path) -> None:
 
 _PLAN_COMPONENT = st.text(alphabet=string.ascii_lowercase, min_size=1, max_size=4)
 _PLAN_CATEGORY = st.sampled_from(sorted(WriteCategory, key=lambda item: item.name))
-_PLAN_PROPOSAL = st.tuples(
-    _PLAN_COMPONENT,
-    st.text(alphabet="ab\n", min_size=0, max_size=6),
-    _PLAN_CATEGORY,
-)
+_PLAN_CONTENT = st.sampled_from(["initial\n", "", "a", "b\n", "ab"])
+_PLAN_PROPOSAL = st.tuples(_PLAN_COMPONENT, _PLAN_CONTENT, _PLAN_CATEGORY)
 
 
 @dc.dataclass(slots=True)

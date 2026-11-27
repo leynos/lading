@@ -622,6 +622,14 @@ Scenario: Bumping rejects an escaping configured lockfile manifest
   fence idempotence. The docs limit atomicity to Lading's own writes and the
   migration guide gains ordered tasks, a checklist, and a before/after port
   pair.
+- [x] 2026-11-27: Reconciliation round. Identity-free proposal keys use the
+  exact spelling so case-only targets stay distinct; the lockfile report is
+  root-first then lexicographic at any depth; `relative_to_root` proves the
+  resolved ancestry by identity; exclusions skip an implicit dependency before
+  its components are walked; a failed scan iteration is an examination error;
+  and the migration guide is reorganized into numbered tasks with the checklist
+  last. The property strategies cover restoration and skip unsupported symlink
+  creation.
 - [ ] EP-M5 release: tag and release `v0.4.0b1` after review convergence, then
   record the tag commit on issue #409.
 

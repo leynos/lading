@@ -6,6 +6,7 @@ the lexical validator, and small directory trees with regular files, symlinks
 and hard links for confined glob expansion.
 """
 
+import errno
 import os
 import shutil
 import string
@@ -103,6 +104,25 @@ def _reset(root: Path) -> None:
         shutil.rmtree(root)
 
 
+def _add_link(root: Path, names: list[str], shape: str) -> None:
+    """Add the requested link shape, skipping only an unsupported host."""
+    match shape:
+        case "symlink":
+            try:
+                (root / "link.md").symlink_to(root / names[0])
+            except NotImplementedError:
+                pytest.skip("symlinks are unavailable on this host")
+            except OSError as exc:
+                if exc.errno not in {errno.EPERM, errno.EACCES}:
+                    raise
+                pytest.skip(f"symlink creation is unavailable here: {exc}")
+        case "hardlink":
+            try:
+                os.link(root / names[0], root / "hard.md")
+            except OSError:
+                pytest.skip("hard links are unavailable here")
+
+
 @filesystem_property_settings(
     max_examples=20,
     suppress_health_check=[HealthCheck.function_scoped_fixture],
@@ -119,14 +139,7 @@ def test_expand_confined_glob_returns_contained_sorted_unique_matches(
     root.mkdir()
     for name in names:
         (root / name).write_text("x", encoding="utf-8")
-    match shape:
-        case "symlink":
-            (root / "link.md").symlink_to(root / names[0])
-        case "hardlink":
-            try:
-                os.link(root / names[0], root / "hard.md")
-            except OSError:
-                pytest.skip("hard links are unavailable here")
+    _add_link(root, names, shape)
 
     if shape != "regular":
         with pytest.raises(UnsafeBumpTargetError):

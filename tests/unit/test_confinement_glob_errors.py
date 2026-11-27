@@ -1,5 +1,6 @@
 """Unit tests for glob expansion internals and rejection branches."""
 
+import collections.abc as cabc
 import errno
 import os
 import typing as typ
@@ -187,4 +188,42 @@ def test_a_hard_linked_documentation_match_is_rejected(tmp_path: Path) -> None:
 
     assert "hard-linked target is not permitted" in str(excinfo.value), (
         "a hard-linked regular-file match must be rejected"
+    )
+
+
+def test_scandir_iteration_failure_is_an_examination_error(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A failure after the scan opens must not look like an absent directory."""
+    root = tmp_path.resolve()
+    (root / "docs").mkdir()
+    (root / "docs" / "guide.md").write_text("x", encoding="utf-8")
+
+    class FailingScan:
+        """Context manager whose iteration fails after opening."""
+
+        def __enter__(self) -> FailingScan:
+            """Return the scan as its own context."""
+            return self
+
+        def __exit__(self, *_exc: object) -> None:
+            """Leave the scan context without suppressing failures."""
+            return
+
+        def __iter__(self) -> cabc.Iterator[os.DirEntry[str]]:
+            """Fail as an entry that vanishes during iteration."""
+            raise FileNotFoundError(errno.ENOENT, "vanished during iteration")
+
+    def failing_scandir(_path: object) -> FailingScan:
+        """Return a scan that fails during iteration."""
+        return FailingScan()
+
+    monkeypatch.setattr(os, "scandir", failing_scandir)
+
+    with pytest.raises(BumpTargetExaminationError) as excinfo:
+        expand_confined_glob(root, "docs/*.md", key="globs")
+
+    assert "cannot list directory" in str(excinfo.value), (
+        "an iteration failure must be reported as an examination error"
     )

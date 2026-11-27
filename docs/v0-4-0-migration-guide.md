@@ -54,14 +54,14 @@ _Table 1: Required action by interpreter version and workspace shape._
 Three changes require action. The interpreter floor requires an environment
 migration. A workspace that relies on a symlinked member or an escaping
 documentation glob must be corrected, as described under
-[Bump confinement preflight](#bump-confinement-preflight); such a workspace
-fails the same way on any interpreter. A script that reads diagnostics from
-stdout should read stderr instead, because diagnostics moved there. A project
-pinned to a Lading version through a lockfile keeps that version until the
-lockfile is regenerated, so the floor bites when the pin is moved rather than
-when this release is published.
+[Bump confinement preflight](#1-make-bump-write-targets-confined-and-regular);
+such a workspace fails the same way on any interpreter. A script that reads
+diagnostics from stdout should read stderr instead, because diagnostics moved
+there. A project pinned to a Lading version through a lockfile keeps that
+version until the lockfile is regenerated, so the floor bites when the pin is
+moved rather than when this release is published.
 
-## Bump confinement preflight
+## 1. Make bump write targets confined and regular
 
 `lading bump` now validates the complete write plan before changing anything. A
 workspace that relied on any of the following now fails with exit status 1 and a
@@ -93,6 +93,12 @@ workspace that relied on any of the following now fails with exit status 1 and a
   route. Unset the variable and remove the setting from every configuration
   file Cargo would read.
 
+The guarantee is validation before mutation. A failure during an actual write
+or Cargo invocation is not rolled back, and a concurrent process that changes a
+path after validation is not defended against.
+
+## 2. Fix lockfile manifests and Cargo overrides
+
 Configured lockfile manifests are resolved to the effective workspace root
 Cargo reports. A manifest that belongs to the outer workspace now reports the
 outer `Cargo.lock` instead of an adjacent file; only a standalone nested
@@ -108,11 +114,7 @@ multi-manifest failure also prints that repair command for each listed
 manifest. Run the command from the workspace root, or pass an absolute manifest
 path, because a relative path resolves against the shell's current directory.
 
-The guarantee is validation before mutation. A failure during an actual write
-or Cargo invocation is not rolled back, and a concurrent process that changes a
-path after validation is not defended against.
-
-### Migrating a custom lockfile repository
+## 3. Implement the lockfile repository port
 
 A custom `LockfileRepository` supplied through
 `BumpOptions.lockfile_repository` must implement `plan_lockfiles` and
@@ -123,7 +125,7 @@ manifest tuple directly, but they alone no longer satisfy the port. Call
 configured destinations before writing, and call `regenerate_planned` only when
 a manifest changed.
 
-Before:
+### Before
 
 <!-- tested-example: migration-lockfile-port-before -->
 ```python
@@ -132,7 +134,7 @@ class Repository(Protocol):
     def regenerate_lockfiles(self, manifests): ...
 ```
 
-After:
+### After
 
 <!-- tested-example: migration-lockfile-port-after -->
 ```python
@@ -146,51 +148,7 @@ class Repository(Protocol):
     def regenerate_planned(self, plan: LockfilePlan) -> tuple[Path, ...]: ...
 ```
 
-### Migration checklist
-
-- [ ] Make any member reachable only through a symlinked directory a real path.
-- [ ] Narrow escaping documentation globs to the workspace.
-- [ ] Make selected documentation files readable and decodable.
-- [ ] Replace symlinked, non-regular, or hard-linked write targets with
-      independent regular files.
-- [ ] Make in-workspace path dependencies real directories with a regular
-      `Cargo.toml`.
-- [ ] Fix or remove configured `bump.lockfile_manifests` entries.
-- [ ] Unset `CARGO_RESOLVER_LOCKFILE_PATH` and remove any
-      `resolver.lockfile-path` setting Cargo would read.
-- [ ] Implement `plan_lockfiles` and `regenerate_planned` on any custom
-      lockfile repository.
-- [ ] Run `lading bump --dry-run` on the migrated workspace before bumping.
-
-The affected-reader table above lists the same work by workspace shape.
-
-## What changed
-
-The requirement in the package metadata moved:
-
-<!-- tested-example: migration-requires-python-floor -->
-```text
-# 0.3.1
-Requires-Python: >=3.13
-
-# 0.4.0
-Requires-Python: >=3.14
-```
-
-Because `Requires-Python` is enforced by the installer, an attempt to install
-the 0.4.0 wheel under 3.13 fails before any file is written:
-
-<!-- tested-example: migration-old-interpreter-error -->
-```console
-$ python3.13 -m pip install lading-0.4.0-py3-none-any.whl
-ERROR: Package 'lading' requires a different Python: 3.13.x not in '>=3.14'
-```
-
-That refusal is the intended behaviour rather than a packaging accident. It
-replaces the alternative — installing successfully and then failing at import
-or during a run — with a message that names the constraint.
-
-## Command-line output streams
+## 4. Read diagnostics from stderr
 
 Lading constructs its command-line application with an explicit result action,
 so its own dispatcher owns printing and exit codes instead of delegating them
@@ -209,23 +167,7 @@ contract, including the exit-status table, is in
 the decision is recorded in
 [ADR-011](adrs/adr-0011-cyclopts-4-cli-result-and-diagnostic-boundary.md).
 
-## Why the floor moved
-
-Lading's lint and typecheck gateways evaluate the source against a single
-declared baseline: Ruff's `target-version`, Pylint's `py-version`, the managed
-interpreters `uv tool run` provisions, and the type checker's
-`--python-version` all derive from one `PYTHON_BASELINE` value in the
-`Makefile`. The gateways parse and analyse the code as 3.14, and the toolchain
-runs on a 3.14 interpreter.
-
-Supporting 3.13 in the metadata while checking against 3.14 would advertise a
-version nothing in the project verifies.
-[Linting workflow](developers-guide.md#linting-workflow) in the developer's
-guide records how the baseline is declared and mirrored;
-[Supported Python versions](users-guide.md#supported-python-versions) states
-the floor for users.
-
-## Upgrading
+## 5. Upgrade to CPython 3.14
 
 Upgrade the interpreter first, then the package, so that the installer's
 constraint is satisfied at the moment it is checked.
@@ -279,9 +221,78 @@ shapes should be corrected, or migrated, before the interpreter moves:
 uv add 'lading<0.4.0'
 ```
 
+## What changed
+
+The requirement in the package metadata moved:
+
+<!-- tested-example: migration-requires-python-floor -->
+```text
+# 0.3.1
+Requires-Python: >=3.13
+
+# 0.4.0
+Requires-Python: >=3.14
+```
+
+Because `Requires-Python` is enforced by the installer, an attempt to install
+the 0.4.0 wheel under 3.13 fails before any file is written:
+
+<!-- tested-example: migration-old-interpreter-error -->
+```console
+$ python3.13 -m pip install lading-0.4.0-py3-none-any.whl
+ERROR: Package 'lading' requires a different Python: 3.13.x not in '>=3.14'
+```
+
+That refusal is the intended behaviour rather than a packaging accident. It
+replaces the alternative — installing successfully and then failing at import
+or during a run — with a message that names the constraint.
+
+## Why the floor moved
+
+Lading's lint and typecheck gateways evaluate the source against a single
+declared baseline: Ruff's `target-version`, Pylint's `py-version`, the managed
+interpreters `uv tool run` provisions, and the type checker's
+`--python-version` all derive from one `PYTHON_BASELINE` value in the
+`Makefile`. The gateways parse and analyse the code as 3.14, and the toolchain
+runs on a 3.14 interpreter.
+
+Supporting 3.13 in the metadata while checking against 3.14 would advertise a
+version nothing in the project verifies.
+[Linting workflow](developers-guide.md#linting-workflow) in the developer's
+guide records how the baseline is declared and mirrored;
+[Supported Python versions](users-guide.md#supported-python-versions) states
+the floor for users.
+
 ## Staying on 0.3.1
 
 The 0.3.1 wheel remains available from its tagged release and continues to work
 on 3.13. This release does not withdraw it, and no part of 0.4.0 changes its
 behaviour retroactively. Treat 0.3.1 as the supported version for a 3.13
 environment, and migrate when the interpreter moves.
+
+## What does not need to change
+
+A workspace whose members are real directories, whose write targets are regular
+independent files, and which sets no lockfile override needs no change. Command
+summaries still go to stdout, and a script that captured both streams together
+sees no change in meaning.
+
+## Migration checklist
+
+- [ ] Upgrade to CPython 3.14 or later.
+- [ ] Read command diagnostics from stderr instead of stdout.
+- [ ] Make any member reachable only through a symlinked directory a real path.
+- [ ] Narrow escaping documentation globs to the workspace.
+- [ ] Make selected documentation files readable and decodable.
+- [ ] Replace symlinked, non-regular, or hard-linked write targets with
+      independent regular files.
+- [ ] Make in-workspace path dependencies real directories with a regular
+      `Cargo.toml`.
+- [ ] Fix or remove configured `bump.lockfile_manifests` entries.
+- [ ] Unset `CARGO_RESOLVER_LOCKFILE_PATH` and remove any
+      `resolver.lockfile-path` setting Cargo would read.
+- [ ] Implement `plan_lockfiles` and `regenerate_planned` on any custom
+      lockfile repository.
+- [ ] Run `lading bump --dry-run` on the migrated workspace before bumping.
+
+The affected-reader table above lists the same work by workspace shape.

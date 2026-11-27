@@ -98,18 +98,44 @@ class _Expansion:
             self._expand_literal(component, rest, prefix)
 
     def _scandir(self, directory: Path) -> list[os.DirEntry[str]] | None:
-        """Return directory entries, or ``None`` when the directory is absent."""
+        """Return directory entries, or ``None`` when the directory is absent.
+
+        Only opening the scan may report absence. A failure while iterating an
+        opened scan is an examination error; treating it as an absent
+        directory would silently discard entries already read.
+
+        Returns
+        -------
+        list[os.DirEntry[str]] | None
+            The entries, or ``None`` when the directory does not exist.
+        """
         try:
-            with os.scandir(directory) as entries:
-                return list(entries)
+            scan = os.scandir(directory)
         except FileNotFoundError:
             return None
         except OSError as exc:
-            message = (
-                f"{self.key}: cannot list directory "
-                f"{display_relative(self.root, directory)}: {exc}"
-            )
-            raise BumpTargetExaminationError(message) from exc
+            raise self._scan_failure(directory, exc) from exc
+        try:
+            with scan:
+                return list(scan)
+        except OSError as exc:
+            raise self._scan_failure(directory, exc) from exc
+
+    def _scan_failure(
+        self, directory: Path, exc: OSError
+    ) -> BumpTargetExaminationError:
+        """Return the examination error for one failed directory scan.
+
+        Returns
+        -------
+        BumpTargetExaminationError
+            The error naming the directory and its cause.
+        """
+        message = (
+            f"{self.key}: cannot list directory "
+            f"{display_relative(self.root, directory)}: {exc}"
+        )
+        return BumpTargetExaminationError(message)
 
     def _entry_stat(self, entry: os.DirEntry[str]) -> os.stat_result:
         """Return one entry's ``lstat`` result, reporting scan failures."""
