@@ -842,8 +842,23 @@ creates with `mkdtemp`, opening `.lading-staging-lock` inside it and taking an
 exclusive non-blocking lock that the process holds for the tree's life;
 `clean.run` takes the same lock through `hold_for_removal` and **holds it
 across** the `shutil.rmtree`, skipping the tree if it cannot take it. One
-module wraps both platforms: `fcntl.flock` on POSIX and `msvcrt.locking` on
-Windows.
+module wraps both platforms: `lading.utils.file_lock` uses `fcntl.flock` on
+POSIX and `msvcrt.locking` on Windows.
+
+### File locks (`lading.utils.file_lock`)
+
+`set_exclusive_lock(handle, *, locked=...)` is the platform primitive shared by
+`lading.commands.staging_lock` and `lading.commands.bump_workspace_write_lock`.
+On POSIX it applies `fcntl.flock(LOCK_EX | LOCK_NB)`, and on Windows it seeks
+to the start of the file and applies `msvcrt.locking` over one byte. Both are
+non-blocking: a failed acquisition raises the platform error unchanged, so
+callers decide whether to wait, retry, or report.
+
+The caller owns the handle. It must open the file in binary mode, keep it open
+for as long as the lock is held, and release the lock with `locked=False`
+before closing; the module never closes a handle it was given. A handle closed
+without that release drops the lock implicitly on both platforms, so the
+`locked=False` call belongs in the same `finally` that closes the handle.
 
 Holding rather than asking matters because asking and deleting are two moments,
 and a publish can claim the tree in between. Windows is the exception and is
@@ -1662,7 +1677,7 @@ area so existing handling remains precise:
 
 | Root exception              | Module                             | Notes                                                                                           |
 | --------------------------- | ---------------------------------- | ----------------------------------------------------------------------------------------------- |
-| `ConfigurationError`        | `lading.config`                    | Base for configuration loading and validation failures.                                         |
+| `ConfigurationError`        | `lading.exceptions`                | Base for configuration loading and validation failures; `lading.config` re-exports it.          |
 | `WorkspaceModelError`       | `lading.workspace.models`          | Base for workspace graph/model validation failures.                                             |
 | `CargoMetadataError`        | `lading.workspace.metadata`        | Base for cargo metadata execution and parsing failures.                                         |
 | `CommandSpawnError`         | `lading.runtime.subprocess_runner` | Raised when the subprocess runner cannot spawn an external command.                             |
@@ -2312,6 +2327,18 @@ invocation:
 No second invocation record is emitted at DEBUG level. Any regression that
 reintroduces a second invocation log at any level is pinned by the tests in
 `tests/unit/test_subprocess_runner_logging.py`.
+
+### Publish and preflight records (`lading.config_publish_preflight`)
+
+`lading.config_publish_preflight` owns the frozen records for the `[publish]`
+and `[publish.preflight]` tables: `PublishConfig`, `PreflightConfig`, their
+`from_mapping` constructors, and the key sets each table accepts. The module
+depends on `lading.config_validation` for coercion and raises
+`ConfigurationError` (from `lading.exceptions`) on an unknown key or an invalid
+value. `lading.config` re-exports the records and assembles them into
+`LadingConfig`, so command code imports the record types from either module.
+Configured manifest rewrites follow the same split in
+`lading.config_manifest_rewrites`.
 
 ### Pre-flight validation (`publish_preflight`)
 

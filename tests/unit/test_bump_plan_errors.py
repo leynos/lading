@@ -6,7 +6,12 @@ import pytest
 
 from lading.commands import bump_toml
 from lading.commands.bump_manifest_rewrite_model import ManifestRewriteWriteError
-from lading.commands.bump_plan import PlanBuilder, WriteCategory, commit_plan
+from lading.commands.bump_plan import (
+    PlanBuilder,
+    PlannedWrite,
+    WriteCategory,
+    commit_plan,
+)
 from lading.utils.confinement import (
     BumpTargetExaminationError,
     ConfinedPath,
@@ -56,31 +61,34 @@ def test_read_returns_none_for_a_missing_target(tmp_path: Path) -> None:
     )
 
 
-def test_read_reports_a_directory_target(tmp_path: Path) -> None:
-    """A directory named as a file is an examination error."""
+@pytest.mark.parametrize(
+    "case",
+    [
+        pytest.param(("directory", "docs"), id="directory"),
+        pytest.param(("undecodable", "bad.md"), id="undecodable"),
+    ],
+)
+def test_read_reports_an_unusable_target(
+    tmp_path: Path,
+    case: tuple[str, str],
+) -> None:
+    """A directory or undecodable file named as a target is an examination error."""
+    kind, relative = case
     root = tmp_path.resolve()
-    (root / "docs").mkdir()
+    target = root / relative
+    if kind == "directory":
+        target.mkdir()
+    else:
+        target.write_bytes(b"\xff\xfe\x00")
     builder = PlanBuilder(root=root)
 
+    # The path is built directly: this test targets the read, not the
+    # confinement policy that would reject a directory first.
     with pytest.raises(BumpTargetExaminationError) as excinfo:
-        builder.read(ConfinedPath(root=root, parts=("docs",)))
+        builder.read(ConfinedPath(root=root, parts=(relative,)))
 
     assert "cannot read bump target" in str(excinfo.value), (
         "the diagnostic must name the unreadable bump target"
-    )
-
-
-def test_read_reports_undecodable_content(tmp_path: Path) -> None:
-    """A target that is not valid UTF-8 is an examination error."""
-    root = tmp_path.resolve()
-    (root / "bad.md").write_bytes(b"\xff\xfe\x00")
-    builder = PlanBuilder(root=root)
-
-    with pytest.raises(BumpTargetExaminationError) as excinfo:
-        builder.read(_confined(root, "bad.md"))
-
-    assert "cannot read bump target" in str(excinfo.value), (
-        "the diagnostic must name the undecodable bump target"
     )
 
 
@@ -119,4 +127,47 @@ def test_commit_plan_reports_write_progress_on_failure(
     assert failure.value.failed_path == second, "the failed destination must be named"
     assert isinstance(failure.value.__cause__, OSError), (
         "the original write error must be chained"
+    )
+
+
+def test_commit_plan_reports_a_failed_attempt_to_the_observer(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The write observer sees the failing attempt as well as completed writes."""
+    root = tmp_path.resolve()
+    first = root / "first.toml"
+    second = root / "second.toml"
+    first.write_text("one\n", encoding="utf-8")
+    second.write_text("two\n", encoding="utf-8")
+    builder = PlanBuilder(root=root)
+    builder.propose(_confined(root, "first.toml"), "ONE\n", WriteCategory.MANIFEST)
+    builder.propose(
+        _confined(root, "second.toml"), "TWO\n", WriteCategory.DOCUMENTATION
+    )
+    plan = builder.build(target_version="2.0.0", lockfiles=None)
+    observed: list[tuple[str, float]] = []
+    original_write = bump_toml.write_atomic_text
+
+    def record(proposal: PlannedWrite, elapsed: float) -> None:
+        """Record each observed attempt by destination name."""
+        observed.append((proposal.path.path.name, elapsed))
+
+    def fail_second_write(path: Path, content: str) -> None:
+        """Reject only the documentation destination."""
+        if path == second:
+            message = "write rejected"
+            raise OSError(message)
+        original_write(path, content)
+
+    monkeypatch.setattr(bump_toml, "write_atomic_text", fail_second_write)
+
+    with pytest.raises(ManifestRewriteWriteError):
+        commit_plan(plan, on_write=record)
+
+    assert [name for name, _elapsed in observed] == ["first.toml", "second.toml"], (
+        "the observer must see the completed write and the failed attempt once each"
+    )
+    assert all(elapsed >= 0.0 for _name, elapsed in observed), (
+        "each observation must carry a non-negative elapsed time"
     )

@@ -119,7 +119,11 @@ lading [--workspace-root <path>] <subcommand> [options]
   downstream code can access the active configuration without passing it
   through every call. The CLI sets up this context before dispatching a
   subcommand and falls back to on-demand loading when commands are invoked
-  programmatically.
+  programmatically. Table-specific records live beside it:
+  `lading.config_manifest_rewrites` owns the configured non-member rewrite
+  records and `lading.config_publish_preflight` owns the publish and preflight
+  records, while `lading/config.py` re-exports them and assembles
+  `LadingConfig`.
 - The `cyclopts.App` is constructed with `result_action="return_value"`, so a
   command's return value reaches `_dispatch_and_print` unchanged. That
   function, and `main()` around it, own printing and exit codes: a string

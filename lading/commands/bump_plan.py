@@ -390,8 +390,8 @@ def commit_plan(
     plan : BumpPlan
         A fully validated plan.
     on_write : Callable[[PlannedWrite, float], None] or None, optional
-        Observer invoked after each successful write with the proposal and its
-        elapsed seconds. Defaults to ``None``.
+        Observer invoked after each write attempt, successful or failed, with
+        the proposal and its elapsed seconds. Defaults to ``None``.
 
     Raises
     ------
@@ -414,6 +414,7 @@ def commit_plan(
         try:
             bump_toml.write_atomic_text(proposal.path.path, proposal.content)
         except OSError as exc:
+            _notify_write(on_write, proposal, started_at)
             message = f"Could not write bump target {proposal.path.path}: {exc}"
             raise ManifestRewriteWriteError(
                 message,
@@ -421,8 +422,17 @@ def commit_plan(
                 planned_writes=planned_writes,
                 failed_path=proposal.path.path,
             ) from exc
-        if on_write is not None:
-            on_write(proposal, time.perf_counter() - started_at)
+        _notify_write(on_write, proposal, started_at)
+
+
+def _notify_write(
+    callback: cabc.Callable[[PlannedWrite, float], None] | None,
+    proposal: PlannedWrite,
+    started_at: float,
+) -> None:
+    """Report one write attempt to the optional observer."""
+    if callback is not None:
+        callback(proposal, time.perf_counter() - started_at)
 
 
 def changes_from_plan(

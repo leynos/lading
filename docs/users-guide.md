@@ -429,8 +429,7 @@ Target-specific tables inside a workspace or member `Cargo.toml` are not
 rewritten by the standard manifest pass; only their documentation counterparts
 are. Where the same dependency is also declared in an unconditional section of
 that manifest, the bump rewrites that entry. A dependency declared only for a
-target keeps its version in the member manifest and must be edited by hand, or
-rewritten by a configured non-member rewrite that selects the manifest.
+target keeps its version in the member manifest and must be edited by hand.
 
 #### Confinement preflight
 
@@ -1047,10 +1046,12 @@ target and every replacement is validated before the first write, `lading bump`
 deliberately does not roll back a partially committed plan. A plain rerun is
 not a repair: workspace and member manifests may already carry the target
 version, so the rerun treats that version as its pre-bump source and can leave
-remaining fixture strings unchanged. Inspect the failed manifest named in the
-error, complete its intended edits, and regenerate the affected lockfiles with
-`cargo update --workspace --manifest-path <manifest>`, or restore the run's
-committed manifest changes from version control before rerunning.
+remaining fixture strings unchanged. Inspect every planned destination that did
+not receive its rewrite: the failed manifest named in the error, and any
+manifest later in the plan that was never attempted. Complete all of those
+edits, then regenerate the affected lockfiles with
+`cargo update --workspace --manifest-path <manifest>`. Alternatively, restore
+the run's committed manifest changes from version control before rerunning.
 
 A live run holds a per-workspace advisory lock from planning through commit and
 lockfile regeneration, so a second Lading bump for the same workspace fails
