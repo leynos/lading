@@ -15,8 +15,7 @@ from tests.e2e.helpers.e2e_steps_helpers import (
     E2EExpectationError,
     _CliRunResult,
     extract_dependency_requirement,
-    filter_records,
-    run_cli,
+    run_lading_in_e2e_workspace,
     stub_cargo_metadata,
 )
 
@@ -179,16 +178,6 @@ def given_cargo_commands_stubbed(
     }
 
 
-def _run_lading_in_e2e_workspace(
-    repo_root: Path,
-    e2e_state: dict[str, typ.Any],
-    *args: str,
-) -> _CliRunResult:
-    """Run the lading CLI against the E2E workspace and capture the result."""
-    workspace: workspace_builder.NonTrivialWorkspace = e2e_state["workspace"]
-    return run_cli(repo_root, workspace.root, *args)
-
-
 @when(
     parsers.parse('I run lading bump "{version}" in the E2E workspace'),
     target_fixture="cli_run",
@@ -226,7 +215,7 @@ def when_run_lading_bump(
         >>> result["returncode"]  # doctest: +SKIP
         0
     """
-    return _run_lading_in_e2e_workspace(repo_root, e2e_state, "bump", version)
+    return run_lading_in_e2e_workspace(repo_root, e2e_state, "bump", version)
 
 
 @when("I commit the E2E workspace changes")
@@ -235,76 +224,6 @@ def when_commit_e2e_workspace_changes(e2e_state: dict[str, typ.Any]) -> None:
     repo_root: Path = e2e_state["git_repo"]
     git_helpers.git_add_all(repo_root)
     git_helpers.git_commit(repo_root, "Record bumped workspace")
-
-
-@when(
-    "I run lading publish --forbid-dirty in the E2E workspace", target_fixture="cli_run"
-)
-def when_run_lading_publish(
-    repo_root: Path,
-    e2e_state: dict[str, typ.Any],
-) -> _CliRunResult:
-    """Invoke `lading publish` (dry-run default) with `--forbid-dirty`.
-
-    Parameters
-    ----------
-    repo_root : Path
-        Repository root from which the CLI module is executed.
-    e2e_state : dict[str, typ.Any]
-        Shared step state carrying the target ``workspace``.
-
-    Returns
-    -------
-    _CliRunResult
-        The captured CLI result mapping with the executed ``command``,
-        ``returncode``, ``stdout``, ``stderr``, and ``workspace_root``.
-
-    Examples
-    --------
-    Bound to the Gherkin ``when`` step and invoked by pytest-bdd; the
-    returned mapping is exposed as the ``cli_run`` fixture::
-
-        >>> result = when_run_lading_publish(repo_root, e2e_state)  # doctest: +SKIP
-        >>> result["returncode"]  # doctest: +SKIP
-        0
-    """
-    return _run_lading_in_e2e_workspace(
-        repo_root, e2e_state, "publish", "--forbid-dirty"
-    )
-
-
-@when("I run lading publish in the E2E workspace", target_fixture="cli_run")
-def when_run_lading_publish_allow_dirty(
-    repo_root: Path,
-    e2e_state: dict[str, typ.Any],
-) -> _CliRunResult:
-    """Invoke `lading publish` using the default allow-dirty behaviour.
-
-    Parameters
-    ----------
-    repo_root : Path
-        Repository root from which the CLI module is executed.
-    e2e_state : dict[str, typ.Any]
-        Shared step state carrying the target ``workspace``.
-
-    Returns
-    -------
-    _CliRunResult
-        The captured CLI result mapping with the executed ``command``,
-        ``returncode``, ``stdout``, ``stderr``, and ``workspace_root``.
-
-    Examples
-    --------
-    Bound to the Gherkin ``when`` step and invoked by pytest-bdd; the
-    returned mapping is exposed as the ``cli_run`` fixture::
-
-        >>> result = when_run_lading_publish_allow_dirty(  # doctest: +SKIP
-        ...     repo_root, e2e_state
-        ... )
-        >>> result["returncode"]  # doctest: +SKIP
-        0
-    """
-    return _run_lading_in_e2e_workspace(repo_root, e2e_state, "publish")
 
 
 @then("the command succeeds")
@@ -367,81 +286,6 @@ def then_git_dirty(e2e_state: dict[str, typ.Any]) -> None:
     repo_root: Path = e2e_state["git_repo"]
     status = git_helpers.git_status_porcelain(repo_root)
     assert status.strip(), "expected a dirty git status"
-
-
-@then("cargo preflight was run for the workspace")
-def then_cargo_preflight_ran(publish_spies: dict[str, typ.Any]) -> None:
-    """Assert publish executed cargo check and cargo test pre-flight commands."""
-    check_calls = filter_records(publish_spies, "cargo::check")
-    test_calls = filter_records(publish_spies, "cargo::test")
-    assert check_calls, "expected at least one cargo::check preflight invocation"
-    assert test_calls, "expected at least one cargo::test preflight invocation"
-
-
-@then(parsers.parse('the publish order is "{expected}"'))
-def then_publish_order(publish_spies: dict[str, typ.Any], expected: str) -> None:
-    """Assert cargo package calls occur in the expected crate order.
-
-    Parameters
-    ----------
-    publish_spies : dict[str, typ.Any]
-        Recorded publish invocation state produced by the stub handlers.
-    expected : str
-        Comma-separated crate names parsed from the scenario step.
-
-    Examples
-    --------
-    Bound to the Gherkin ``then`` step and invoked by pytest-bdd against the
-    recorded ``publish_spies`` state::
-
-        >>> then_publish_order(publish_spies, "core, utils, app")  # doctest: +SKIP
-    """
-    expected_names = [name.strip() for name in expected.split(",") if name.strip()]
-    package_calls = filter_records(publish_spies, "cargo::package")
-    seen = []
-    for _label, _args, env in package_calls:
-        cwd = Path(env["PWD"])
-        seen.append(cwd.name)
-    assert seen == expected_names, f"expected {expected_names!r}, got {seen!r}"
-
-
-@then("cargo package was invoked for each crate")
-def then_cargo_package_invoked(publish_spies: dict[str, typ.Any]) -> None:
-    """Assert cargo package was invoked once per crate."""
-    workspace: workspace_builder.NonTrivialWorkspace = publish_spies["workspace"]
-    package_calls = filter_records(publish_spies, "cargo::package")
-    assert len(package_calls) == len(workspace.crate_names), package_calls
-    called = {Path(env["PWD"]).name for _label, _args, env in package_calls}
-    assert called == set(workspace.crate_names), called
-
-
-@then("cargo publish --dry-run was invoked for each crate")
-def then_cargo_publish_invoked(publish_spies: dict[str, typ.Any]) -> None:
-    """Assert cargo publish --dry-run was invoked once per crate."""
-    workspace: workspace_builder.NonTrivialWorkspace = publish_spies["workspace"]
-    publish_calls = filter_records(publish_spies, "cargo::publish")
-    assert len(publish_calls) == len(workspace.crate_names), publish_calls
-    called = {Path(env["PWD"]).name for _label, _args, env in publish_calls}
-    assert called == set(workspace.crate_names), called
-
-
-@then("cargo publish uses --allow-dirty in the default publish flow")
-def then_cargo_publish_uses_allow_dirty(publish_spies: dict[str, typ.Any]) -> None:
-    """Assert cargo publish includes --allow-dirty when allow-dirty is enabled."""
-    publish_calls = filter_records(publish_spies, "cargo::publish")
-    assert publish_calls, "expected at least one cargo::publish invocation"
-    seen_args = {args for _label, args, _env in publish_calls}
-    assert seen_args == {("--allow-dirty", "--dry-run")}, seen_args
-
-
-@then("cargo publish omits --allow-dirty when forbid-dirty is set")
-def then_cargo_publish_omits_allow_dirty(publish_spies: dict[str, typ.Any]) -> None:
-    """Assert cargo publish omits --allow-dirty when allow-dirty is disabled."""
-    publish_calls = filter_records(publish_spies, "cargo::publish")
-    assert publish_calls, "expected at least one cargo::publish invocation"
-    seen_args = {args for _label, args, _env in publish_calls}
-    assert seen_args == {("--dry-run",)}, seen_args
-    assert all("--allow-dirty" not in args for args in seen_args), seen_args
 
 
 @then("the workspace README was adopted for all crates")

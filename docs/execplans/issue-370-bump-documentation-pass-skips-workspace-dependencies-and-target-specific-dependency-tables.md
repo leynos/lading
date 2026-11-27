@@ -216,6 +216,15 @@ plan of work.
   `test_documentation_pass_rewrites_under_out_of_order_target_parent` proves
   the positive case. The assessment also retracted its earlier alias-parity
   demand, confirming the key-matching contract stands.
+- [x] (2026-11-27) The ExecPlan follow-up confirmed findings 1 and 2 resolved
+      and
+  raised three more, all addressed. `tests/e2e/steps/test_e2e_steps.py` was
+  still over 400 lines even though it no longer grew, so it was split: the
+  publish steps moved to `tests/e2e/steps/test_e2e_publish_steps.py` and the
+  shared CLI runner became `e2e_steps_helpers.run_lading_in_e2e_workspace`,
+  leaving 371 and 163 lines. The dry-run step now compares `read_bytes()`,
+  because `read_text` normalizes line endings. The module docstring now
+  separates what the two passes share from what is documentation-only.
 
 ## Surprises & discoveries
 

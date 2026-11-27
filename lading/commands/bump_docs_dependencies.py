@@ -1,15 +1,18 @@
 """Dependency-section rewriting for documentation TOML fences.
 
-The documentation pass covers the same dependency *tables* as the manifest
-pass, so a fence that documents a workspace or target table is rewritten the
-same way the manifest is. It does not make the two files identical: keys are
-matched as written, so an aliased entry is not resolved here. A rewrite visits:
+A rewrite visits:
 
 - the top-level ``[dependencies]``, ``[dev-dependencies]``, and
   ``[build-dependencies]`` tables;
 - their ``[workspace.*]`` counterparts, such as ``[workspace.dependencies]``;
 - every ``[target.<spec>.<section>]`` table whose selector sits directly under
   ``target``, such as ``[target.'cfg(unix)'.dependencies]``.
+
+The first two groups match what the manifest pass rewrites. The target tables
+are documentation-only: the manifest pass leaves them alone because Cargo
+applies a target-specific requirement solely to the matching target. Fences are
+also not identical to manifests in another way: keys are matched as written, so
+an aliased entry is not resolved here.
 
 Only the dependency keys named by the caller are rewritten, and only their
 ``version`` requirement. Keys are matched literally: the caller supplies crate

@@ -86,8 +86,12 @@ def then_documentation_file_unchanged(
     cli_run: dict[str, typ.Any],
     documentation_fence: DocumentationFenceFixture,
 ) -> None:
-    """Assert the documentation file is byte-for-byte what the scenario wrote."""
-    contents = (cli_run["workspace"] / "README.md").read_text(encoding="utf-8")
-    assert contents == documentation_fence.original_content, (
+    """Assert the documentation file is byte-for-byte what the scenario wrote.
+
+    The comparison reads bytes rather than text: ``read_text`` normalizes line
+    endings, which would hide a rewrite that changed them.
+    """
+    contents = (cli_run["workspace"] / "README.md").read_bytes()
+    assert contents == documentation_fence.original_content.encode("utf-8"), (
         f"a dry run must not modify the documentation file: {contents!r}"
     )
