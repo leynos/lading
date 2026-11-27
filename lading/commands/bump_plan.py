@@ -15,10 +15,12 @@ performs the only workspace mutations in the bump workflow.
 import collections.abc as cabc
 import dataclasses as dc
 import enum
+import time
 import typing as typ
 from pathlib import Path, PurePosixPath
 
 from lading.commands import bump_toml
+from lading.commands.bump_manifest_rewrite_model import ManifestRewriteWriteError
 from lading.commands.bump_output import BumpChanges
 from lading.utils.confinement import (
     BumpPreflightError,
@@ -376,13 +378,26 @@ class PlanBuilder:
         return (4, display)
 
 
-def commit_plan(plan: BumpPlan) -> None:
+def commit_plan(
+    plan: BumpPlan,
+    *,
+    on_write: cabc.Callable[[PlannedWrite, float], None] | None = None,
+) -> None:
     """Write every proposal in the plan's deterministic order.
 
     Parameters
     ----------
     plan : BumpPlan
         A fully validated plan.
+    on_write : Callable[[PlannedWrite, float], None] or None, optional
+        Observer invoked after each successful write with the proposal and its
+        elapsed seconds. Defaults to ``None``.
+
+    Raises
+    ------
+    ManifestRewriteWriteError
+        If an atomic write fails, carrying the completed and planned write
+        counts and the failed destination.
 
     Notes
     -----
@@ -393,8 +408,21 @@ def commit_plan(plan: BumpPlan) -> None:
     concurrent process that replaces a validated parent with a symlink after
     validation is not defended against.
     """
-    for proposal in plan.proposals:
-        bump_toml.write_atomic_text(proposal.path.path, proposal.content)
+    planned_writes = len(plan.proposals)
+    for completed_writes, proposal in enumerate(plan.proposals):
+        started_at = time.perf_counter()
+        try:
+            bump_toml.write_atomic_text(proposal.path.path, proposal.content)
+        except OSError as exc:
+            message = f"Could not write bump target {proposal.path.path}: {exc}"
+            raise ManifestRewriteWriteError(
+                message,
+                completed_writes=completed_writes,
+                planned_writes=planned_writes,
+                failed_path=proposal.path.path,
+            ) from exc
+        if on_write is not None:
+            on_write(proposal, time.perf_counter() - started_at)
 
 
 def changes_from_plan(

@@ -14,7 +14,12 @@ import typing as typ
 from pathlib import Path
 
 from lading import config as config_module
-from lading.commands import bump_lockfiles, bump_manifests, bump_pipeline
+from lading.commands import (
+    bump_lockfiles,
+    bump_manifests,
+    bump_pipeline,
+    bump_workspace_write_lock,
+)
 from lading.commands.bump_output import _format_result_message
 from lading.utils.confinement import (
     BumpPreflightError,
@@ -117,6 +122,20 @@ def run(
     ... )
     'Dry run; would update version to 1.2.0 in ...'
     """
+    resolved_options = BumpOptions() if options is None else options
+    if resolved_options.dry_run:
+        return _run_initialised(workspace_root, resolved_options, target_version)
+    root_path = establish_workspace_root(workspace_root)
+    with bump_workspace_write_lock.workspace_write_lock(root_path):
+        return _run_initialised(root_path, resolved_options, target_version)
+
+
+def _run_initialised(
+    workspace_root: Path | str,
+    options: BumpOptions,
+    target_version: str,
+) -> str:
+    """Discover the workspace and run the pipeline for one bump."""
     context = _initialize_bump_context(workspace_root, options)
     LOGGER.debug(
         "Bump context initialised: %d excluded crate(s), %d to update",

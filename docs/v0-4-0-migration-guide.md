@@ -286,8 +286,14 @@ environment, and migrate when the interpreter moves.
 A workspace whose members are real directories, whose write targets are regular
 independent files, and which sets no lockfile override needs no change. A
 workspace that does not configure `bump.manifest_rewrites` keeps its previous
-bump behaviour. Command summaries still go to stdout, and a script that
-captured both streams together sees no change in meaning.
+rewrite behaviour. Every live bump, whether or not rewrites are configured,
+takes the per-workspace write lock from planning through commit and lockfile
+regeneration, so the account needs a passwd entry with a writable home or a
+provisioned private account-owned lock directory; dry runs take no lock. See
+[Rewriting configured non-member manifests](users-guide.md#rewriting-configured-non-member-manifests)
+for the lock location and repair guidance. Command summaries still go to
+stdout, and a script that captured both streams together sees no change in
+meaning.
 
 ## Migration checklist
 

@@ -982,8 +982,13 @@ lockfile projection still runs without invoking Cargo.
 Each write is atomic, but the commit is not. If a later write fails, earlier
 writes remain in place and lockfile regeneration is skipped. Because every
 target and every replacement is validated before the first write, `lading bump`
-deliberately does not roll back a partially committed plan; fix the reported
-failure and rerun the bump.
+deliberately does not roll back a partially committed plan. A plain rerun is
+not a repair: workspace and member manifests may already carry the target
+version, so the rerun treats that version as its pre-bump source and can leave
+remaining fixture strings unchanged. Inspect the failed manifest named in the
+error, complete its intended edits, and regenerate the affected lockfiles with
+`cargo update --workspace --manifest-path <manifest>`, or restore the run's
+committed manifest changes from version control before rerunning.
 
 A live run holds a per-workspace advisory lock from planning through commit and
 lockfile regeneration, so a second Lading bump for the same workspace fails

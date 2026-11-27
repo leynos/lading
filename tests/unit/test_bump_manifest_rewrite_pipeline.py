@@ -1,12 +1,15 @@
 """Pipeline integration for configured non-member manifest rewrites."""
 
+import collections.abc as cabc
+import contextlib
 import dataclasses as dc
+import pathlib
 import typing as typ
 
 import pytest
 
 from lading import config as config_module
-from lading.commands import bump, bump_toml
+from lading.commands import bump, bump_toml, bump_workspace_write_lock
 from lading.commands.bump_manifest_rewrites import ManifestRewriteError
 from lading.config import ManifestRewriteConfig, StringValueRewriteConfig
 from tests.helpers.manifest_rewrite_metrics import (
@@ -17,8 +20,6 @@ from tests.helpers.recording_lockfile_repository import RecordingLockfileReposit
 from tests.helpers.workspace_builders import _make_workspace
 
 if typ.TYPE_CHECKING:
-    import pathlib
-
     from lading.workspace.models import WorkspaceGraph
 
 pytestmark = pytest.mark.usefixtures("reset_process_metrics")
@@ -336,3 +337,96 @@ def test_missing_rewrite_manifest_fails_before_any_workspace_write(
         ).count
         == 1
     ), "the failed rewrite duration should be recorded once"
+
+
+def test_live_bump_takes_lock_before_workspace_discovery(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Workspace discovery happens while the run lock is held."""
+    workspace = _make_workspace(tmp_path)
+    configuration = config_module.LadingConfig(
+        bump=config_module.BumpConfig(rebuild_lockfiles=False)
+    )
+    events: list[str] = []
+    original_lock = bump_workspace_write_lock.workspace_write_lock
+
+    @contextlib.contextmanager
+    def recording_lock(
+        root: pathlib.Path,
+    ) -> cabc.Generator[None]:
+        """Record the run lock's lifetime."""
+        events.append("lock:enter")
+        try:
+            with original_lock(root):
+                yield
+        finally:
+            events.append("lock:exit")
+
+    def recording_load(root: pathlib.Path) -> WorkspaceGraph:
+        """Record discovery and return the prepared workspace graph."""
+        events.append("load")
+        return workspace
+
+    monkeypatch.setattr(
+        bump_workspace_write_lock, "workspace_write_lock", recording_lock
+    )
+    monkeypatch.setattr("lading.workspace.load_bump_workspace", recording_load)
+
+    bump.run(
+        tmp_path,
+        "1.2.3",
+        options=bump.BumpOptions(
+            configuration=configuration,
+            rebuild_lockfiles=False,
+        ),
+    )
+
+    assert events[0] == "lock:enter", "the lock must be taken before discovery"
+    assert events[-1] == "lock:exit", "the lock must cover the whole run"
+    assert events.index("load") > events.index("lock:enter"), (
+        "workspace discovery must run while the lock is held"
+    )
+
+
+def test_dry_run_does_not_take_the_workspace_lock(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A dry run reads the workspace without taking the write lock."""
+    workspace = _make_workspace(tmp_path)
+    configuration = config_module.LadingConfig(
+        bump=config_module.BumpConfig(rebuild_lockfiles=False)
+    )
+    events: list[str] = []
+
+    @contextlib.contextmanager
+    def recording_lock(
+        root: pathlib.Path,
+    ) -> cabc.Generator[None]:
+        """Record any attempt to take the run lock."""
+        events.append("lock:enter")
+        yield
+
+    def recording_load(root: pathlib.Path) -> WorkspaceGraph:
+        """Record discovery and return the prepared workspace graph."""
+        events.append("load")
+        return workspace
+
+    monkeypatch.setattr(
+        bump_workspace_write_lock, "workspace_write_lock", recording_lock
+    )
+    monkeypatch.setattr("lading.workspace.load_bump_workspace", recording_load)
+
+    bump.run(
+        tmp_path,
+        "1.2.3",
+        options=bump.BumpOptions(
+            dry_run=True,
+            configuration=configuration,
+            rebuild_lockfiles=False,
+        ),
+    )
+
+    assert "lock:enter" not in events, "a dry run must not take the workspace lock"
+    assert "load" in events, "a dry run must still discover the workspace"

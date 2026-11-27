@@ -112,6 +112,18 @@ def main(argv: cabc.Sequence[str] | None = None) -> int:
         return 1
 
 
+def _manifest_rewrite_detail(error: ManifestRewriteError) -> str:
+    """Return path and write-progress context for a rewrite failure."""
+    parts: list[str] = []
+    if error.failed_path is not None:
+        parts.append(f"path={error.failed_path}")
+    if error.planned_writes:
+        parts.append(
+            f"completed={error.completed_writes} planned={error.planned_writes}"
+        )
+    return "" if not parts else f" ({', '.join(parts)})"
+
+
 def _dispatch_with_diagnostics(remaining: cabc.Sequence[str]) -> int:
     """Dispatch ``remaining`` and translate expected domain failures.
 
@@ -131,8 +143,10 @@ def _dispatch_with_diagnostics(remaining: cabc.Sequence[str]) -> int:
         return _dispatch_and_print(remaining)
     except ManifestRewriteError as exc:
         # A configured fixture rewrite failed before or during the commit;
-        # the message names the offending manifest or pattern.
-        print(f"Manifest rewrite error: {exc}", file=sys.stderr)
+        # the message names the offending manifest or pattern, and a write
+        # failure also reports its path and progress.
+        detail = _manifest_rewrite_detail(exc)
+        print(f"Manifest rewrite error: {exc}{detail}", file=sys.stderr)
         return 1
     except BumpPreflightError as exc:
         # A rejected write plan is a validation failure, not an unexpected

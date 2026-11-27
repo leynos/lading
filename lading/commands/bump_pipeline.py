@@ -8,17 +8,16 @@ regeneration consumes the validated plan instead of rediscovering manifests.
 """
 
 import logging
-import time
 import typing as typ
 
 from lading.commands import (
     bump_lockfiles,
     bump_prepare_manifest_rewrites,
-    bump_workspace_write_lock,
 )
 from lading.commands.bump_plan import (
     BumpPlan,
     PlanBuilder,
+    PlannedWrite,
     WriteCategory,
     changes_from_plan,
     commit_plan,
@@ -41,34 +40,36 @@ _log = logging.getLogger(__name__)
 
 def _run_pipeline(context: _BumpContext, target_version: str) -> BumpChanges:
     """Prepare, commit, and regenerate, returning the ordered changes."""
+    plan = _prepare_plan(context, target_version)
     if context.base_options.dry_run:
-        plan = _prepare_plan(context, target_version)
         bump_prepare_manifest_rewrites.record_application_metrics(
             context, 0.0, failed=False
         )
         return changes_from_plan(plan, lockfiles=_planned_lockfiles(plan))
-    with bump_workspace_write_lock.workspace_write_lock(context.root_path):
-        return _commit_prepared_run(context, target_version)
+    _commit_with_metrics(context, plan)
+    return changes_from_plan(plan, lockfiles=_regenerate_plan(context, plan))
 
 
-def _commit_prepared_run(
-    context: _BumpContext,
-    target_version: str,
-) -> BumpChanges:
-    """Prepare and commit one live run while the workspace lock is held."""
-    plan = _prepare_plan(context, target_version)
-    started_at = time.perf_counter()
+def _commit_with_metrics(context: _BumpContext, plan: BumpPlan) -> None:
+    """Commit the plan, measuring only configured fixture writes."""
+    fixture_seconds = 0.0
+
+    def observe_fixture_write(proposal: PlannedWrite, elapsed: float) -> None:
+        """Accumulate the time spent writing fixture proposals."""
+        nonlocal fixture_seconds
+        if WriteCategory.FIXTURE_MANIFEST in proposal.categories:
+            fixture_seconds += elapsed
+
     try:
-        commit_plan(plan)
+        commit_plan(plan, on_write=observe_fixture_write)
     except BaseException:
         bump_prepare_manifest_rewrites.record_application_metrics(
-            context, time.perf_counter() - started_at, failed=True
+            context, fixture_seconds, failed=True
         )
         raise
     bump_prepare_manifest_rewrites.record_application_metrics(
-        context, time.perf_counter() - started_at, failed=False
+        context, fixture_seconds, failed=False
     )
-    return changes_from_plan(plan, lockfiles=_regenerate_plan(context, plan))
 
 
 def _prepare_plan(context: _BumpContext, target_version: str) -> BumpPlan:

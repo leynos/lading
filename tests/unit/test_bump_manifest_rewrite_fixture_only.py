@@ -1,5 +1,6 @@
 """Pipeline coverage for fixture-only non-member manifest changes."""
 
+import collections.abc as cabc
 import typing as typ
 from unittest import mock
 
@@ -11,6 +12,9 @@ from lading.commands import bump, bump_pipeline
 from lading.config import ManifestRewriteConfig
 from tests.helpers.recording_lockfile_repository import RecordingLockfileRepository
 from tests.helpers.workspace_builders import _make_workspace
+
+if typ.TYPE_CHECKING:
+    from lading.commands.bump_plan import BumpPlan, PlannedWrite
 
 if typ.TYPE_CHECKING:
     import pathlib
@@ -112,9 +116,13 @@ def test_report_keeps_planned_path_if_parent_becomes_symlink(
     )
     original_commit = bump_pipeline.commit_plan
 
-    def commit_then_redirect(plan: BumpPlan) -> None:
+    def commit_then_redirect(
+        plan: BumpPlan,
+        *,
+        on_write: cabc.Callable[[PlannedWrite, float], None] | None = None,
+    ) -> None:
         """Commit the plan, then redirect its parent before reporting."""
-        original_commit(plan)
+        original_commit(plan, on_write=on_write)
         configured_directory.rename(archived_directory)
         configured_directory.symlink_to(redirected_directory, target_is_directory=True)
 

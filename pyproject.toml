@@ -622,11 +622,12 @@ reason = "Two single-statement rejection calls differing only in the expected-ty
 [[tool.duplication_gate.allow]]
 members = [
     "lading/commands/bump_docs.py",
+    "lading/commands/bump_manifest_rewrite_strings.py",
     "lading/commands/bump_pipeline.py",
     "lading/commands/bump_prepare_manifest_rewrites.py",
     "lading/commands/publish.py",
 ]
-reason = "Independent command modules importing the same shared confinement and TOML helpers; the overlap is an import header, not shared logic, and a common import module would add an artificial layer with no behaviour of its own."
+reason = "Independent command and rewrite modules importing the same shared confinement, TOML, and bump-plan helpers; the overlap is an import header, not shared logic, and a common import module would add an artificial layer with no behaviour of its own. NOTE: this family-wide exception also covers the files listed here, so review executable duplication in them manually."
 # The dead-code gate is the installed `df12-skylos` command from
 # df12-python-lints. `roots` limits liveness analysis to production sources and
 # the exclusion keeps the test tree out of the liveness graph.
@@ -642,9 +643,6 @@ reason = "Import preamble only: both modules use os, pathlib and collections.abc
 [[tool.duplication_gate.allow]]
 members = ["lading/commands/bump_manifest_rewrite_filesystem.py::_is_existing_literal_candidate", "scripts/format_markdown.py::_present"]
 reason = "Keep the manifest resolver and PEP 723 formatter presence probes separate: callers preserve distinct domain errors, and importing application utilities would couple the standalone formatter to the lading package."
-[[tool.duplication_gate.allow]]
-members = ["lading/commands/bump_manifest_rewrite_strings.py", "lading/commands/bump_toml.py"]
-reason = "Import preamble only: both modules import the tomlkit string types and style-preservation helpers they use directly. Their responsibilities, functions and data differ, and sharing the preamble would add a common imports module without behavioural value. NOTE: this family-wide exception suppresses future executable duplication in these files, so review them manually."
 [tool.df12_skylos]
 roots = ["lading"]
 python = "3.14"

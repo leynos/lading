@@ -333,3 +333,37 @@ def test_conflicting_rules_use_toml_locations_for_out_of_order_tables(
         match="conflicting replacements for one TOML value",
     ):
         plan_fixture_rewrites(tmp_path, (group,))
+
+
+def test_rewrites_fields_in_out_of_order_child_tables(
+    tmp_path: pathlib.Path,
+    write_fixture_manifest: _ManifestWriter,
+) -> None:
+    """Split child tables selected by a field still receive the rewrite."""
+    write_fixture_manifest(
+        tmp_path,
+        "fixture/Cargo.toml",
+        '[patch.crates-io.alpha.metadata]\nnote = "keep"\n\n'
+        '[patch.crates-io.beta]\npath = "beta-1.0.0"\n\n'
+        '[patch.crates-io.alpha]\npath = "alpha-1.0.0"\n',
+    )
+    group = ManifestRewriteConfig(
+        paths=("fixture/Cargo.toml",),
+        dependencies=False,
+        string_values=(
+            StringValueRewriteConfig(table=("patch", "crates-io"), field="path"),
+        ),
+    )
+
+    (plan,) = plan_fixture_rewrites(
+        tmp_path,
+        (group,),
+        manifest_rewrite_versions(frozenset({"alpha", "beta"})),
+    )
+
+    assert 'path = "alpha-2.0.0"' in plan.new_text, (
+        "a split alpha table must be selected through its out-of-order proxy"
+    )
+    assert 'path = "beta-2.0.0"' in plan.new_text, (
+        "a regular sibling child table must still be rewritten"
+    )

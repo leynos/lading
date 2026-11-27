@@ -4,7 +4,9 @@ from pathlib import Path
 
 import pytest
 
-from lading.commands.bump_plan import PlanBuilder, WriteCategory
+from lading.commands import bump_toml
+from lading.commands.bump_manifest_rewrite_model import ManifestRewriteWriteError
+from lading.commands.bump_plan import PlanBuilder, WriteCategory, commit_plan
 from lading.utils.confinement import (
     BumpTargetExaminationError,
     ConfinedPath,
@@ -79,4 +81,42 @@ def test_read_reports_undecodable_content(tmp_path: Path) -> None:
 
     assert "cannot read bump target" in str(excinfo.value), (
         "the diagnostic must name the undecodable bump target"
+    )
+
+
+def test_commit_plan_reports_write_progress_on_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A failed write names its destination and write progress."""
+    root = tmp_path.resolve()
+    first = root / "first.toml"
+    second = root / "second.toml"
+    first.write_text("one\n", encoding="utf-8")
+    second.write_text("two\n", encoding="utf-8")
+    builder = PlanBuilder(root=root)
+    builder.propose(_confined(root, "first.toml"), "ONE\n", WriteCategory.MANIFEST)
+    builder.propose(
+        _confined(root, "second.toml"), "TWO\n", WriteCategory.DOCUMENTATION
+    )
+    plan = builder.build(target_version="2.0.0", lockfiles=None)
+    original_write = bump_toml.write_atomic_text
+
+    def fail_second_write(path: Path, content: str) -> None:
+        """Reject only the documentation destination."""
+        if path == second:
+            message = "write rejected"
+            raise OSError(message)
+        original_write(path, content)
+
+    monkeypatch.setattr(bump_toml, "write_atomic_text", fail_second_write)
+
+    with pytest.raises(ManifestRewriteWriteError) as failure:
+        commit_plan(plan)
+
+    assert failure.value.completed_writes == 1, "one write completed before the failure"
+    assert failure.value.planned_writes == 2, "the plan contained two writes"
+    assert failure.value.failed_path == second, "the failed destination must be named"
+    assert isinstance(failure.value.__cause__, OSError), (
+        "the original write error must be chained"
     )
