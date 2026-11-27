@@ -400,9 +400,9 @@ lading bump <new_version> [--dry-run]
   both of its versions are rewritten when that crate is bumped.
 - Dependency-table location in documentation is owned by
   `lading.commands.bump_docs_dependencies`. It calls the shared
-  `bump_toml_dependencies.update_dependency_sections` once on the document with workspace
-  sections enabled and once for each immediate `target` selector, so fence
-  rewriting reaches `[workspace.dependencies]` and
+  `bump_toml_dependencies.update_dependency_sections` once on the document with
+  workspace sections enabled and once for each immediate `target` selector, so
+  fence rewriting reaches `[workspace.dependencies]` and
   `[target.<spec>.dependencies]` alongside their dev and build variants. The
   manifest pass keeps to the unconditional sections: a target-specific
   requirement inside a `Cargo.toml` is left alone, because Cargo applies it
