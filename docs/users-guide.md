@@ -473,10 +473,10 @@ another package is therefore never rewritten.
 The identity rule applies at every location the pass visits: the top-level
 tables, their `[workspace.*]` counterparts, and the `[target.<spec>.*]` tables.
 
-The identity rule arrived after 0.4.0. When upgrading, re-run `lading bump` with
-`--dry-run` and review the documentation entries it reports: TOML fences that
-previously kept a stale alias now change, and fences whose key happened to
-match a bumped crate but renamed a different package no longer do.
+When upgrading from a release that matched dependency keys only, re-run
+`lading bump` with `--dry-run` and review the documentation entries it reports:
+TOML fences that previously kept a stale alias now change, and fences whose key
+happened to match a bumped crate but renamed a different package no longer do.
 
 #### Confinement preflight
 
