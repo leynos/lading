@@ -17,6 +17,7 @@ from .cli_helpers import (
     _workspace_env,
 )
 from .commands import publish_staging
+from .commands.bump_manifest_rewrite_model import ManifestRewriteError
 from .utils import metrics, normalize_workspace_root
 from .utils.confinement import BumpPreflightError
 from .workspace import WorkspaceModelError
@@ -111,6 +112,18 @@ def main(argv: cabc.Sequence[str] | None = None) -> int:
         return 1
 
 
+def _manifest_rewrite_detail(error: ManifestRewriteError) -> str:
+    """Return path and write-progress context for a rewrite failure."""
+    parts: list[str] = []
+    if error.failed_path is not None:
+        parts.append(f"path={error.failed_path}")
+    if error.planned_writes:
+        parts.append(
+            f"completed={error.completed_writes} planned={error.planned_writes}"
+        )
+    return "" if not parts else f" ({', '.join(parts)})"
+
+
 def _dispatch_with_diagnostics(remaining: cabc.Sequence[str]) -> int:
     """Dispatch ``remaining`` and translate expected domain failures.
 
@@ -128,6 +141,13 @@ def _dispatch_with_diagnostics(remaining: cabc.Sequence[str]) -> int:
     """
     try:
         return _dispatch_and_print(remaining)
+    except ManifestRewriteError as exc:
+        # A configured fixture rewrite failed before or during the commit;
+        # the message names the offending manifest or pattern, and a write
+        # failure also reports its path and progress.
+        detail = _manifest_rewrite_detail(exc)
+        print(f"Manifest rewrite error: {exc}{detail}", file=sys.stderr)
+        return 1
     except BumpPreflightError as exc:
         # A rejected write plan is a validation failure, not an unexpected
         # error: it exits before any workspace file was touched (issue #409).

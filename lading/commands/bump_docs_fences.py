@@ -198,6 +198,7 @@ def render_fence(
     prefix = extract_fence_indent(opener, marker)
     continuation = _continuation_indent(prefix)
     ending = _line_ending(opener) or "\n"
+    opener = _terminated_opener(opener, ending)
     closer = lines[end - 1] if end > start + 1 else ""
     if not _is_closing_fence(closer, continuation, marker):
         closer = f"{continuation}{marker}{ending}"
@@ -206,6 +207,22 @@ def render_fence(
         f"{continuation}{line}{ending}" for line in body_text.split("\n")
     )
     return opener + rendered + closer
+
+
+def _terminated_opener(opener: str, ending: str) -> str:
+    """Return the opener with a line ending, so the body starts its own line.
+
+    An opener that ends the source has no line ending of its own; without one
+    the generated body would be spliced onto the fence marker.
+
+    Returns
+    -------
+    str
+        The opener, terminated with ``ending`` when it had none.
+    """
+    if _line_ending(opener):
+        return opener
+    return f"{opener}{ending}"
 
 
 _QUOTE_PREFIX: typ.Final[re.Pattern[str]] = re.compile(r"^(?: {0,3}> ?)+")

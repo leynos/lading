@@ -8,6 +8,8 @@ from pathlib import Path
 import pytest
 from hypothesis import settings
 
+from lading.utils import metrics
+
 #: No property in this suite asserts how long its work takes, so Hypothesis's
 #: 200 ms per-example deadline only turns host load into false failures. Register
 #: and load the profile here, at import time, because ``@settings`` decorators
@@ -52,6 +54,7 @@ pytest_plugins = (
     "tests.bdd.steps.manifest_fixtures",
     "tests.bdd.steps.metadata_fixtures",
     "tests.bdd.steps.test_bump_steps",
+    "tests.bdd.steps.test_bump_lockfile_steps",
     "tests.bdd.steps.test_documentation_steps",
     "tests.bdd.steps.test_publish_fixtures",
     "tests.bdd.steps.test_publish_given_steps",
@@ -83,6 +86,14 @@ def repo_root() -> Path:
     ...     assert (repo_root / "pyproject.toml").exists()
     """
     return Path(__file__).resolve().parent.parent
+
+
+@pytest.fixture
+def reset_process_metrics() -> cabc.Iterator[None]:
+    """Reset process-local metrics around a test that inspects them."""
+    metrics.reset()
+    yield
+    metrics.reset()
 
 
 @pytest.fixture(autouse=True)
@@ -167,6 +178,40 @@ def write_config(tmp_path: Path) -> cabc.Callable[[str], Path]:
         return config_path
 
     return _write
+
+
+@pytest.fixture
+def write_fixture_manifest() -> cabc.Callable[[Path, str, str], Path]:
+    """Return a writer for temporary Cargo manifests used by unit tests.
+
+    Returns
+    -------
+    cabc.Callable[[Path, str, str], Path]
+        Callable accepting a workspace root, relative manifest path, and TOML
+        content, then returning the written path.
+
+    Examples
+    --------
+    This example needs pytest's ``tmp_path`` fixture, so it is illustrative
+    rather than a runnable doctest:
+
+    .. code-block:: python
+
+        def test_fixture_manifest(tmp_path, write_fixture_manifest):
+            path = write_fixture_manifest(
+                tmp_path, "fixture/Cargo.toml", "[package]"
+            )
+            assert path.read_text() == "[package]"
+    """
+
+    def write(root: Path, relative_path: str, content: str) -> Path:
+        """Write a fixture manifest beneath the supplied workspace root."""
+        path = root / relative_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+        return path
+
+    return write
 
 
 @pytest.fixture

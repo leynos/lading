@@ -35,6 +35,8 @@ import logging
 import sys
 import typing as typ
 
+from lading.utils import file_lock
+
 if typ.TYPE_CHECKING:  # pragma: no cover - typing helpers
     import collections.abc as cabc
     import io
@@ -44,29 +46,6 @@ LOGGER = logging.getLogger(__name__)
 
 #: Name of the lock file inside an automatically created staging tree.
 LOCK_NAME: typ.Final = ".lading-staging-lock"
-
-if sys.platform == "win32":  # pragma: no cover - runs on the Windows lanes
-    import msvcrt
-
-    def _take(handle: io.BufferedRandom) -> None:
-        """Take the lock, raising :class:`OSError` if another holder has it."""
-        msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
-
-    def _drop(handle: io.BufferedRandom) -> None:
-        """Release a lock taken through ``handle``."""
-        msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
-
-else:
-    import fcntl
-
-    def _take(handle: io.BufferedRandom) -> None:
-        """Take the lock, raising :class:`OSError` if another holder has it."""
-        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-
-    def _drop(handle: io.BufferedRandom) -> None:
-        """Release a lock taken through ``handle``."""
-        fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
-
 
 #: Claims this process holds, keyed by the tree each one covers. The handle
 #: stays open deliberately: closing it would release the lock.
@@ -119,7 +98,7 @@ def claim(root: Path) -> bool:
         LOGGER.warning("Could not create a staging lock in %s", root, exc_info=True)
         return False
     try:
-        _take(handle)
+        file_lock.set_exclusive_lock(handle, locked=True)
     except OSError:
         LOGGER.warning("Could not claim the staging lock in %s", root, exc_info=True)
         handle.close()
@@ -144,7 +123,7 @@ def release(root: Path) -> None:
     if handle is None:
         return
     try:
-        _drop(handle)
+        file_lock.set_exclusive_lock(handle, locked=False)
     finally:
         handle.close()
 
@@ -175,7 +154,7 @@ def _acquire_for_removal(root: Path) -> tuple[bool, io.BufferedRandom | None]:
         LOGGER.warning("Could not read the staging lock in %s", root, exc_info=True)
         return (False, None)
     try:
-        _take(handle)
+        file_lock.set_exclusive_lock(handle, locked=True)
     except OSError:
         handle.close()
         return (False, None)
@@ -184,7 +163,7 @@ def _acquire_for_removal(root: Path) -> tuple[bool, io.BufferedRandom | None]:
         # handle would itself stop the directory being deleted. The same rule
         # is what keeps the tree safe: a live publisher's handle makes the
         # removal fail rather than succeed.
-        _drop(handle)
+        file_lock.set_exclusive_lock(handle, locked=False)
         handle.close()
         return (True, None)
     return (True, handle)
@@ -217,6 +196,6 @@ def hold_for_removal(root: Path) -> cabc.Generator[bool]:
     finally:
         if handle is not None:
             try:
-                _drop(handle)
+                file_lock.set_exclusive_lock(handle, locked=False)
             finally:
                 handle.close()

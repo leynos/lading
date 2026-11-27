@@ -1,5 +1,9 @@
 """Unit tests for low-level bump TOML table and version helpers."""
 
+import os
+from pathlib import Path
+
+import pytest
 from tomlkit import parse as parse_toml
 
 from lading.commands import bump_toml
@@ -102,3 +106,13 @@ def test_assign_version_works_with_out_of_order_table() -> None:
     assert table.get("version") == "2.0.0", (
         "out-of-order table version should be rewritten"
     )
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="requires POSIX FIFOs")
+def test_parse_manifest_rejects_a_fifo_before_reading(tmp_path: Path) -> None:
+    """A FIFO substituted for a manifest is rejected without blocking."""
+    manifest = tmp_path / "Cargo.toml"
+    os.mkfifo(manifest)
+
+    with pytest.raises(OSError, match="not a regular file"):
+        bump_toml.parse_manifest(manifest)

@@ -119,7 +119,11 @@ lading [--workspace-root <path>] <subcommand> [options]
   downstream code can access the active configuration without passing it
   through every call. The CLI sets up this context before dispatching a
   subcommand and falls back to on-demand loading when commands are invoked
-  programmatically.
+  programmatically. Table-specific records live beside it:
+  `lading.config_manifest_rewrites` owns the configured non-member rewrite
+  records and `lading.config_publish_preflight` owns the publish and preflight
+  records, while `lading/config.py` re-exports them and assembles
+  `LadingConfig`.
 - The `cyclopts.App` is constructed with `result_action="return_value"`, so a
   command's return value reaches `_dispatch_and_print` unchanged. That
   function, and `main()` around it, own printing and exit codes: a string
@@ -438,10 +442,30 @@ manifests, documentation, and READMEs; only after every stage succeeds does
 `commit_plan()` write, in deterministic root-manifest, member-manifest,
 documentation, README order. A dry run reports the plan and writes nothing.
 
-Configured non-member manifests are not part of the bump plan yet. When that
-capability lands (`#353`), its proposals must be added to the same
-`PlanBuilder` and validated as confined existing targets before `commit_plan()`
-runs, rather than writing through a separate path.
+Configured non-member manifests join the same plan. The
+`bump_manifest_rewrite_filesystem` adapter confines each configured path or
+glob through `lading.utils.confinement`, skips the root and member manifests,
+and reads UTF-8 source records. `bump_manifest_rewrites` plans dependency and
+selected string-value edits without filesystem access; string planning protects
+SemVer prerelease and build-metadata text, and dependency planning retains
+later comparators while matching `package` aliases.
+`bump_prepare_manifest_rewrites` confines every planned destination and
+proposes the complete new text as a `FIXTURE_MANIFEST` write. That category
+commits after the workspace and member manifests and before documentation,
+README, and lockfile work, and a fixture-only change satisfies the
+manifest-change gate for lockfile regeneration. Preparation writes nothing, so
+a rejected rewrite cannot leave a partial fixture. The commit phase writes each
+proposal atomically but does not roll back earlier proposals:
+validation-before-mutation is the guarantee, and a failed commit reports the
+failure for repair and retry.
+
+Live bump runs also hold a per-workspace advisory lock from planning through
+commit and lockfile regeneration, so two cooperating Lading runs cannot
+interleave. The lock lives in a stable per-user state directory derived from
+the account's passwd entry rather than `HOME`; a POSIX host must provide a
+passwd entry and a writable home, or provision the derived private directory.
+Dry runs take no lock. Editors and tools that ignore advisory locks are outside
+the guarantee.
 
 ### Lockfile repository port (bump side)
 

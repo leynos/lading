@@ -1,0 +1,9 @@
+# serializer version: 1
+# name: test_multiline_replacement_keeps_a_leading_newline[multiline_leading_newline]
+  '''
+  """
+  
+  first
+  second"""
+  '''
+# ---

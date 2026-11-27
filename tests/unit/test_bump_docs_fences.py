@@ -246,3 +246,30 @@ def test_rewriting_a_fence_twice_is_idempotent(
 
     assert not changed, "the rewritten document already carries the target"
     assert twice == once, "a repeated rewrite must be idempotent"
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        pytest.param(("~~~toml", "\n"), id="bare-opener-at-eof"),
+        pytest.param(("See:\n~~~toml", "\n"), id="opener-after-text-at-eof"),
+        pytest.param(("~~~toml\r\n", "\r\n"), id="crlf-opener-keeps-its-ending"),
+    ],
+)
+def test_an_opener_at_eof_gains_a_separator_before_its_body(
+    case: tuple[str, str],
+) -> None:
+    """A fence opener with no line ending still separates its body lines."""
+    text, ending = case
+    token = MarkdownIt("commonmark").parse(text)[-1]
+
+    rendered = bump_docs_fences.render_fence(
+        token,
+        bump_docs_fences._source_lines(text),
+        "toml",
+        lambda _content: "a = 1\nb = 2",
+    )
+
+    assert rendered == (f"~~~toml{ending}a = 1{ending}b = 2{ending}~~~{ending}"), (
+        "the opener must be separated from the first generated body line"
+    )

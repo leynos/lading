@@ -49,6 +49,8 @@ one case still leaves the copy behind. Nothing else accumulates between runs.
 Pass `--keep-staging` to retain it while debugging a staging problem. The
 retained path is logged, and removing it is then a manual step:
 
+<!-- tested-example: users-guide-example-01 -->
+
 ```bash
 lading publish --keep-staging
 ```
@@ -61,11 +63,15 @@ Releases before this one never removed the staged copy, so a host that has been
 publishing for a while holds one directory per run. `lading clean` finds them
 and reports what removing them would reclaim:
 
+<!-- tested-example: users-guide-example-02 -->
+
 ```bash
 lading clean
 ```
 
 It deletes nothing unless asked:
+
+<!-- tested-example: users-guide-example-03 -->
 
 ```bash
 lading clean --remove
@@ -110,6 +116,8 @@ directory as clear when nothing in it had been looked at.
 Programmatic callers should use the staging context manager from
 `lading.commands.publish_staging` and pass a publication plan with options as a
 keyword argument:
+
+<!-- tested-example: users-guide-example-04 -->
 
 ```python
 from lading.commands.publish_staging import staged_workspace
@@ -160,6 +168,8 @@ re-exports `WorkspaceCrate`, `WorkspaceDependency`, and `WorkspaceGraph`.
 > `WorkspaceDependency.package_id` carries the `packages[].id` value that
 > `cargo metadata` reports for the dependency target.
 
+<!-- tested-example: users-guide-example-05 -->
+
 ```python
 from pathlib import Path
 
@@ -189,6 +199,8 @@ Lading requires CPython 3.14 or later. The requirement is declared in the
 package metadata as `requires-python = ">=3.14"`, so `pip` refuses to install a
 wheel into an older interpreter rather than installing one that cannot run:
 
+<!-- tested-example: users-guide-example-06 -->
+
 ```console
 $ python3.13 -m pip install lading-0.3.1-py3-none-any.whl
 ERROR: Package 'lading' requires a different Python: 3.13.x not in '>=3.14'
@@ -211,11 +223,15 @@ version nothing in the project is checked against.
 
 Install the latest published release from PyPI:
 
+<!-- tested-example: users-guide-example-07 -->
+
 ```bash
 python -m pip install lading
 ```
 
 To select a particular release, pin its version:
+
+<!-- tested-example: users-guide-example-08 -->
 
 ```bash
 python -m pip install lading==0.2.0
@@ -236,6 +252,8 @@ sdist from the matching
 [GitHub release](https://github.com/leynos/lading/releases), then install the
 wheel:
 
+<!-- tested-example: users-guide-example-09 -->
+
 ```bash
 gh release download v0.3.1 --pattern '*.whl' --pattern '*.tar.gz'
 python -m pip install lading-*.whl
@@ -250,6 +268,8 @@ files already attached and retries the remaining ones.
 
 Build a wheel from the repository, then install it:
 
+<!-- tested-example: users-guide-example-10 -->
+
 ```bash
 make build-release
 python -m pip install dist/*.whl
@@ -258,6 +278,8 @@ python -m pip install dist/*.whl
 ### Install for development (using uv)
 
 Create a development environment and run `lading` via `uv`:
+
+<!-- tested-example: users-guide-example-11 -->
 
 ```bash
 make build
@@ -296,6 +318,8 @@ member crates.
 
 Create a minimal configuration file at the workspace root:
 
+<!-- tested-example: users-guide-example-12 -->
+
 ```toml
 [bump.documentation]
 globs = ["README.md", "docs/**/*.md"]
@@ -311,11 +335,15 @@ documented in the configuration reference below.
 
 To update the workspace and member crate manifests to `1.2.3`:
 
+<!-- tested-example: users-guide-example-13 -->
+
 ```bash
 lading bump 1.2.3
 ```
 
 To preview changes without writing any files:
+
+<!-- tested-example: users-guide-example-14 -->
 
 ```bash
 lading bump 1.2.3 --dry-run
@@ -355,9 +383,11 @@ dependency:
   (`[target."cfg(windows)".dependencies]`), or a bare triple
   (`[target.x86_64-unknown-linux-gnu.dependencies]`).
 
-The first two groups match what the manifest pass rewrites. Target tables are
-documentation-only: `lading bump` leaves a target-specific table inside a
-`Cargo.toml` unchanged.
+The first two groups match what the manifest pass rewrites. For workspace and
+member manifests, target tables are documentation-only: the standard manifest
+pass leaves a target-specific table inside those `Cargo.toml` files unchanged.
+A configured non-member rewrite (`[[bump.manifest_rewrites]]`) does visit
+target-specific tables in the manifests it selects.
 
 Only the dependency keys named in the fence are rewritten, and only their
 `version` requirement; a requirement operator such as `^` or `~` is preserved.
@@ -395,11 +425,11 @@ fence is still rewritten:
 An out-of-order `target` header is not a limit: a `[target]` line written after
 its selectors is still traversed.
 
-Target-specific tables inside a `Cargo.toml` are not rewritten by
-`lading bump`; only their documentation counterparts are. Where the same
-dependency is also declared in an unconditional section of that manifest, the
-bump rewrites that entry. A dependency declared only for a target keeps its
-version in the manifest and must be edited by hand.
+Target-specific tables inside a workspace or member `Cargo.toml` are not
+rewritten by the standard manifest pass; only their documentation counterparts
+are. Where the same dependency is also declared in an unconditional section of
+that manifest, the bump rewrites that entry. A dependency declared only for a
+target keeps its version in the member manifest and must be edited by hand.
 
 #### Confinement preflight
 
@@ -471,6 +501,8 @@ because a relative path resolves against the shell's current directory.
 By default, `publish` runs `cargo publish --dry-run` so the full pipeline can
 be validated without uploading crates.
 
+<!-- tested-example: users-guide-example-15 -->
+
 ```bash
 lading publish
 ```
@@ -482,6 +514,8 @@ run reports the whole workspace. If any lockfile is stale — for example after
 manifest edits made without `lading bump`, or after a bump run with
 `--no-rebuild-lockfiles` — the command exits with code 1 and lists each stale
 lockfile alongside its own repair command:
+
+<!-- tested-example: users-guide-example-16 -->
 
 ```plaintext
 Tracked Cargo.lock files are stale after manifest version changes.
@@ -520,10 +554,14 @@ In `lading.toml`, set `skip = true` in the `[preflight]` table. Alternatively
 pass `--skip-preflight`, or set `LADING_SKIP_PREFLIGHT=1`. Any of the three
 suppresses the auxiliary builds, `cargo check`, and `cargo test`:
 
+<!-- tested-example: users-guide-example-17 -->
+
 ```toml
 [preflight]
 skip = true
 ```
+
+<!-- tested-example: users-guide-example-18 -->
 
 ```bash
 lading publish --skip-preflight
@@ -541,6 +579,8 @@ caller's build, which is why a skip never removes them. Every skipped run logs
 one line naming whichever input asked for it: the setting, the flag, the
 environment variable, or an in-process caller.
 
+<!-- tested-example: users-guide-example-19 -->
+
 ```plaintext
 INFO: Skipping the publish pre-flight auxiliary builds, cargo check and cargo
 test at the request of the --skip-preflight command-line flag. The Cargo.lock
@@ -556,11 +596,15 @@ workspace as a whole and no test runs at all.
 To require a clean working tree before running the pre-flight checks, pass
 `--forbid-dirty`:
 
+<!-- tested-example: users-guide-example-20 -->
+
 ```bash
 lading publish --forbid-dirty
 ```
 
 To perform a real publish (no `--dry-run`), pass `--live`:
+
+<!-- tested-example: users-guide-example-21 -->
 
 ```bash
 lading publish --live
@@ -581,6 +625,8 @@ its position in the publish order and its elapsed time when it succeeds, so an
 operator can tell which crate a run is on and a slow verify build can be
 attributed to a crate:
 
+<!-- tested-example: users-guide-example-22 -->
+
 ```plaintext
 INFO: Running cargo package for crate alpha (1/3)
 INFO: Successfully packaged crate alpha (1/3) in 84.2s
@@ -595,6 +641,8 @@ At the end of the run, `lading publish` prints a summary of the publish plan it
 computed, listing the crates to publish and any crates skipped because they are
 marked `publish = false`, excluded via `publish.exclude`, or named in
 `publish.exclude` but absent from the workspace:
+
+<!-- tested-example: users-guide-example-23 -->
 
 ```plaintext
 Publish plan for <workspace>
@@ -612,6 +660,8 @@ Configured exclusions not found in workspace:
 
 When no crates are publishable, the summary reports `Crates to publish: none`
 instead of a list:
+
+<!-- tested-example: users-guide-example-24 -->
 
 ```plaintext
 Publish plan for <workspace>
@@ -643,9 +693,13 @@ baseline before the first cargo build and again after every `cargo package` and
 `cargo publish` invocation, and log one line per invocation with the counters
 attributable to it:
 
+<!-- tested-example: users-guide-example-25 -->
+
 ```bash
 RUSTC_WRAPPER=/path/to/sccache lading publish --sccache-stats
 ```
+
+<!-- tested-example: users-guide-example-26 -->
 
 ```plaintext
 INFO: Compiler cache statistics enabled via /path/to/sccache
@@ -669,6 +723,8 @@ Add `--sccache-stats-json PATH` (which implies `--sccache-stats`) to write a
 JSON report alongside, for an artefact upload or a later comparison. A relative
 `PATH` is resolved against the workspace root, like every other path `lading`
 accepts:
+
+<!-- tested-example: users-guide-example-27 -->
 
 ```bash
 lading publish --sccache-stats-json target/sccache-publish.json
@@ -698,6 +754,8 @@ crates.io, `cargo package` will fail. Cargo reports two variants of this
 failure. When the dependency exists on the index but not at the required
 version, the diagnostic names the requirement:
 
+<!-- tested-example: users-guide-example-28 -->
+
 ```plaintext
 error: failed to prepare local package for uploading
 
@@ -710,6 +768,8 @@ Caused by:
 
 When the dependency has never been published at all — the first-publication
 case for a newly extracted crate — Cargo instead reports:
+
+<!-- tested-example: users-guide-example-29 -->
 
 ```plaintext
 error: failed to prepare local package for uploading
@@ -738,6 +798,8 @@ foundational crate first, then run `lading publish` (dry-run) or
 `lading publish --live` for the remaining workspace once the new version is
 indexed:
 
+<!-- tested-example: users-guide-example-30 -->
+
 ```bash
 
 # 1. Publish the foundational crate live so crates.io has the new version.
@@ -757,6 +819,8 @@ the same behaviour as passing `--allow-unpublished-workspace-deps`: it
 downgrades the index-lookup failure to a warning when the missing dependency is
 itself part of the planned publish set and appears earlier in publish order:
 
+<!-- tested-example: users-guide-example-31 -->
+
 ```bash
 lading publish --allow-unpublished-workspace-deps
 ```
@@ -767,6 +831,8 @@ crates.io index lookup), so the dry run completes end-to-end.
 
 Use `--no-allow-unpublished-workspace-deps` to opt out during dry-runs and keep
 Cargo's index lookup strict:
+
+<!-- tested-example: users-guide-example-32 -->
 
 ```bash
 lading publish --no-allow-unpublished-workspace-deps
@@ -792,11 +858,20 @@ All paths and globs are interpreted relative to the workspace root.
 
 ### Complete example
 
+<!-- tested-example: users-guide-complete-config -->
+
 ```toml
 [bump]
 exclude = ["some-private-crate"]
 lockfile_manifests = ["crates/nested/Cargo.toml"]
 rebuild_lockfiles = true
+
+[[bump.manifest_rewrites]]
+paths = ["tests/fixtures/published-gpui-e2e/Cargo.toml"]
+dependencies = true
+string_values = [
+  { table = ["patch", "crates-io"], field = "path" },
+]
 
 [bump.documentation]
 globs = ["README.md", "docs/**/*.md"]
@@ -811,9 +886,7 @@ skip = false
 test_exclude = ["slow-integration-suite"]
 unit_tests_only = false
 aux_build = [["cargo", "+nightly", "test", "-p", "lint", "--no-run"]]
-compiletest_extern = {
-  ui_test_helpers = "target/debug/deps/libui_test_helpers.so"
-}
+compiletest_extern = { ui_test_helpers = "target/debug/deps/libui_test_helpers.so" }
 env = { DYLINT_LOCALE = "en_GB" }
 stderr_tail_lines = 40
 ```
@@ -839,6 +912,21 @@ stderr_tail_lines = 40
   `--no-rebuild-lockfiles` to skip regeneration for a single run, or
   `--rebuild-lockfiles` to force regeneration when `rebuild_lockfiles` is
   configured as `false`.
+- `manifest_rewrites`: array of `[[bump.manifest_rewrites]]` tables, default
+  `[]`. Each table opts selected non-member manifests into dependency and
+  string-value rewrites. Configure relative `paths` or globs and, when needed,
+  `string_values` selectors. The rewrite stage does not add lockfile targets;
+  use `lockfile_manifests` for an untracked fixture lockfile.
+
+For workspace and member manifests, a bump applies the target version with the
+requirement's operator prefix and replaces the complete requirement. Configured
+non-member rewrites instead replace the first comparator and keep later
+comma-separated comparators verbatim, so `>=0.6.0-beta4, <0.7` becomes
+`>=0.6.0, <0.7` in a selected fixture. If the rewritten first comparator or a
+retained later comparator excludes the target, `lading bump` logs a warning
+naming the bound, even when the requirement text does not change; a strict
+first operator (`<` or `>`) therefore warns after rewriting. Cargo lockfile
+regeneration remains the final check when enabled.
 
 Lockfile regeneration runs
 `cargo update --workspace --manifest-path <manifest>` for the workspace root,
@@ -852,6 +940,8 @@ any lockfile is refreshed, so a failure leaves the workspace inconsistent: the
 manifests carry the new version but the affected lockfiles do not. When several
 lockfiles are regenerated, `lading` raises one aggregated error that lists
 every failed manifest with the exact repair command to run:
+
+<!-- tested-example: users-guide-example-33 -->
 
 ```plaintext
 Cargo lockfile regeneration failed for 2 manifest(s). Manifests already carry
@@ -873,6 +963,143 @@ changes and therefore skips lockfile regeneration, even when an earlier
 regeneration failed after the manifests were already written. Run the repair
 command from the workspace root, or pass an absolute manifest path, because a
 relative path resolves against the shell's current directory.
+
+#### Rewriting configured non-member manifests
+
+`manifest_rewrites` is an explicit allowlist for standalone fixture manifests.
+Each group accepts these fields:
+
+- `paths`: non-empty array of workspace-relative manifest paths or globs.
+  Absolute or drive/rooted paths, parent-directory segments, and leading or
+  trailing whitespace are rejected. Globs must match at least one file. Every
+  match must resolve inside the workspace, name a `Cargo.toml` file, and refer
+  to a regular file. An existing path is treated literally even when its name
+  contains glob metacharacters; otherwise, those characters expand as a glob.
+- `dependencies`: boolean, default `true`. Matching Cargo dependency
+  requirements are updated by package name. When a dependency table sets
+  `package`, that value is authoritative; otherwise the dependency key supplies
+  the package name. This supports renamed dependency keys whose `package` value
+  names an updated workspace crate. The rewrite visits top-level,
+  target-specific, and workspace dependency sections. Path-only entries and
+  entries with `workspace = true` are left alone. Setting
+  `dependencies = false` requires at least one `string_values` selector in the
+  same group; otherwise configuration loading fails.
+- `string_values`: array of selector tables, default `[]`. Each selector has a
+  non-empty literal `table` path, an optional `field`, and an optional
+  `template`. Table segments and fields cannot have leading or trailing
+  whitespace. With `field` set, the selected field is visited in each inline or
+  standard sub-table entry. Without it, direct string values in the selected
+  table are visited. A missing table or field and a non-string value are no-ops.
+
+The default template is `"{crate}-{version}"`. It may use only `{crate}` and
+`{version}`, and must include exactly one `{version}` field. A repeated
+`{version}` field is rejected because one occurrence can fall inside protected
+SemVer text, and leaving that occurrence unchanged would otherwise suppress a
+sibling rewrite. Format specifications, conversions, positional fields, and
+unknown placeholders are configuration errors. Before rewriting, lading reads
+pre-bump versions from the workspace graph discovered at command entry,
+resolving `version.workspace = true` through `[workspace.package].version`. The
+new version is the requested bump version. A template starting with `{crate}`
+requires a crate-name boundary before the match; one starting with `{version}`
+requires a boundary before the version that rejects letters, digits, and
+periods while allowing plus signs and hyphens. A plus sign that starts SemVer
+build metadata is not treated as a boundary, so versions anywhere in that
+metadata remain unchanged, including `9.0.0+build-1.2.3`. A template ending with
+`{crate}` requires a crate-name boundary after the match; one ending with
+`{version}` requires a boundary after the match that rejects letters, digits,
+periods, plus signs, and hyphens. An adjacent `.crate` extension or `-extra`
+suffix therefore blocks the match. Versions nested in another SemVer
+prerelease, such as `9.0.0-1.0.0` or `9.0.0-rc.alpha-1.0.0`, also remain
+unchanged. These rules keep `rstest-bdd` from matching inside
+`rstest-bdd-harness` and prevent `0.6.0-beta4` matching the prefix of
+`0.6.0-beta40`. SemVer protection applies only when the complete configured
+rendering consists of SemVer identifier characters; a slash in a staged path
+keeps that rendering eligible for rewriting. If distinct crates render the same
+old text but different target text, planning fails with the affected manifest
+path instead of choosing one replacement. Version-only selectors leave selected
+versions that do not match a workspace crate's pre-bump version unchanged,
+since the selector cannot attribute those values to a crate. A version-only
+selector also cannot identify which unmatched version belongs to an updated
+crate. The same limit applies to crate-qualified templates. A value with that
+crate name but an unmatched version may be an intentional historical reference.
+Rewrites replace exact renderings made from the pre-bump workspace versions;
+each selector reads values as they stood before the string rewrite pass, so
+selectors do not cascade into text written by earlier selectors. Unmatched
+selected text remains unchanged. If overlapping selectors produce different
+replacements for the same value, planning fails with the manifest path.
+
+The root manifest and all workspace-member manifests are skipped even when a
+configured glob selects them. Repeated groups selecting the same non-member
+manifest enable dependency rewrites if any group enables them and combine all
+string selectors. Invalid selectors, groups with `dependencies = false` and no
+`string_values`, empty globs, missing manifests, paths outside the workspace,
+and malformed TOML stop the bump. Every selected target and its complete new
+text are validated before any file is written. Configured rewrites commit with
+the manifest writes, after member manifests and before documentation, README
+transposition and lockfile regeneration. During a dry run, the result lists
+each changed fixture manifest while its contents remain unchanged; configured
+lockfile projection still runs without invoking Cargo.
+
+Each write is atomic, but the commit is not. If a later write fails, earlier
+writes remain in place and lockfile regeneration is skipped. Because every
+target and every replacement is validated before the first write, `lading bump`
+deliberately does not roll back a partially committed plan. A plain rerun is
+not a repair: workspace and member manifests may already carry the target
+version, so the rerun treats that version as its pre-bump source and can leave
+remaining fixture strings unchanged. Inspect every planned destination that did
+not receive its rewrite: the failed manifest named in the error, and any
+manifest later in the plan that was never attempted. Complete all of those
+edits, then regenerate the affected lockfiles with
+`cargo update --workspace --manifest-path <manifest>`. Alternatively, restore
+the run's committed manifest changes from version control before rerunning.
+
+A live run holds a per-workspace advisory lock from planning through commit and
+lockfile regeneration, so a second Lading bump for the same workspace fails
+before changing a file instead of interleaving with the first. The lock lives
+in a stable per-user state directory derived from the account's passwd entry,
+independent of each process's `HOME` and `XDG_CACHE_HOME`. A POSIX host must
+therefore provide a passwd entry and a writable home for the account that runs
+`lading bump`; a container invoked with a numeric UID and no account entry must
+add one, and an account whose home is read-only must provision the derived lock
+directory as a private, account-owned directory.
+
+The lock directory is
+`<passwd home>/.local/state/lading/workspace-write-locks`. To provision it for
+an account whose home is not otherwise writable:
+
+```sh
+home=$(getent passwd "$ACCOUNT" | cut -d: -f6)
+install -d -m 0700 "$home/.local/state/lading/workspace-write-locks"
+chown "$ACCOUNT" "$home/.local/state/lading/workspace-write-locks"
+```
+
+Every parent directory must be searchable by the account, and the lock
+directory itself must be owned by it with mode `0700`. Lading fails closed with
+the derived path in the message when it cannot create or validate that
+directory. Editors and tools that ignore advisory locks can still race the run
+after validation.
+
+For example, the `rstest-bdd` published GPUI fixture can opt into rewriting its
+dependency requirements and staged package patch paths:
+
+<!-- tested-example: bump-manifest-rewrites-rstest-bdd -->
+
+```toml
+[[bump.manifest_rewrites]]
+paths = ["tests/fixtures/published-gpui-e2e/Cargo.toml"]
+dependencies = true
+string_values = [
+  { table = ["patch", "crates-io"], field = "path" },
+]
+```
+
+Before `lading bump 0.6.0`, that fixture may refer to `0.6.0-beta4` in
+dependency requirements and to `rstest-bdd-0.6.0-beta4` in staged package
+paths. The bump changes those configured references to `0.6.0` and reports the
+fixture manifest. Manifests beside Git-tracked `Cargo.lock` files are
+discovered automatically. For a fixture whose lockfile is untracked or ignored,
+also list its manifest in `bump.lockfile_manifests`, even when Git tracks that
+manifest.
 
 ### `[bump.documentation]`
 
@@ -912,6 +1139,8 @@ When `lading` runs, a structured JSON summary may appear in the log output at
 command can emit it — and reports whichever metrics that run recorded. For
 example, a `publish` run that downgraded an index-lookup failure emits:
 
+<!-- tested-example: users-guide-example-34 -->
+
 ```plaintext
 lading metrics summary: [{"metric": "publish.index_lookup_downgrade",
   "labels": {"missing_crate": "...", "subcommand": "..."}, "value": 1}]
@@ -920,6 +1149,28 @@ lading metrics summary: [{"metric": "publish.index_lookup_downgrade",
 Each entry records a counter name, the label values that identify it, and the
 accumulated count for the current invocation. The summary line is omitted
 entirely when no metrics were recorded (quiet runs stay quiet).
+
+#### `bump.manifest_rewrite.run`
+
+Counts planning and application outcomes for configured non-member manifest
+rewrites. Labels are bounded to these values:
+
+- `phase` — `planning` or `application`.
+- `outcome` — `planned`, `applied`, `skipped`, or `failed`.
+- `dry_run` — `true` or `false`.
+- `error_category` — `none`, `planning`, or `write`.
+
+#### `bump.manifest_rewrite.duration`
+
+Planning failures record the planning duration. When the rewrite application
+stage runs, one duration observation covers manifest resolution and planning
+plus application, including application failures. It excludes workspace and
+member manifest updates between those intervals. A workspace or member manifest
+write failure between planning and application emits no duration. Labels are
+`outcome`, `dry_run`, and `error_category`, with the values documented above.
+Runs with no `bump.manifest_rewrites` configuration emit no rewrite metrics. A
+failed rewrite write emits one `manifest_rewrite failed:` error event naming
+the path and reporting completed and planned writes.
 
 #### `publish.cargo.duration`
 
@@ -992,6 +1243,8 @@ sibling workspace dependency is downgraded to a warning because
 
 `--workspace-root` specifies the workspace root explicitly. The flag can appear
 before or after the subcommand:
+
+<!-- tested-example: users-guide-example-35 -->
 
 ```bash
 lading --workspace-root /path/to/workspace bump 1.2.3

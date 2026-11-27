@@ -16,6 +16,7 @@ from .cli_run_types import CliRunResult
 _FEATURES_DIR = Path(__file__).resolve().parent.parent / "features"
 
 scenarios(str(_FEATURES_DIR / "cli.feature"))
+scenarios(str(_FEATURES_DIR / "bump.feature"))
 
 
 def _run_cli(

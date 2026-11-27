@@ -6,19 +6,17 @@ from pathlib import Path
 import pytest
 from cmd_mox import CmdMox
 from pytest_bdd import given, parsers, then, when
+from tomlkit import parse as parse_toml
 
 from lading.commands import bump_readme
 from tests.helpers.cli_diagnostics import normalize_diagnostic
 
 # Keep direct fixture imports for BDD collection even though conftest.py
 # registers the modules as pytest plugins.
-from . import config_fixtures as _config_fixtures  # ruff: ignore[unused-import]
 from . import (
-    manifest_fixtures as _manifest_fixtures,  # ruff: ignore[unused-import] - direct import keeps the manifest step module collected
+    manifest_fixtures as _manifest_fixtures,
 )
-from . import (
-    metadata_fixtures as _metadata_fixtures,  # ruff: ignore[unused-import] - direct import keeps the metadata step module collected
-)
+from .cargo_journal import _cargo_update_args
 from .cli_run_types import CliRunResult
 
 if typ.TYPE_CHECKING:
@@ -223,6 +221,7 @@ def then_cli_output_lists_manifest_paths(
 
 
 _LISTED_PATH_LABELS = {
+    "manifest": "updated manifest",
     "documentation": "changed documentation file",
     "README": "transposed README",
     "lockfile": "refreshed lockfile",
@@ -231,7 +230,7 @@ _LISTED_PATH_LABELS = {
 
 @then(
     parsers.re(
-        r"the CLI output lists (?P<kind>documentation|README|lockfile) path"
+        r"the CLI output lists (?P<kind>manifest|documentation|README|lockfile) path"
         r' "(?P<expected>[^"]+)"'
     )
 )
@@ -422,3 +421,67 @@ def _invoke_lading_bump(
     from .test_common_steps import _run_cli
 
     return _run_cli(repo_root, workspace_directory, "bump", version, *options)
+
+
+@given(
+    "cargo metadata describes the rstest-bdd workspace and published fixture",
+    target_fixture="published_fixture_original",
+)
+def given_published_fixture_workspace(
+    cmd_mox: CmdMox,
+    monkeypatch: pytest.MonkeyPatch,
+    workspace_directory: Path,
+) -> bytes:
+    """Create the beta4 workspace and configured standalone fixture."""
+    return _manifest_fixtures._prepare_published_gpui_e2e_fixture(
+        cmd_mox, monkeypatch, workspace_directory
+    )
+
+
+@then("the published fixture manifest references only 0.6.0")
+def then_published_fixture_versions_updated(cli_run: CliRunResult) -> None:
+    """Assert dependency and staged-path prerelease values were rewritten."""
+    fixture = cli_run["workspace"] / "tests/fixtures/published-gpui-e2e/Cargo.toml"
+    document = parse_toml(fixture.read_text(encoding="utf-8"))
+    crate_names = (
+        "rstest-bdd",
+        "rstest-bdd-harness",
+        "rstest-bdd-harness-gpui",
+        "rstest-bdd-macros",
+    )
+    dependencies = document["dependencies"]
+    assert {name: str(dependencies[name]) for name in crate_names} == dict.fromkeys(
+        crate_names, "0.6.0"
+    ), "all four dependency requirements must use the exact target version"
+    patch_paths = document["patch"]["crates-io"]
+    patch_crate_names = (*crate_names, "rstest-bdd-patterns", "rstest-bdd-policy")
+    assert set(patch_paths) == set(patch_crate_names), (
+        "the fixture should retain exactly the six staged package patches"
+    )
+    expected_paths = {
+        name: f"../../../target/published-gpui-e2e/{name}-0.6.0"
+        for name in patch_crate_names
+    }
+    assert {
+        name: str(patch_paths[name]["path"]) for name in patch_crate_names
+    } == expected_paths, (
+        "all six staged package paths must use the exact target version"
+    )
+
+
+@then("the published fixture manifest remains unchanged")
+def then_published_fixture_unchanged(
+    cli_run: CliRunResult,
+    published_fixture_original: bytes,
+) -> None:
+    """Assert dry-run preserved the fixture's exact bytes."""
+    fixture = cli_run["workspace"] / "tests/fixtures/published-gpui-e2e/Cargo.toml"
+    actual = fixture.read_bytes()
+    assert actual == published_fixture_original, f"fixture changed: {actual!r}"
+
+
+@then("the bump made no Cargo lockfile update invocations")
+def then_no_cargo_lockfile_updates(cmd_mox: CmdMox) -> None:
+    """Assert dry-run projection did not invoke Cargo lockfile updates."""
+    updates = _cargo_update_args(cmd_mox)
+    assert not updates, f"unexpected Cargo updates: {updates!r}"

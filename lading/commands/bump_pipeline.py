@@ -10,10 +10,14 @@ regeneration consumes the validated plan instead of rediscovering manifests.
 import logging
 import typing as typ
 
-from lading.commands import bump_lockfiles
+from lading.commands import (
+    bump_lockfiles,
+    bump_prepare_manifest_rewrites,
+)
 from lading.commands.bump_plan import (
     BumpPlan,
     PlanBuilder,
+    PlannedWrite,
     WriteCategory,
     changes_from_plan,
     commit_plan,
@@ -38,15 +42,43 @@ def _run_pipeline(context: _BumpContext, target_version: str) -> BumpChanges:
     """Prepare, commit, and regenerate, returning the ordered changes."""
     plan = _prepare_plan(context, target_version)
     if context.base_options.dry_run:
+        bump_prepare_manifest_rewrites.record_application_metrics(
+            context, 0.0, failed=False
+        )
         return changes_from_plan(plan, lockfiles=_planned_lockfiles(plan))
-    commit_plan(plan)
+    _commit_with_metrics(context, plan)
     return changes_from_plan(plan, lockfiles=_regenerate_plan(context, plan))
+
+
+def _commit_with_metrics(context: _BumpContext, plan: BumpPlan) -> None:
+    """Commit the plan, measuring only configured fixture writes."""
+    fixture_seconds = 0.0
+
+    def observe_fixture_write(proposal: PlannedWrite, elapsed: float) -> None:
+        """Accumulate the time spent writing fixture proposals."""
+        nonlocal fixture_seconds
+        if WriteCategory.FIXTURE_MANIFEST in proposal.categories:
+            fixture_seconds += elapsed
+
+    try:
+        commit_plan(plan, on_write=observe_fixture_write)
+    except BaseException:
+        bump_prepare_manifest_rewrites.record_application_metrics(
+            context, fixture_seconds, failed=True
+        )
+        raise
+    bump_prepare_manifest_rewrites.record_application_metrics(
+        context, fixture_seconds, failed=False
+    )
 
 
 def _prepare_plan(context: _BumpContext, target_version: str) -> BumpPlan:
     """Validate every target and return the complete write plan."""
     builder = PlanBuilder(root=context.root_path)
     prepare_manifests(context, target_version, builder)
+    bump_prepare_manifest_rewrites.prepare_manifest_rewrites(
+        context, target_version, builder
+    )
     prepare_documentation(context, target_version, builder)
     prepare_readmes(context, builder)
     lockfiles = _plan_lockfiles(context, builder)
@@ -76,9 +108,16 @@ def _plan_lockfiles(
     plan = repository.plan_lockfiles(
         context.root_path, context.configuration.bump.lockfile_manifests
     )
-    if not builder.has_changes(WriteCategory.MANIFEST):
+    if not _plan_changes_manifests(builder):
         return None
     return plan
+
+
+def _plan_changes_manifests(builder: PlanBuilder) -> bool:
+    """Return whether the plan changes a workspace or fixture manifest."""
+    return builder.has_changes(WriteCategory.MANIFEST) or builder.has_changes(
+        WriteCategory.FIXTURE_MANIFEST
+    )
 
 
 def _planned_lockfiles(plan: BumpPlan) -> tuple[Path, ...]:

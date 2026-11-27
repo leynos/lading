@@ -3,10 +3,11 @@
 Lading 0.4.0 raises the interpreter floor from CPython 3.13 to CPython 3.14. It
 also makes the command-line boundary explicit: diagnostics that an earlier
 dependency rendered on stdout are now written to stderr, and command summaries
-are printed once, unwrapped and without colour. The flags, `lading.toml` keys,
-and published Python surface are unchanged from 0.3.x. An environment already
-running 3.14 that only reads successful output needs no action beyond the
-version bump itself.
+are printed once, unwrapped and without colour. Existing flags and
+`lading.toml` keys keep their meaning; the release adds the opt-in
+`[[bump.manifest_rewrites]]` allowlist and additive Python modules. An
+environment already running 3.14 that only reads successful output needs no
+action beyond the version bump itself.
 
 When 0.4.0 is released, its tagged build will also be published to PyPI as a
 source distribution and pure-Python wheel. GitHub Releases will retain both
@@ -19,6 +20,16 @@ events with the prefix `relay observability event:`. They describe relay
 fallback and disablement decisions without including child-process output. This
 adds no configuration or invocation change; see
 [Observability](users-guide.md#observability) for the event contract.
+
+Lading 0.4.0 adds an optional `[[bump.manifest_rewrites]]` allowlist for
+selected non-member Cargo manifests. When configured, `lading bump` updates
+matching dependency requirements and version-bearing TOML strings before
+lockfile regeneration. The setting is empty by default, and a configuration
+that does not use it keeps its previous bump behaviour. Configuration errors
+for these records are reported as `ConfigurationError` and remain importable
+from `lading.config`; the records and validation helpers are also available
+from the new `lading.config_manifest_rewrites` module. See
+[Rewriting configured non-member manifests](users-guide.md#rewriting-configured-non-member-manifests).
 
 The number is derived rather than announced: 0.3.1 is the most recent release,
 and a breaking change under pre-1.0 semantic versioning advances the minor
@@ -273,9 +284,16 @@ environment, and migrate when the interpreter moves.
 ## What does not need to change
 
 A workspace whose members are real directories, whose write targets are regular
-independent files, and which sets no lockfile override needs no change. Command
-summaries still go to stdout, and a script that captured both streams together
-sees no change in meaning.
+independent files, and which sets no lockfile override needs no change. A
+workspace that does not configure `bump.manifest_rewrites` keeps its previous
+rewrite behaviour. Every live bump, whether or not rewrites are configured,
+takes the per-workspace write lock from planning through commit and lockfile
+regeneration, so the account needs a passwd entry with a writable home or a
+provisioned private account-owned lock directory; dry runs take no lock. See
+[Rewriting configured non-member manifests](users-guide.md#rewriting-configured-non-member-manifests)
+for the lock location and repair guidance. Command summaries still go to
+stdout, and a script that captured both streams together sees no change in
+meaning.
 
 ## Migration checklist
 

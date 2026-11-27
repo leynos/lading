@@ -842,8 +842,23 @@ creates with `mkdtemp`, opening `.lading-staging-lock` inside it and taking an
 exclusive non-blocking lock that the process holds for the tree's life;
 `clean.run` takes the same lock through `hold_for_removal` and **holds it
 across** the `shutil.rmtree`, skipping the tree if it cannot take it. One
-module wraps both platforms: `fcntl.flock` on POSIX and `msvcrt.locking` on
-Windows.
+module wraps both platforms: `lading.utils.file_lock` uses `fcntl.flock` on
+POSIX and `msvcrt.locking` on Windows.
+
+### File locks (`lading.utils.file_lock`)
+
+`set_exclusive_lock(handle, *, locked=...)` is the platform primitive shared by
+`lading.commands.staging_lock` and `lading.commands.bump_workspace_write_lock`.
+On POSIX it applies `fcntl.flock(LOCK_EX | LOCK_NB)`, and on Windows it seeks
+to the start of the file and applies `msvcrt.locking` over one byte. Both are
+non-blocking: a failed acquisition raises the platform error unchanged, so
+callers decide whether to wait, retry, or report.
+
+The caller owns the handle. It must open the file in binary mode, keep it open
+for as long as the lock is held, and release the lock with `locked=False`
+before closing; the module never closes a handle it was given. A handle closed
+without that release drops the lock implicitly on both platforms, so the
+`locked=False` call belongs in the same `finally` that closes the handle.
 
 Holding rather than asking matters because asking and deleting are two moments,
 and a publish can claim the tree in between. Windows is the exception and is
@@ -1209,6 +1224,70 @@ sets `readme.workspace = true`, rewrites relative Markdown links so they
 resolve from the crate directory, and leaves absolute URI targets unchanged.
 Markdown links in fenced code blocks, indented code blocks, and inline code
 spans are preserved verbatim.
+
+### Configured non-member manifest rewrites
+
+`lading.config_manifest_rewrites` owns the immutable records and strict schema
+for `bump.manifest_rewrites`. `lading.config_validation` provides shared TOML
+coercion, mapping-key validation, and selector-segment validation for those
+records.
+
+`lading.commands.bump_manifest_rewrite_filesystem` resolves the allowlist
+through `lading.utils.confinement`, skips the workspace and member manifests,
+and reads each selected manifest's UTF-8 text. It returns
+`ManifestRewriteSource` records and performs no TOML rewrite policy.
+`lading.commands.bump_manifest_rewrites` plans dependency and string-value
+edits from those records without filesystem access.
+
+`lading.commands.bump_manifest_rewrite_strings` compiles configured templates,
+protects SemVer prerelease and build-metadata text, detects conflicting
+selectors, and applies one-pass selector snapshots. It uses
+`bump_toml.select_table` and `bump_toml.value_as_string` and retains each
+value's TOML style and trivia.
+`lading.commands.bump_manifest_rewrite_dependencies` matches dependency keys
+and their `package` aliases in direct, workspace, and target-specific sections.
+It replaces the first comparator and keeps later comma-separated comparators
+verbatim; `bump_toml` supplies the shared table and dependency vocabulary.
+`lading.commands.bump_manifest_rewrite_model` owns the planner's records and
+errors.
+
+`lading.commands.bump_prepare_manifest_rewrites.prepare_manifest_rewrites` is
+the pipeline adapter. It reads and plans configured sources, confines each
+planned destination, and proposes the complete new text on the bump plan as
+`WriteCategory.FIXTURE_MANIFEST`. `bump_plan` orders that category after the
+workspace and member manifests and before documentation, README, and lockfile
+work; fixture-only changes satisfy the manifest-change gate for lockfile
+regeneration and are reported in the manifest category. Preparation writes
+nothing. `commit_plan` performs the only writes, and a failure part-way leaves
+earlier writes in place; the workflow deliberately provides no rollback because
+every target and every replacement is validated before the first write.
+
+`lading.commands.bump_manifest_rewrite_bounds` evaluates Cargo comparators
+without changing them and reports a rewritten first comparator or retained
+later comparator that excludes the target. The dependency planner logs one
+warning per affected entry, whether or not the requirement text changes, and
+still applies a rewrite that differs, so the operator sees the exclusion and
+Cargo's resolver remains the final authority.
+
+`lading.commands.bump_manifest_rewrite_metrics` records bounded planning and
+commit outcome counters and durations. Rewrite failures surface as
+`ManifestRewriteError`; the CLI reports them as
+`Manifest rewrite error: <message>`.
+
+An injected `BumpOptions.workspace` graph is validated before use: its root and
+manifest paths must be confined, and each crate name and effective version must
+match the member manifest on disk, including `version.workspace = true`
+inheritance. A caller that reuses a graph after an earlier bump is therefore
+rejected before any fixture text is planned from stale versions.
+
+A live run holds `bump_workspace_write_lock.workspace_write_lock` from planning
+through commit and lockfile regeneration; dry runs take no lock. The lock is a
+per-workspace advisory lock in a stable per-user state directory derived from
+the account's passwd entry rather than `HOME`. A POSIX host must provide a
+passwd entry and a writable home for that account, or provision the derived
+private account-owned directory. Processes running as another user, editors and
+tools that ignore the lock are outside its guarantee. The lock is re-entrant on
+the thread that holds it.
 
 ### Lockfile regeneration modules
 
@@ -1598,7 +1677,7 @@ area so existing handling remains precise:
 
 | Root exception              | Module                             | Notes                                                                                           |
 | --------------------------- | ---------------------------------- | ----------------------------------------------------------------------------------------------- |
-| `ConfigurationError`        | `lading.config`                    | Base for configuration loading and validation failures.                                         |
+| `ConfigurationError`        | `lading.exceptions`                | Base for configuration loading and validation failures; `lading.config` re-exports it.          |
 | `WorkspaceModelError`       | `lading.workspace.models`          | Base for workspace graph/model validation failures.                                             |
 | `CargoMetadataError`        | `lading.workspace.metadata`        | Base for cargo metadata execution and parsing failures.                                         |
 | `CommandSpawnError`         | `lading.runtime.subprocess_runner` | Raised when the subprocess runner cannot spawn an external command.                             |
@@ -2056,6 +2135,12 @@ responsibilities live in dedicated modules, imported by their original homes:
   (imported by `bump`).
 - `lading.commands.bump_pipeline` — bump run-sequence orchestration across
   manifests, documentation, readmes, and lockfiles (imported by `bump`).
+- `lading.commands.bump_manifest_rewrite_filesystem` — confined resolution,
+  member filtering, and UTF-8 reads for configured rewrite manifests.
+- `lading.commands.bump_manifest_rewrites` — dependency and string-value
+  rewrite planning without filesystem access.
+- `lading.commands.bump_prepare_manifest_rewrites` — prepares confined fixture
+  rewrites as `FIXTURE_MANIFEST` proposals on the bump plan.
 - `lading.commands.publish_pipeline` — per-crate package and publish execution,
   result handling, and live/dry-run dispatch (imported by `publish`).
 - `lading.commands.publish_staging` — workspace copy preparation, cleanup, and
@@ -2242,6 +2327,18 @@ invocation:
 No second invocation record is emitted at DEBUG level. Any regression that
 reintroduces a second invocation log at any level is pinned by the tests in
 `tests/unit/test_subprocess_runner_logging.py`.
+
+### Publish and preflight records (`lading.config_publish_preflight`)
+
+`lading.config_publish_preflight` owns the frozen records for the `[publish]`
+and `[publish.preflight]` tables: `PublishConfig`, `PreflightConfig`, their
+`from_mapping` constructors, and the key sets each table accepts. The module
+depends on `lading.config_validation` for coercion and raises
+`ConfigurationError` (from `lading.exceptions`) on an unknown key or an invalid
+value. `lading.config` re-exports the records and assembles them into
+`LadingConfig`, so command code imports the record types from either module.
+Configured manifest rewrites follow the same split in
+`lading.config_manifest_rewrites`.
 
 ### Pre-flight validation (`publish_preflight`)
 

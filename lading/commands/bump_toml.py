@@ -3,6 +3,7 @@
 import collections.abc as cabc
 import os
 import re
+import stat
 import tempfile
 import typing as typ
 from contextlib import suppress
@@ -16,11 +17,17 @@ from tomlkit.items import InlineTable, Item, Table
 if typ.TYPE_CHECKING:
     from tomlkit.toml_document import TOMLDocument
 
-type _TableLike = Table | OutOfOrderTableProxy
-_TABLE_LIKE_TYPES: typ.Final[tuple[type[Table], type[OutOfOrderTableProxy]]] = (
+type _TableLike = Table | InlineTable | OutOfOrderTableProxy
+_TABLE_LIKE_TYPES: typ.Final[
+    tuple[type[Table] | type[InlineTable] | type[OutOfOrderTableProxy], ...]
+] = (
     Table,
+    InlineTable,
     OutOfOrderTableProxy,
 )
+_BLOCK_TABLE_TYPES: typ.Final[
+    tuple[type[Table] | type[InlineTable] | type[OutOfOrderTableProxy], ...]
+] = (Table, OutOfOrderTableProxy)
 
 NON_DIGIT_PREFIX: typ.Final[re.Pattern[str]] = re.compile(r"^([^\d]*)")
 
@@ -98,6 +105,8 @@ def compose_requirement(existing: str, target_version: str) -> str:
 def prepare_version_replacement(
     value: object,
     target_version: str,
+    *,
+    compose: cabc.Callable[[str, str], str] = compose_requirement,
 ) -> Item | None:
     """Return an updated requirement value when ``value`` stores a string.
 
@@ -108,6 +117,10 @@ def prepare_version_replacement(
         :class:`~tomlkit.items.Item` or a raw Python value.
     target_version : str
         The target version to apply.
+    compose : Callable[[str, str], str], optional
+        Requirement composer used to build the replacement. Defaults to
+        :func:`compose_requirement`, which replaces the complete requirement.
+        Callers that must retain later comparators can supply their own.
 
     Returns
     -------
@@ -125,7 +138,7 @@ def prepare_version_replacement(
     current = value_as_string(value)
     if current is None:
         return None
-    replacement_text = compose_requirement(current, target_version)
+    replacement_text = compose(current, target_version)
     if replacement_text == current:
         return None
     replacement = string(replacement_text)
@@ -394,13 +407,48 @@ def parse_manifest(manifest_path: Path) -> TOMLDocument:
     >>> parse_manifest(path)["version"]
     '0.1.0'
     """
-    content = manifest_path.read_text(encoding="utf-8")
+    content = _read_manifest_text(manifest_path)
     return parse_toml(content)
+
+
+def _read_manifest_text(manifest_path: Path) -> str:
+    """Read manifest text without blocking on a substituted non-regular file.
+
+    Confinement rejects a non-regular target when it runs, but another process
+    can replace the path before this read. Opening non-blocking and checking
+    the opened descriptor's type keeps a FIFO from blocking the run while it
+    holds the workspace lock.
+
+    Parameters
+    ----------
+    manifest_path : Path
+        Filesystem path to the manifest to read.
+
+    Returns
+    -------
+    str
+        The decoded manifest text.
+
+    Raises
+    ------
+    OSError
+        If the path cannot be opened, the opened descriptor is not a regular
+        file, or the text cannot be read or decoded.
+    """
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NONBLOCK", 0)
+    descriptor = os.open(manifest_path, flags)
+    with os.fdopen(descriptor, "r", encoding="utf-8") as handle:
+        if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
+            message = f"Manifest path is not a regular file: {manifest_path}"
+            raise OSError(message)
+        return handle.read()
 
 
 def select_table(
     document: TOMLDocument | _TableLike,
     keys: tuple[str, ...],
+    *,
+    include_inline: bool = False,
 ) -> _TableLike | None:
     r"""Return the nested table located by ``keys`` if it exists.
 
@@ -411,6 +459,10 @@ def select_table(
     keys : tuple[str, ...]
         Ordered keys identifying the nested table path. An empty tuple returns
         ``document`` itself when it is table-like.
+    include_inline : bool, default False
+        Whether an inline table counts as a table to descend through. The
+        documentation and manifest passes leave inline shapes alone; a
+        configured non-member rewrite opts in.
 
     Returns
     -------
@@ -426,18 +478,21 @@ def select_table(
     >>> select_table(document, ("missing",)) is None
     True
     """
+    allowed: tuple[
+        type[Table] | type[InlineTable] | type[OutOfOrderTableProxy], ...
+    ] = _TABLE_LIKE_TYPES if include_inline else _BLOCK_TABLE_TYPES
     if not keys:
-        return document if isinstance(document, _TABLE_LIKE_TYPES) else None
+        return document if isinstance(document, allowed) else None
     current: object = document
     for key in keys:
         getter = getattr(current, "get", None)
         if getter is None:
             return None
         next_value = getter(key)
-        if not isinstance(next_value, _TABLE_LIKE_TYPES):
+        if not isinstance(next_value, allowed):
             return None
         current = next_value
-    return current if isinstance(current, _TABLE_LIKE_TYPES) else None
+    return current if isinstance(current, allowed) else None
 
 
 def assign_version(table: _TableLike | None, target_version: str) -> bool:

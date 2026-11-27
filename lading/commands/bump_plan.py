@@ -15,10 +15,12 @@ performs the only workspace mutations in the bump workflow.
 import collections.abc as cabc
 import dataclasses as dc
 import enum
+import time
 import typing as typ
 from pathlib import Path, PurePosixPath
 
 from lading.commands import bump_toml
+from lading.commands.bump_manifest_rewrite_model import ManifestRewriteWriteError
 from lading.commands.bump_output import BumpChanges
 from lading.utils.confinement import (
     BumpPreflightError,
@@ -47,6 +49,7 @@ class WriteCategory(enum.Enum):
     """The role a planned write plays in the bump report."""
 
     MANIFEST = enum.auto()
+    FIXTURE_MANIFEST = enum.auto()
     DOCUMENTATION = enum.auto()
     README = enum.auto()
 
@@ -93,15 +96,19 @@ class BumpPlan:
 
     @property
     def manifest_changed(self) -> bool:
-        """Whether any manifest is in the plan.
+        """Whether any workspace or configured fixture manifest is planned.
 
         Returns
         -------
         bool
             ``True`` when at least one manifest write is proposed.
         """
+        manifest_categories = {
+            WriteCategory.MANIFEST,
+            WriteCategory.FIXTURE_MANIFEST,
+        }
         return any(
-            WriteCategory.MANIFEST in proposal.categories for proposal in self.proposals
+            manifest_categories & proposal.categories for proposal in self.proposals
         )
 
 
@@ -362,18 +369,35 @@ class PlanBuilder:
         if WriteCategory.MANIFEST in categories:
             # The workspace manifest is written before member manifests.
             return (0 if path.parts == _ROOT_MANIFEST_PARTS else 1, display)
-        if WriteCategory.DOCUMENTATION in categories:
+        if WriteCategory.FIXTURE_MANIFEST in categories:
+            # Configured fixture rewrites follow member manifests and precede
+            # documentation, README and lockfile work.
             return (2, display)
-        return (3, display)
+        if WriteCategory.DOCUMENTATION in categories:
+            return (3, display)
+        return (4, display)
 
 
-def commit_plan(plan: BumpPlan) -> None:
+def commit_plan(
+    plan: BumpPlan,
+    *,
+    on_write: cabc.Callable[[PlannedWrite, float], None] | None = None,
+) -> None:
     """Write every proposal in the plan's deterministic order.
 
     Parameters
     ----------
     plan : BumpPlan
         A fully validated plan.
+    on_write : Callable[[PlannedWrite, float], None] or None, optional
+        Observer invoked after each write attempt, successful or failed, with
+        the proposal and its elapsed seconds. Defaults to ``None``.
+
+    Raises
+    ------
+    ManifestRewriteWriteError
+        If an atomic write fails, carrying the completed and planned write
+        counts and the failed destination.
 
     Notes
     -----
@@ -384,8 +408,31 @@ def commit_plan(plan: BumpPlan) -> None:
     concurrent process that replaces a validated parent with a symlink after
     validation is not defended against.
     """
-    for proposal in plan.proposals:
-        bump_toml.write_atomic_text(proposal.path.path, proposal.content)
+    planned_writes = len(plan.proposals)
+    for completed_writes, proposal in enumerate(plan.proposals):
+        started_at = time.perf_counter()
+        try:
+            bump_toml.write_atomic_text(proposal.path.path, proposal.content)
+        except OSError as exc:
+            _notify_write(on_write, proposal, started_at)
+            message = f"Could not write bump target {proposal.path.path}: {exc}"
+            raise ManifestRewriteWriteError(
+                message,
+                completed_writes=completed_writes,
+                planned_writes=planned_writes,
+                failed_path=proposal.path.path,
+            ) from exc
+        _notify_write(on_write, proposal, started_at)
+
+
+def _notify_write(
+    callback: cabc.Callable[[PlannedWrite, float], None] | None,
+    proposal: PlannedWrite,
+    started_at: float,
+) -> None:
+    """Report one write attempt to the optional observer."""
+    if callback is not None:
+        callback(proposal, time.perf_counter() - started_at)
 
 
 def changes_from_plan(
@@ -408,10 +455,23 @@ def changes_from_plan(
         Paths grouped by category in the established report order.
     """
     return BumpChanges(
-        manifests=_paths_for(plan, WriteCategory.MANIFEST),
+        manifests=_manifest_paths_for(plan),
         documents=_paths_for(plan, WriteCategory.DOCUMENTATION),
         transposed_readmes=tuple(sorted(_paths_for(plan, WriteCategory.README))),
         lockfiles=_root_first(lockfiles),
+    )
+
+
+def _manifest_paths_for(plan: BumpPlan) -> tuple[Path, ...]:
+    """Return workspace and configured fixture manifests in commit order."""
+    manifest_categories = {
+        WriteCategory.MANIFEST,
+        WriteCategory.FIXTURE_MANIFEST,
+    }
+    return tuple(
+        proposal.path.path
+        for proposal in plan.proposals
+        if manifest_categories & proposal.categories
     )
 
 

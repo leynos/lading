@@ -16,9 +16,7 @@ import pytest
 
 from lading import cli, cli_entrypoint
 from lading import config as config_module
-from lading.commands import bump as bump_command
 from lading.commands import publish as publish_command
-from tests.helpers.cli_diagnostics import normalize_diagnostic
 from tests.helpers.cli_workspace import make_workspace
 
 if typ.TYPE_CHECKING:
@@ -71,108 +69,6 @@ def test_main_handles_exceptions(
     assert case.expected_message in captured.err, (
         f"stderr should report {case.expected_message!r}"
     )
-
-
-@pytest.mark.usefixtures("minimal_config")
-def test_bump_command_validates_version(
-    capsys: pytest.CaptureFixture[str],
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    """Reject bump invocations that provide an invalid version string."""
-
-    def fail(*_: object, **__: object) -> typ.NoReturn:
-        """Fail the test immediately if bump.run is ever invoked."""
-        pytest.fail("bump.run should not be invoked for invalid versions")
-
-    monkeypatch.setattr(bump_command, "run", fail)
-    exit_code = cli.main(["bump", "1.2", "--workspace-root", str(tmp_path)])
-    assert exit_code == 1, f"an invalid version must exit 1, got {exit_code}"
-    captured = capsys.readouterr()
-    # Cyclopts writes argument-validation errors to its error console, which is
-    # stderr, consistent with other parse errors such as "Unknown command".
-    assert "Invalid version argument '1.2'" in normalize_diagnostic(captured.err), (
-        "cyclopts should report the invalid version on stderr"
-    )
-    assert "Invalid version argument" not in captured.out, (
-        "a diagnostic must not be written to stdout"
-    )
-
-
-@pytest.mark.usefixtures("minimal_config")
-def test_bump_command_accepts_extended_semver(
-    capsys: pytest.CaptureFixture[str],
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    """Accept semantic versions with pre-release and build metadata."""
-    graph = make_workspace(tmp_path.resolve())
-    monkeypatch.setattr(cli, "load_bump_workspace", lambda _: graph)
-    captured: dict[str, object] = {}
-
-    def fake_run(
-        workspace_root: Path,
-        version: str,
-        *,
-        options: bump_command.BumpOptions,
-    ) -> str:
-        """Record the bump arguments and return a canned summary."""
-        captured["workspace_root"] = workspace_root
-        captured["version"] = version
-        captured["options"] = options
-        return "ok"
-
-    monkeypatch.setattr(bump_command, "run", fake_run)
-    version = "1.2.3-alpha.1+build.5"
-    exit_code = cli.main(["bump", version, "--workspace-root", str(tmp_path)])
-    assert exit_code == 0, f"a valid version must exit 0, got {exit_code}"
-    capsys.readouterr()
-    assert captured["workspace_root"] == tmp_path.resolve(), (
-        "bump.run must receive the resolved workspace root"
-    )
-    assert captured["version"] == version, "bump.run must receive the given version"
-    options = captured["options"]
-    assert isinstance(options, bump_command.BumpOptions), (
-        "bump.run must receive a BumpOptions instance"
-    )
-    assert isinstance(options.configuration, config_module.LadingConfig), (
-        "the options must carry the loaded LadingConfig"
-    )
-    assert options.workspace is graph, "the options must carry the injected workspace"
-    assert options.dry_run is False, "a plain invocation must not be a dry run"
-
-
-@pytest.mark.usefixtures("minimal_config")
-def test_cyclopts_invoke_uses_workspace_env(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Invoke the Cyclopts app directly with workspace override propagation."""
-    graph = make_workspace(tmp_path.resolve())
-    monkeypatch.setattr(cli, "load_bump_workspace", lambda _: graph)
-
-    def fake_run(
-        workspace_root: Path,
-        version: str,
-        *,
-        options: bump_command.BumpOptions,
-    ) -> str:
-        """Assert the parsed bump arguments and return a canned summary."""
-        assert workspace_root == tmp_path.resolve(), (
-            "the workspace override should reach bump.run"
-        )
-        assert version == "4.5.6", "bump.run should receive the parsed version"
-        assert isinstance(options.configuration, config_module.LadingConfig), (
-            "the options must carry the loaded LadingConfig"
-        )
-        assert options.workspace is graph, (
-            "the options must carry the injected workspace"
-        )
-        assert options.dry_run is False, "a plain invocation must not be a dry run"
-        return "bump summary"
-
-    monkeypatch.setattr(bump_command, "run", fake_run)
-    result = cli.app(["bump", "4.5.6", "--workspace-root", str(tmp_path)])
-    assert result == "bump summary", "cli.app should return the command result"
 
 
 def test_workspace_env_sets_and_restores(
