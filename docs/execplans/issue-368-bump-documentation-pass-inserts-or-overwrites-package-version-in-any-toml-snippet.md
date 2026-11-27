@@ -78,16 +78,17 @@ production modules are executable contracts.
 ## Required outcome
 
 1. `update_toml_snippet_versions` and `rewrite_markdown_toml_fences` leave a
-   fence's package version unchanged and report `changed is False` when the
-   fence does not name a bumped crate in `[package].name`. Dependency
-   requirements are independent of that gate, so a fence that contains an
-   eligible dependency still changes even though its package version does not
+   fence's package version unchanged when the fence does not name a bumped
+   crate in `[package].name`, and report `changed is False` for such a fence
+   only when it also contains no eligible dependency. Dependency requirements
+   are independent of that gate, so a fence that contains an eligible
+   dependency still changes even though its package version does not
    (requirement 5).
 2. A fence that names a bumped crate and declares a string `version` has that
    value replaced, preserving inline comments and trivia.
 3. A fence that declares `version.workspace = true`, an inline
-   `version = { workspace = true }`, or no `version` key at all is never
-   mutated.
+   `version = { workspace = true }`, or no `version` key at all keeps its
+   package version; an eligible dependency in the same fence may still change.
 4. `[workspace.package].version` is rewritten only when the same fence passes
    the `[package].name` gate, which is the documented virtual-root limit.
 5. Dependency-reference rewriting, including exclusion by an empty target set,
@@ -291,14 +292,17 @@ Scenario: Bumping restricts documentation version rewriting to bumped crates
   `bump_docs_fences.py` past the 400-line ceiling; the extraction is the
   sanctioned separate atomic refactor after the functional commit, and both
   modules are now under the ceiling.
-- 2026-11-27: tolerate the code budget being exceeded. The measured Python
-  source and test change is +1397/-695, a net +702 against the +320-line
-  tolerance, because the repository's own 400-line ceiling required the
-  renderer and dependency-helper splits, and the review required two new BDD
-  step modules plus their tests. The work is required by the accepted scope,
-  AGENTS.md, and the review findings, so it is recorded as an accepted budget
-  exception rather than scope growth. The ExecPlan itself is excluded from
-  every budget.
+- 2026-11-27: tolerate both budget exceptions. Final measurement against the
+  reviewed base `4ddba048`: Python source and tests +2156/-874, a net +1282
+  against the +320-line tolerance, and `pyproject.toml` +4/-0 against the
+  zero-line configuration tolerance. The earlier +702 figure predated the
+  rebase onto #423 and the review-driven hardening. The overage is required
+  work rather than scope growth: the repository's 400-line ceiling forced the
+  renderer, dependency-helper and fence-scanner splits; review required
+  CommonMark indentation rules and their regressions; and the configuration
+  change is one per-file pydoclint ignore for the loader's delegated
+  `ValueError` contract, matching the existing `bump_readme.py` precedent. The
+  ExecPlan itself is excluded from every budget.
 - 2026-11-27: correct the virtual-root guidance after review. A virtual
   manifest has no `[package]` table, so advising readers to add a bumped crate's
   `[package].name` to a virtual-root example would describe a different

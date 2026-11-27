@@ -377,8 +377,9 @@ never inserts a `version` key, leaves `version.workspace = true`, an inline
 `version = { workspace = true }`, and any other non-string value unchanged, and
 does not re-version an unrelated example manifest.
 `[workspace.package].version` follows the same gate, so a fence that documents
-a virtual workspace root without a `[package].name` is left unchanged.
-Dependency requirements in `dependencies`, `dev-dependencies`, and
+a virtual workspace root without a `[package].name` keeps its
+`[workspace.package].version`; dependency requirements in that fence can still
+move. Dependency requirements in `dependencies`, `dev-dependencies`, and
 `build-dependencies` are rewritten independently of this gate.
 
 A rewrite visits every location a reader is told to declare a dependency:

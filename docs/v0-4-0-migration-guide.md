@@ -83,7 +83,8 @@ moved rather than when this release is published. Documentation snippets
 deserve a review rather than a required edit: the narrower documentation pass
 described in
 [section 6](#6-review-documentation-snippets-for-over-broad-rewriting) leaves
-snippets that do not name a bumped crate unchanged.
+the package version in a snippet that does not name a bumped crate unchanged;
+an eligible dependency requirement in that snippet can still move.
 
 ## 1. Make bump write targets confined and regular
 
