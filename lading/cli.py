@@ -17,30 +17,42 @@ across the CLI adapter and the command module.
 """
 
 import collections.abc as cabc
-import contextvars
 import importlib
-import logging
 import os
-import sys
 import typing as typ
-from contextlib import AbstractContextManager, contextmanager, nullcontext
-from logging import INFO as _DEFAULT_LOG_LEVEL
+from contextlib import AbstractContextManager, nullcontext
 from pathlib import Path
 
-from cyclopts import App, Parameter
+from cyclopts import Parameter
 
 from . import commands, config
+from .cli_app import app as _shared_app
+from .cli_app import create_app
+from .cli_entrypoint import _dispatch_and_print as _dispatch_and_print
+from .cli_entrypoint import _dispatch_with_diagnostics as _dispatch_with_diagnostics
+from .cli_entrypoint import main as main
+from .cli_helpers import _LADING_HANDLER_NAME as _LADING_HANDLER_NAME
+from .cli_helpers import LOG_LEVEL_ENV_VAR as LOG_LEVEL_ENV_VAR
+from .cli_helpers import _configure_logging as _configure_logging
+from .cli_helpers import _environment_boolean as _environment_boolean
+from .cli_helpers import _extract_workspace_override as _extract_workspace_override
+from .cli_helpers import (
+    _resolve_allow_unpublished_workspace_deps,
+    _skip_preflight_override,
+)
+from .cli_helpers import _resolve_log_level as _resolve_log_level
+from .cli_helpers import _workspace_env as _workspace_env
 from .cli_options import (
     CLEAN_LOCATION_PARAMETER,
     CLEAN_REMOVE_PARAMETER,
     DRY_RUN_PARAMETER,
     REBUILD_LOCKFILES_PARAMETER,
-    SKIP_PREFLIGHT_ENV_VAR,
     VERSION_PARAMETER,
     WORKSPACE_PARAMETER,
-    WORKSPACE_ROOT_ENV_VAR,
-    WORKSPACE_ROOT_REQUIRED_MESSAGE,
     PublishFlags,
+)
+from .cli_options import (
+    WORKSPACE_ROOT_ENV_VAR as WORKSPACE_ROOT_ENV_VAR,
 )
 from .cli_options import (
     AllowUnpublishedWorkspaceDepsFlag as AllowUnpublishedWorkspaceDepsFlag,
@@ -72,52 +84,28 @@ from .cli_options import (
 from .cli_options import (
     WorkspaceRootOption as WorkspaceRootOption,
 )
-from .commands import publish_staging
-from .commands.bump_manifest_rewrites import (
-    ManifestRewriteError,
-    ManifestRewriteWriteError,
-)
-from .commands.bump_toml_files import require_workspace_bounded_write_support
-from .commands.publish_skip import SkipPreflightDecision, SkipPreflightSource
+from .commands import publish_staging as publish_staging
 from .runtime import CommandRunner, subprocess_runner
-from .utils import metrics, normalize_workspace_root
-from .workspace import WorkspaceGraph, WorkspaceModelError, load_workspace
+from .utils import normalize_workspace_root
+from .utils.confinement import BumpPreflightError as BumpPreflightError
+from .workspace import (
+    WorkspaceGraph,
+    load_bump_workspace,
+    load_workspace,
+)
+from .workspace import (
+    WorkspaceModelError as WorkspaceModelError,
+)
 from .workspace import metadata as metadata_module
 
-LOG_LEVEL_ENV_VAR = "LADING_LOG_LEVEL"
-_LOG_FORMAT = "%(levelname)s: %(message)s"
-_LADING_HANDLER_NAME = "lading-cli-handler"
 _CMD_MOX_STUB_ENV = "LADING_USE_CMD_MOX_STUB"
 _CMD_MOX_TRUTHY_VALUES = frozenset({"1", "true", "yes", "on"})
-# Mirrors the literals cyclopts coerces into a bool for an env_var-backed
-# option. Only consulted when the dispatch tokens are unavailable, which
-# happens when the app is driven in-process rather than through main().
-_ENVIRONMENT_TRUTHY_VALUES = frozenset({"1", "true", "t", "yes", "y"})
-_ENVIRONMENT_FALSY_VALUES = frozenset({"0", "false", "f", "no", "n"})
-_SKIP_PREFLIGHT_TOKENS = frozenset({"--skip-preflight", "--no-skip-preflight"})
-_command_tokens: contextvars.ContextVar[tuple[str, ...] | None] = (
-    contextvars.ContextVar("lading_cli_command_tokens", default=None)
-)
-_LOG_LEVEL_ALIASES: dict[str, int] = {
-    "CRITICAL": logging.CRITICAL,
-    "FATAL": logging.CRITICAL,
-    "ERROR": logging.ERROR,
-    "WARNING": logging.WARNING,
-    "WARN": logging.WARNING,
-    "INFO": logging.INFO,
-    "DEBUG": logging.DEBUG,
-}
 
-# Cyclopts 4 defaults to ``print_non_int_sys_exit``: it renders the command's
-# return value through Rich and calls :func:`sys.exit`, so an embedded caller
-# can neither read the result nor control the stream. lading owns that boundary:
-# :func:`_dispatch_and_print` prints the raw result once and maps it to an exit
-# code, which keeps summaries unwrapped and lets tests call ``app`` directly.
-app = App(
-    help="Manage Rust workspaces with the lading toolkit.",
-    result_action="return_value",
-)
-LOGGER = logging.getLogger(__name__)
+# ``python -m lading.cli`` executes this module a second time as ``__main__``
+# after ``lading/__init__`` imported it. Registering the command decorators on
+# the shared application twice raises a collision, so the second execution
+# registers on a throwaway application; dispatch still uses the shared one.
+app = _shared_app if __name__ == "lading.cli" else create_app()
 
 
 def _select_runner() -> CommandRunner:
@@ -137,379 +125,7 @@ def _select_runner() -> CommandRunner:
     return subprocess_runner
 
 
-def _validate_workspace_value(value: str) -> str:
-    """Ensure ``value`` is usable as a workspace path."""
-    if not value or value.startswith("-"):
-        raise SystemExit(WORKSPACE_ROOT_REQUIRED_MESSAGE)
-    return value
-
-
-def _parse_workspace_flag(tokens: cabc.Sequence[str], index: int) -> tuple[str, int]:
-    """Parse ``--workspace-root <path>`` form starting at ``index``."""
-    try:
-        candidate = tokens[index + 1]
-    except IndexError as err:
-        raise SystemExit(WORKSPACE_ROOT_REQUIRED_MESSAGE) from err
-    workspace = _validate_workspace_value(candidate)
-    return workspace, index + 2
-
-
-def _parse_workspace_equals(argument: str, index: int) -> tuple[str, int]:
-    """Parse ``--workspace-root=<path>`` form for ``argument``."""
-    candidate = argument.partition("=")[2]
-    workspace = _validate_workspace_value(candidate)
-    return workspace, index + 1
-
-
-def _environment_boolean(raw: str | None) -> bool | None:
-    """Return the boolean ``raw`` spells, or ``None`` when it spells neither.
-
-    Cyclopts matches these spellings case-insensitively and does not trim, so
-    neither does this; a value it would reject cannot have produced the
-    resolved flag.
-
-    Returns
-    -------
-    bool | None
-        The boolean ``raw`` spells, or ``None`` when it spells neither.
-    """
-    if raw is None:
-        return None
-    normalized = raw.lower()
-    if normalized in _ENVIRONMENT_TRUTHY_VALUES:
-        return True
-    if normalized in _ENVIRONMENT_FALSY_VALUES:
-        return False
-    return None
-
-
-@contextmanager
-def _recorded_command_tokens(
-    tokens: cabc.Sequence[str],
-) -> cabc.Generator[None]:
-    """Publish ``tokens`` for the duration of one dispatch.
-
-    Cyclopts reports the value it resolved for an option but not the input it
-    came from, and the command line beats ``env_var``. The tokens this
-    invocation was dispatched with are the only reliable way to tell the two
-    apart.
-    """
-    reset_token = _command_tokens.set(tuple(tokens))
-    try:
-        yield
-    finally:
-        _command_tokens.reset(reset_token)
-
-
-def _mentions_skip_preflight(tokens: cabc.Sequence[str]) -> bool:
-    """Return whether ``tokens`` contain either form of the skip flag."""
-    return any(token.split("=", 1)[0] in _SKIP_PREFLIGHT_TOKENS for token in tokens)
-
-
-def _skip_preflight_source(
-    *,
-    environment: cabc.Mapping[str, str],
-    skip_preflight: bool,
-) -> SkipPreflightSource:
-    """Return the input the resolved skip value came from.
-
-    With the dispatch tokens available, an explicit flag beats the variable,
-    exactly as cyclopts resolves them. Without them the app was driven
-    in-process: the variable is credited only when it spells the value
-    cyclopts resolved, and anything else came from the calling code rather
-    than from a command line that was never parsed.
-
-    Returns
-    -------
-    SkipPreflightSource
-        The command line, the environment variable, or an in-process caller.
-    """
-    tokens = _command_tokens.get()
-    if tokens is not None:
-        return (
-            SkipPreflightSource.COMMAND_LINE
-            if _mentions_skip_preflight(tokens)
-            else SkipPreflightSource.ENVIRONMENT
-        )
-    from_environment = _environment_boolean(environment.get(SKIP_PREFLIGHT_ENV_VAR))
-    if from_environment is skip_preflight:
-        return SkipPreflightSource.ENVIRONMENT
-    return SkipPreflightSource.IN_PROCESS
-
-
-def _skip_preflight_override(
-    *,
-    skip_preflight: bool | None,
-    environment: cabc.Mapping[str, str],
-) -> SkipPreflightDecision | None:
-    """Label an explicit skip decision with the input that supplied it.
-
-    Returning ``None`` leaves the decision to the ``[preflight] skip``
-    configuration setting, which the publish command resolves.
-
-    Parameters
-    ----------
-    skip_preflight : bool | None
-        The value cyclopts resolved for ``--skip-preflight``.
-    environment : cabc.Mapping[str, str]
-        The process environment to inspect for the backing variable.
-
-    Returns
-    -------
-    SkipPreflightDecision | None
-        The labelled decision, or ``None`` when no caller expressed one.
-
-    Examples
-    --------
-    >>> _skip_preflight_override(skip_preflight=None, environment={}) is None
-    True
-    >>> _skip_preflight_override(skip_preflight=True, environment={}).source
-    <SkipPreflightSource.IN_PROCESS: 'in-process'>
-    """
-    if skip_preflight is None:
-        return None
-    return SkipPreflightDecision(
-        skip=skip_preflight,
-        source=_skip_preflight_source(
-            environment=environment, skip_preflight=skip_preflight
-        ),
-    )
-
-
-def _resolve_allow_unpublished_workspace_deps(
-    *,
-    live: bool,
-    allow_unpublished_workspace_deps: bool | None,
-) -> bool:
-    """Resolve the tri-state ``--allow-unpublished-workspace-deps`` flag."""
-    if allow_unpublished_workspace_deps is not None:
-        resolved_value = allow_unpublished_workspace_deps
-        reason = "explicit flag"
-    elif live:
-        resolved_value = False
-        reason = "live mode suppresses default"
-    else:
-        # Dry runs default to permissive so unpublished workspace members do
-        # not abort a rehearsal; operators should see that decision at INFO.
-        LOGGER.info(
-            "Defaulting to allow unpublished workspace dependencies "
-            "during dry-run publish"
-        )
-        resolved_value = True
-        reason = "dry-run default"
-    LOGGER.debug(
-        "_resolve_allow_unpublished_workspace_deps: raw=%r live=%r -> resolved=%r (%s)",
-        allow_unpublished_workspace_deps,
-        live,
-        resolved_value,
-        reason,
-    )
-    return resolved_value
-
-
-def _extract_workspace_override(
-    tokens: cabc.Sequence[str],
-) -> tuple[str | None, list[str]]:
-    """Split ``--workspace-root`` from CLI tokens."""
-    workspace: str | None = None
-    remainder: list[str] = []
-    index = 0
-    while index < len(tokens):
-        current_argument = tokens[index]
-        if current_argument == "--workspace-root":
-            workspace, index = _parse_workspace_flag(tokens, index)
-            continue
-        if current_argument.startswith("--workspace-root="):
-            workspace, index = _parse_workspace_equals(current_argument, index)
-            continue
-        remainder.append(current_argument)
-        index += 1
-    return workspace, remainder
-
-
-def _resolve_log_level(value: str | None) -> int:
-    """Return the configured log level or :data:`_DEFAULT_LOG_LEVEL`."""
-    if value is None:
-        return _DEFAULT_LOG_LEVEL
-    candidate = value.strip()
-    if not candidate:
-        return _DEFAULT_LOG_LEVEL
-    level = _LOG_LEVEL_ALIASES.get(candidate.upper())
-    if level is None:
-        choices = ", ".join(sorted(_LOG_LEVEL_ALIASES))
-        message = (
-            f"Invalid {LOG_LEVEL_ENV_VAR} value {value!r}; expected one of: {choices}"
-        )
-        raise SystemExit(message)
-    return level
-
-
-def _configure_logging(stream: typ.TextIO | None = None) -> None:
-    """Configure root logging so command execution is visible."""
-    level = _resolve_log_level(os.environ.get(LOG_LEVEL_ENV_VAR))
-    root_logger = logging.getLogger()
-    root_logger.setLevel(level)
-    existing_handler = next(
-        (
-            existing
-            for existing in root_logger.handlers
-            if getattr(existing, "name", "") == _LADING_HANDLER_NAME
-        ),
-        None,
-    )
-    if existing_handler is None:
-        handler = logging.StreamHandler(stream)
-        handler.name = _LADING_HANDLER_NAME
-        root_logger.addHandler(handler)
-    else:
-        handler = existing_handler
-    if stream is not None and isinstance(handler, logging.StreamHandler):
-        handler.stream = stream
-    handler.setLevel(level)
-    handler.setFormatter(logging.Formatter(_LOG_FORMAT))
-
-
-@contextmanager
-def _workspace_env(value: Path) -> cabc.Generator[None]:
-    """Temporarily set :data:`WORKSPACE_ROOT_ENV_VAR` to ``value``."""
-    previous = os.environ.get(WORKSPACE_ROOT_ENV_VAR)
-    os.environ[WORKSPACE_ROOT_ENV_VAR] = str(value)
-    try:
-        yield
-    finally:
-        if previous is None:
-            os.environ.pop(WORKSPACE_ROOT_ENV_VAR, None)
-        else:
-            os.environ[WORKSPACE_ROOT_ENV_VAR] = previous
-
-
-def _dispatch_and_print(tokens: cabc.Sequence[str]) -> int:
-    """Execute the Cyclopts app and print command results."""
-    try:
-        result = app(tokens)
-    except SystemExit as err:
-        code = err.code
-        if code is None:
-            return 0
-        if isinstance(code, int):
-            return code
-        print(code, file=sys.stderr)
-        return 1
-    match result:
-        case None:
-            status = 0
-        case bool():
-            # bool subclasses int, so it must be matched first. Cyclopts maps
-            # a bool result to success when true and failure when false.
-            status = 0 if result else 1
-        case int():
-            status = result
-        case _:
-            print(result)
-            status = 0
-    return status
-
-
-def _print_expected_command_error(
-    error: ManifestRewriteError | WorkspaceModelError,
-) -> None:
-    """Report one expected domain failure with its event or error label."""
-    details = _exception_notes(error)
-    match error:
-        case ManifestRewriteWriteError(failed_path=Path() as failed_path):
-            LOGGER.error(
-                "manifest_rewrite failed: path=%s completed=%d planned=%d "
-                "error_category=write: %s%s",
-                failed_path,
-                error.completed_writes,
-                error.planned_writes,
-                error,
-                details,
-            )
-            if not LOGGER.isEnabledFor(logging.ERROR):
-                print(
-                    "Manifest rewrite error: "
-                    f"path={failed_path} completed={error.completed_writes} "
-                    f"planned={error.planned_writes}: {error}{details}",
-                    file=sys.stderr,
-                )
-        case ManifestRewriteError():
-            print(f"Manifest rewrite error: {error}{details}", file=sys.stderr)
-        case WorkspaceModelError():
-            print(f"Workspace error: {error}{details}", file=sys.stderr)
-
-
-def _exception_notes(error: BaseException) -> str:
-    """Format operator-facing notes attached during failure recovery."""
-    notes = getattr(error, "__notes__", ())
-    return "".join(f"\n  {note}" for note in notes)
-
-
-def main(argv: cabc.Sequence[str] | None = None) -> int:
-    """Entry point for ``python -m lading.cli``.
-
-    Parameters
-    ----------
-    argv : cabc.Sequence[str] | None
-        Command-line arguments to parse; defaults to :data:`sys.argv`
-        without the program name when :data:`None`.
-
-    Returns
-    -------
-    int
-        The process exit code.
-
-    Examples
-    --------
-    >>> from lading.cli import main
-    >>> main(["bump", "1.2.3", "--dry-run"])  # doctest: +SKIP
-    0
-    """
-    try:
-        if argv is None:
-            argv = sys.argv[1:]
-        _configure_logging()
-        # Flush the accumulated metrics summary when this CLI process exits.
-        # Registered here in bootstrap so the lifecycle is explicit rather than
-        # an import-time side effect of lading.utils.metrics.
-        metrics.register_summary_atexit()
-        # Remove staged workspace copies if this process is terminated;
-        # registered here for the same reason, and because a SIGTERM never
-        # reaches an atexit hook (issue #269).
-        publish_staging.install_termination_cleanup()
-        workspace_override, remaining = _extract_workspace_override(list(argv))
-        workspace_root = normalize_workspace_root(workspace_override)
-        if not remaining:
-            _dispatch_and_print(remaining)  # Print usage message
-            return 2  # Standard exit code for missing subcommand
-        previous_config = app.config
-        config_loader = config.build_loader(workspace_root)
-        try:
-            configuration = config.load_from_loader(config_loader)
-        except config.ConfigurationError as exc:
-            print(f"Configuration error: {exc}", file=sys.stderr)
-            return 1
-        app.config = (config_loader,)
-        try:
-            with (
-                _workspace_env(workspace_root),
-                config.use_configuration(configuration),
-                _recorded_command_tokens(remaining),
-            ):
-                try:
-                    return _dispatch_and_print(remaining)
-                except (ManifestRewriteError, WorkspaceModelError) as exc:
-                    _print_expected_command_error(exc)
-                    return 1
-        finally:
-            app.config = previous_config
-    except KeyboardInterrupt as exc:
-        print("\nOperation cancelled by user.", file=sys.stderr)
-        print(_exception_notes(exc), end="", file=sys.stderr)
-        return 130
-    except Exception as exc:  # ruff: ignore[blind-except] - fallback guard for CLI entry point
-        print(f"Unexpected error: {exc}{_exception_notes(exc)}", file=sys.stderr)
-        return 1
+type WorkspaceLoader = cabc.Callable[[Path], WorkspaceGraph]
 
 
 def _run_with_context(
@@ -520,8 +136,27 @@ def _run_with_context(
     ],
     *,
     command_runner: CommandRunner | None = None,
+    workspace_loader: WorkspaceLoader | None = None,
 ) -> str:
-    """Execute ``runner`` with configuration and workspace data."""
+    """Execute ``runner`` with configuration and workspace data.
+
+    Parameters
+    ----------
+    workspace_root : Path
+        Canonical workspace root.
+    runner : cabc.Callable[[Path, LadingConfig, WorkspaceGraph, CommandRunner], str]
+        Command body invoked with the loaded configuration and workspace.
+    command_runner : CommandRunner | None
+        Explicit runner; ``None`` selects the CLI runner.
+    workspace_loader : WorkspaceLoader | None
+        Workspace discovery function. ``None`` uses :func:`load_workspace`;
+        bump passes the confined, read-only loader.
+
+    Returns
+    -------
+    str
+        The command's rendered summary.
+    """
     active_runner = command_runner or _select_runner()
     configuration_scope: AbstractContextManager[object] = nullcontext()
     try:
@@ -531,8 +166,9 @@ def _run_with_context(
         # the command; an already-active configuration needs no new scope.
         configuration = config.load_configuration(workspace_root)
         configuration_scope = config.use_configuration(configuration)
+    loader = load_workspace if workspace_loader is None else workspace_loader
     with configuration_scope, metadata_module.use_command_runner(active_runner):
-        workspace_model = load_workspace(workspace_root)
+        workspace_model = loader(workspace_root)
         return runner(workspace_root, configuration, workspace_model, active_runner)
 
 
@@ -571,8 +207,6 @@ def bump(
     >>> "Dry run; would update version to 1.2.3 in" in summary  # doctest: +SKIP
     True
     """
-    if not dry_run:
-        require_workspace_bounded_write_support()
     resolved = normalize_workspace_root(workspace_root)
     return _run_with_context(
         resolved,
@@ -592,6 +226,7 @@ def bump(
                 ),
             ),
         ),
+        workspace_loader=load_bump_workspace,
     )
 
 

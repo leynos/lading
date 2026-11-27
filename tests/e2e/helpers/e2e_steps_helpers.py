@@ -249,11 +249,9 @@ def stub_cargo_metadata(
     cmd_mox: CmdMox, workspace: workspace_builder.NonTrivialWorkspace
 ) -> None:
     """Stub `cargo metadata` so the CLI can construct its workspace model."""
-    cmd_mox.stub("cargo").with_args("metadata", "--format-version", "1").returns(
-        exit_code=0,
-        stdout=json.dumps(dict(workspace.cargo_metadata_payload)),
-        stderr="",
-    ).any_order()
+    from tests.helpers.workspace_helpers import stub_cargo_metadata
+
+    stub_cargo_metadata(cmd_mox, json.dumps(dict(workspace.cargo_metadata_payload)))
     cmd_mox.stub("cargo::update").with_args(
         "--workspace",
         "--manifest-path",

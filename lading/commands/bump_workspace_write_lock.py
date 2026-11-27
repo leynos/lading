@@ -1,4 +1,4 @@
-"""Serialize cooperating writes to one workspace across Lading processes."""
+"""Serialize cooperating bump runs for one workspace across Lading processes."""
 
 import collections.abc as cabc
 import contextlib
@@ -6,13 +6,11 @@ import hashlib
 import os
 import stat
 import threading
-import typing as typ
 from pathlib import Path
 
 if os.name != "nt":
     import pwd
 
-from lading.commands.bump_toml_write_options import AtomicWriteIdentity
 from lading.utils import file_lock
 
 _HELD_WORKSPACE_LOCKS = threading.local()
@@ -21,76 +19,59 @@ _HELD_WORKSPACE_LOCKS = threading.local()
 @contextlib.contextmanager
 def workspace_write_lock(
     resolved_workspace_root: Path,
-) -> cabc.Generator[AtomicWriteIdentity]:
-    """Hold the per-workspace advisory write lock until the block exits.
+) -> cabc.Generator[None]:
+    """Hold the per-workspace advisory bump lock until the block exits.
 
-    Lading processes running as the same operating-system user serialize
-    bounded writes to the same resolved workspace through this lock. Editors,
-    tools that do not use it, and processes running as another user are outside
-    that guarantee.
-    Failure to create or acquire the lock is propagated immediately so a bump
-    never proceeds with a write it cannot coordinate. Nested writes on the
-    same thread reuse the lock so validation and replacements can be one
-    coordinated operation.
+    Lading processes running as the same operating-system user serialize whole
+    live bump runs through this lock, so a concurrent run cannot plan from, or
+    commit over, another run's accepted versions. Editors, tools that do not
+    use the lock, and processes running as another user are outside that
+    guarantee. Failure to create or acquire the lock is propagated immediately
+    so a bump never proceeds with writes it cannot coordinate. Nested use on
+    the same thread reuses the held lock.
 
     Parameters
     ----------
     resolved_workspace_root
-        Absolute workspace path. It is resolved again here so an unresolved
-        alias of a held lock still reuses that lock instead of acquiring a
-        second handle on the same lock file and deadlocking.
-
-    Yields
-    ------
-    AtomicWriteIdentity
-        Device and inode captured when the advisory lock key was selected.
-        Bounded writers verify that the directory they open still has this
-        identity before replacing a file.
-
+        Workspace path. It is resolved here so an unresolved alias of a held
+        lock still reuses that lock rather than opening a second handle on the
+        same lock file.
     """
     workspace_root = resolved_workspace_root.resolve()
     root_key = str(workspace_root)
     held_locks = _held_workspace_locks()
-    held_lock = held_locks.get(root_key)
-    if held_lock is not None:
-        with _reuse_workspace_write_lock(root_key, held_lock, held_locks) as identity:
-            yield identity
+    depth = held_locks.get(root_key)
+    if depth is not None:
+        held_locks[root_key] = depth + 1
+        try:
+            yield
+        finally:
+            held_locks[root_key] = depth
         return
-    with _acquire_workspace_write_lock(
-        workspace_root, root_key, held_locks
-    ) as identity:
-        yield identity
-
-
-@contextlib.contextmanager
-def _reuse_workspace_write_lock(
-    root_key: str,
-    held_lock: tuple[AtomicWriteIdentity, int],
-    held_locks: dict[str, tuple[AtomicWriteIdentity, int]],
-) -> cabc.Generator[AtomicWriteIdentity]:
-    """Borrow a lock already held by this thread for the same resolved path."""
-    identity, depth = held_lock
-    held_locks[root_key] = (identity, depth + 1)
-    try:
-        yield identity
-    finally:
-        held_locks[root_key] = (identity, depth)
+    with _acquire_workspace_write_lock(workspace_root, root_key, held_locks):
+        yield
 
 
 @contextlib.contextmanager
 def _acquire_workspace_write_lock(
     workspace_root: Path,
     root_key: str,
-    held_locks: dict[str, tuple[AtomicWriteIdentity, int]],
-) -> cabc.Generator[AtomicWriteIdentity]:
-    """Acquire the OS lock and register its identity for nested writers."""
-    identity = _workspace_identity(workspace_root)
-    with _workspace_lock_handle(identity) as handle:
+    held_locks: dict[str, int],
+) -> cabc.Generator[None]:
+    """Acquire the OS lock and register it for nested writers."""
+    lock_directory = _workspace_lock_directory()
+    _prepare_lock_directory(lock_directory)
+    _validate_lock_directory(lock_directory)
+    lock_path = lock_directory / f"{_lock_key_for_path(root_key)}.lock"
+    with lock_path.open("a+b") as handle:
+        if handle.seek(0, os.SEEK_END) == 0:
+            handle.write(b"\0")
+            handle.flush()
         file_lock.set_exclusive_lock(handle, locked=True)
-        held_locks[root_key] = (identity, 1)
+        held_locks[root_key] = 1
         primary_error: BaseException | None = None
         try:
-            yield identity
+            yield
         except BaseException as exc:
             primary_error = exc
             raise
@@ -107,20 +88,17 @@ def _acquire_workspace_write_lock(
                 held_locks.pop(root_key, None)
 
 
-@contextlib.contextmanager
-def _workspace_lock_handle(
-    identity: AtomicWriteIdentity,
-) -> cabc.Generator[typ.BinaryIO]:
-    """Open the private per-user lock file selected by a filesystem identity."""
-    lock_directory = _workspace_lock_directory()
-    lock_directory.mkdir(parents=True, exist_ok=True, mode=0o700)
-    _validate_lock_directory(lock_directory)
-    lock_path = lock_directory / f"{_lock_key_for_identity(identity)}.lock"
-    with lock_path.open("a+b") as handle:
-        if handle.seek(0, os.SEEK_END) == 0:
-            handle.write(b"\0")
-            handle.flush()
-        yield handle
+def _prepare_lock_directory(lock_directory: Path) -> None:
+    """Create the private per-user lock directory or explain the prerequisite."""
+    try:
+        lock_directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+    except OSError as exc:
+        message = (
+            f"Cannot create the per-user workspace write lock directory "
+            f"{lock_directory}: {exc}. Ensure the account's passwd home is "
+            "writable, or provision that private account-owned directory."
+        )
+        raise PermissionError(message) from exc
 
 
 def _validate_lock_directory(lock_directory: Path) -> None:
@@ -136,24 +114,12 @@ def _validate_lock_directory(lock_directory: Path) -> None:
         raise PermissionError(message)
 
 
-def _workspace_identity(resolved_workspace_root: Path) -> AtomicWriteIdentity:
-    """Capture the filesystem identity that the lock and writer must share."""
-    metadata = resolved_workspace_root.stat()
-    if not stat.S_ISDIR(metadata.st_mode):
-        message = (
-            f"Workspace write lock root is not a directory: {resolved_workspace_root}"
-        )
-        raise PermissionError(message)
-    return AtomicWriteIdentity(metadata.st_dev, metadata.st_ino)
+def _lock_key_for_path(root_key: str) -> str:
+    """Hash one resolved workspace path into its advisory lock name."""
+    return hashlib.sha256(os.fsencode(root_key)).hexdigest()
 
 
-def _lock_key_for_identity(identity: AtomicWriteIdentity) -> str:
-    """Hash one captured filesystem identity into its advisory lock name."""
-    encoded_identity = f"{identity.device}:{identity.inode}".encode("ascii")
-    return hashlib.sha256(encoded_identity).hexdigest()
-
-
-def _held_workspace_locks() -> dict[str, tuple[AtomicWriteIdentity, int]]:
+def _held_workspace_locks() -> dict[str, int]:
     """Return the current thread's re-entrant workspace lock registry."""
     held_locks = getattr(_HELD_WORKSPACE_LOCKS, "by_root", None)
     if held_locks is None:

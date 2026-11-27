@@ -1,0 +1,63 @@
+"""Policy types for non-following glob expansion.
+
+These values select which final matches count and what an empty expansion
+means. They live apart from the expansion engine so both the public entry point
+and the engine can import them without a cycle.
+"""
+
+import dataclasses as dc
+import enum
+
+from lading.utils.confinement.walk import LinkPredicate, is_link_like
+
+__all__ = ["GlobOptions", "MatchExpectation", "UnmatchedPolicy"]
+
+
+class MatchExpectation(enum.Enum):
+    """How a glob should treat final matches of each kind.
+
+    ``REGULAR_FILE`` selects documentation files: regular files are returned
+    and directory matches are ignored. ``DIRECTORY`` selects workspace-member
+    directories: directories are returned and regular-file matches are ignored,
+    matching Cargo's own member glob expansion. In both modes a matched special
+    file is an error.
+    """
+
+    REGULAR_FILE = enum.auto()
+    DIRECTORY = enum.auto()
+
+
+class UnmatchedPolicy(enum.Enum):
+    """What an expansion does when a pattern matches nothing."""
+
+    IGNORE = enum.auto()
+    ERROR = enum.auto()
+
+
+@dc.dataclass(frozen=True, slots=True)
+class GlobOptions:
+    """Matching policy for :func:`expand_confined_glob`.
+
+    Attributes
+    ----------
+    expect : MatchExpectation
+        Kind of final match to select.
+    unmatched : UnmatchedPolicy
+        Whether a pattern that matches nothing is an error.
+    link_predicate : LinkPredicate
+        Predicate identifying symlinks and junctions.
+    reject_intermediate_links : bool
+        Reject a symlink met while expanding ``**``. Member patterns need this
+        because Cargo's own glob expansion follows the link and could read an
+        external manifest; documentation patterns ignore unrelated links.
+    case_sensitive : bool
+        Match wildcard components case-sensitively. Cargo's member globs are
+        case-sensitive on every platform; documentation globs keep the
+        platform's usual matching.
+    """
+
+    expect: MatchExpectation = MatchExpectation.REGULAR_FILE
+    unmatched: UnmatchedPolicy = UnmatchedPolicy.IGNORE
+    link_predicate: LinkPredicate = is_link_like
+    reject_intermediate_links: bool = False
+    case_sensitive: bool = False

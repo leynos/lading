@@ -20,7 +20,7 @@ dependencies = [
     "cyclopts>=4.25.3,<5",
     "markdown-it-py>=3,<5",
     "msgspec>=0.18,<1.0",
-    "tomlkit>=0.13,<0.16",
+    "tomlkit>=0.15,<0.16",
 ]
 
 [project.scripts]
@@ -143,6 +143,10 @@ extend-ignore = [
 ]
 [tool.ruff.lint.per-file-ignores]
 "**/test_*.py" = ["assert", "too-many-arguments", "too-many-positional-arguments", "magic-value-comparison", "no-self-use"]
+# The bump CLI harness holds the shared rejection assertions used by the
+# command-level preflight suites. It is test support, so the same assertion
+# policy applies even though its filename does not start with ``test_``.
+"tests/unit/bump_cli_harness.py" = ["assert", "too-many-arguments", "too-many-positional-arguments", "magic-value-comparison"]
 "tests/bdd/steps/*.py" = ["assert", "too-many-arguments", "too-many-positional-arguments", "magic-value-comparison", "no-self-use"]
 # The TOML-coercion helpers raise through the ``_reject`` factory, which
 # returns the caller-injected ``error`` (a ``LadingError`` subclass) for the
@@ -561,15 +565,14 @@ reason = "Shared declaration scaffolding rather than shared logic. The matched r
 [[tool.duplication_gate.allow]]
 members = [
     "lading/commands/bump_manifests.py",
-    "lading/commands/bump_pipeline_manifest_sources.py",
     "lading/commands/publish_plan.py",
     "lading/testing/toml_utils.py",
 ]
-reason = "These type-checking import blocks name distinct module-local type sets. bump_manifests, publish_plan, and toml_utils belong to separate command and testing layers; bump_pipeline_manifest_sources imports its context and stage types without runtime cycles. A shared typing module would couple their import graphs."
+reason = "Type-checking import blocks, each listing the types that module alone needs in the conventional grouped order. Merging them would create a shared typing module every command imports, which is the cross-layer coupling these blocks exist to avoid; the repetition is the import graph staying local."
 
 [[tool.duplication_gate.allow]]
 members = [
-    "lading/cli.py",
+    "lading/cli_helpers.py",
     "lading/runtime/subprocess_runner.py",
     "lading/toml_coerce/_mappings.py",
 ]
@@ -606,7 +609,7 @@ members = [
     "lading/config_validation.py",
     "lading/runtime/subprocess_runner.py",
 ]
-reason = "An early return for an absent optional argument, reached by two unrelated functions: the shared key-whitelist validator (moved to config_validation.py during schema extraction) and a stream-decoding loop. The bodies after the guard share no behaviour, so the guard is all the detector can compare."
+reason = "An early return for an absent optional argument, reached by two unrelated functions: a key-whitelist validator and a stream-decoding loop. The bodies after the guard share no behaviour, so the guard is all the detector can compare."
 
 [[tool.duplication_gate.allow]]
 unit = "lading/commands/staging_lock.py"
@@ -616,26 +619,32 @@ reason = "A deliberate cross-platform pair: the Windows (msvcrt) and POSIX (fcnt
 unit = "lading/toml_coerce/_scalars.py"
 reason = "Two single-statement rejection calls differing only in the expected-type noun ('a string' versus 'a boolean'). The shared helper, _reject, already exists; a further extraction would only rename the noun argument. NOTE: this key covers the whole file."
 
+[[tool.duplication_gate.allow]]
+members = [
+    "lading/commands/bump_docs.py",
+    "lading/commands/bump_pipeline.py",
+    "lading/commands/bump_prepare_manifest_rewrites.py",
+    "lading/commands/publish.py",
+]
+reason = "Independent command modules importing the same shared confinement and TOML helpers; the overlap is an import header, not shared logic, and a common import module would add an artificial layer with no behaviour of its own."
 # The dead-code gate is the installed `df12-skylos` command from
 # df12-python-lints. `roots` limits liveness analysis to production sources and
 # the exclusion keeps the test tree out of the liveness graph.
 [[tool.duplication_gate.allow]]
-members = ["lading/commands/bump_manifests.py", "lading/commands/publish.py"]
-reason = "Keep the type-only imports in lading/commands/bump_manifests.py and lading/commands/publish.py local. Each command needs distinct types; extracting a shared typing module would couple unrelated command layers. NOTE: This family-wide exception suppresses future executable duplication in either file too, so those files need manual duplication review."
+members = ["lading/utils/confinement/glob.py", "lading/workspace/confined_discovery.py"]
+reason = "Import preamble only: both modules open with the same stdlib block because each expands a validated pattern using os, pathlib, and collections.abc. The module docstrings, the confinement helpers they import, and every function differ; sharing the block would need a common imports module that no behaviour justifies."
+[[tool.duplication_gate.allow]]
+members = ["lading/commands/bump_lockfile_config.py", "lading/workspace/implicit_members.py"]
+reason = "Import preamble only: both modules parse TOML configuration or manifests with tomlkit and classify files with os/stat, so their stdlib and tomlkit preamble coincides. The module responsibilities, functions and data differ; sharing the preamble would add a common imports module for no behavioural gain."
+[[tool.duplication_gate.allow]]
+members = ["lading/commands/bump_lockfile_planning.py", "lading/workspace/confined_discovery.py"]
+reason = "Import preamble only: both modules use os, pathlib and collections.abc while resolving confined workspace paths, so their stdlib preamble coincides. Their responsibilities, imports of confinement helpers and functions differ; sharing the block would add a common imports module without behavioural value."
 [[tool.duplication_gate.allow]]
 members = ["lading/commands/bump_manifest_rewrite_filesystem.py::_is_existing_literal_candidate", "scripts/format_markdown.py::_present"]
 reason = "Keep the manifest resolver and PEP 723 formatter presence probes separate: callers preserve distinct domain errors, and importing application utilities would couple the standalone formatter to the lading package."
 [[tool.duplication_gate.allow]]
-members = ["lading/commands/bump_manifest_rewrite_application.py", "lading/commands/bump_pipeline_manifest_restore.py"]
-reason = "These separate application and recovery contracts each import the atomic writer and its options; extracting an import-only helper would add indirection and couple distinct ownership boundaries."
-[[tool.duplication_gate.allow]]
-members = [
-    "lading/commands/bump_pipeline_pending_reconciliation.py",
-    "lading/commands/bump_pipeline_manifest_sources.py",
-    "lading/commands/publish_plan.py",
-    "lading/testing/toml_utils.py",
-]
-reason = "Type-checking-only import blocks share the syntax forced by deferred annotations. Each block names its own module's collaborators, and extracting or merging them would couple unrelated module boundaries. NOTE: this family-wide exception suppresses future executable duplication in these files, so review them manually."
+members = ["lading/commands/bump_manifest_rewrite_strings.py", "lading/commands/bump_toml.py"]
+reason = "Import preamble only: both modules import the tomlkit string types and style-preservation helpers they use directly. Their responsibilities, functions and data differ, and sharing the preamble would add a common imports module without behavioural value. NOTE: this family-wide exception suppresses future executable duplication in these files, so review them manually."
 [tool.df12_skylos]
 roots = ["lading"]
 python = "3.14"
@@ -690,27 +699,6 @@ full_name = [
     "lading.commands.publish_staging.prepare_workspace",
 ]
 reason = "Retained public staging entry point for callers that cannot express block-scoped cleanup; it is documented in the users guide."
-
-[[tool.skylos.dead_code.entrypoints]]
-type = "function"
-full_name = [
-    "lading.commands.bump_toml_files.parse_manifest",
-]
-reason = "The v0.4.0 migration guide's file-helper example imports parse_manifest as a supported downstream API, and its example test verifies the import."
-
-[[tool.skylos.dead_code.entrypoints]]
-type = "function"
-full_name = [
-    "lading.commands.bump_toml_dependencies.update_dependency_sections",
-]
-reason = "The v0.4.0 migration guide documents this downstream import, exercised by test_after_import_examples_resolve_on_0_4_0."
-
-[[tool.skylos.dead_code.entrypoints]]
-type = "function"
-full_name = [
-    "lading.commands.bump_toml_dependency_warnings.collect_dependency_section_warnings",
-]
-reason = "The developers guide documents this no-mutation query, exercised by test_dependency_update_warns_when_bound_excludes_target."
 
 [[tool.skylos.dead_code.entrypoints]]
 type = "parameter"

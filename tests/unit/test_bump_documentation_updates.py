@@ -1,19 +1,13 @@
 """Integration tests for documentation updates in :mod:`lading.commands.bump`."""
 
 import dataclasses as dc
-import logging
 import pathlib
-import tempfile
 import typing as typ
 
 import pytest
-from markdown_it import MarkdownIt
 
-from lading import config
-from lading.commands import bump, bump_docs, bump_docs_fence_lines, bump_pipeline
+from lading.commands import bump, bump_pipeline
 from lading.commands.bump_readme import ReadmeTranspositionError
-from lading.exceptions import LadingError
-from tests.helpers.cwd import chdir_for_test
 from tests.helpers.path_normalization import normalized
 from tests.helpers.workspace_builders import (
     _build_workspace_with_internal_deps,
@@ -26,262 +20,6 @@ from tests.helpers.workspace_builders import (
 if typ.TYPE_CHECKING:
     from syrupy.assertion import SnapshotAssertion
 
-    from lading.commands.bump_toml_write_options import AtomicWriteOptions
-
-
-def test_documentation_updates_reject_external_symlink_targets(
-    tmp_path: pathlib.Path,
-) -> None:
-    """Neither glob resolution nor direct updates may escape via a symlink."""
-    documentation_directory = tmp_path / "docs"
-    documentation_directory.mkdir()
-
-    with tempfile.TemporaryDirectory(dir=tmp_path.parent) as outside_directory:
-        outside_document = pathlib.Path(outside_directory) / "guide.md"
-        original = '```toml\n[dependencies]\nalpha = "0.1.0"\n```\n'
-        outside_document.write_text(original, encoding="utf-8")
-        link = documentation_directory / "guide.md"
-        link.symlink_to(outside_document)
-        documentation = config.DocumentationConfig(globs=("docs/*.md",))
-
-        with pytest.raises(LadingError, match="within the workspace"):
-            bump_docs.resolve_documentation_targets(tmp_path, documentation)
-
-        with pytest.raises(LadingError, match="within the workspace"):
-            bump_docs.update_documentation_files(
-                bump_docs.DocumentationTargets(tmp_path, (link,)),
-                "1.2.3",
-                {"alpha"},
-                dry_run=False,
-            )
-
-        assert link.is_symlink(), "the escaping documentation link must remain"
-        assert outside_document.read_text(encoding="utf-8") == original, (
-            "documentation updates must not overwrite a file outside the workspace"
-        )
-
-
-def test_documentation_write_rechecks_workspace_after_parent_symlink_swap(
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """A parent symlink inserted before writing cannot redirect a document."""
-    _require_bounded_write_support()
-    documentation_directory = tmp_path / "docs"
-    documentation_directory.mkdir()
-    document = documentation_directory / "guide.md"
-    original = '```toml\n[dependencies]\nalpha = "0.1.0"\n```\n'
-    document.write_text(original, encoding="utf-8")
-    archived_directory = tmp_path / "docs-archived"
-
-    with tempfile.TemporaryDirectory(dir=tmp_path.parent) as outside_directory:
-        outside_root = pathlib.Path(outside_directory)
-        outside_document = outside_root / "guide.md"
-        outside_document.write_text(original, encoding="utf-8")
-        write_atomic_text = bump_docs.bump_toml_files.write_atomic_text
-
-        def redirect_parent_before_write(
-            file_path: pathlib.Path,
-            content: str,
-            write_options: AtomicWriteOptions | None = None,
-        ) -> None:
-            """Replace the validated parent with a link to the outside file."""
-            documentation_directory.rename(archived_directory)
-            documentation_directory.symlink_to(outside_root, target_is_directory=True)
-            write_atomic_text(
-                file_path,
-                content,
-                write_options,
-            )
-
-        monkeypatch.setattr(
-            bump_docs.bump_toml_files,
-            "write_atomic_text",
-            redirect_parent_before_write,
-        )
-        with pytest.raises(PermissionError, match="within the workspace"):
-            bump_docs.update_documentation_files(
-                bump_docs.DocumentationTargets(tmp_path, (document,)),
-                "1.2.3",
-                {"alpha"},
-                dry_run=False,
-            )
-
-        assert outside_document.read_text(encoding="utf-8") == original, (
-            "a parent-directory symlink must not redirect the documentation write"
-        )
-
-
-def test_documentation_write_rejects_a_concurrent_edit(
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """A newer documentation edit survives the stale rewrite attempt."""
-    _require_bounded_write_support()
-    document = tmp_path / "guide.md"
-    original = '```toml\n[dependencies]\nalpha = "0.1.0"\n```\n'
-    concurrent_edit = "A newer edit from another writer.\n"
-    document.write_text(original, encoding="utf-8", newline="")
-    write_atomic_text = bump_docs.bump_toml_files.write_atomic_text
-
-    def edit_before_write(
-        file_path: pathlib.Path,
-        content: str,
-        write_options: AtomicWriteOptions | None = None,
-    ) -> None:
-        """Install a concurrent edit before the bounded comparison."""
-        file_path.write_text(concurrent_edit, encoding="utf-8", newline="")
-        write_atomic_text(
-            file_path,
-            content,
-            write_options,
-        )
-
-    monkeypatch.setattr(
-        bump_docs.bump_toml_files, "write_atomic_text", edit_before_write
-    )
-    with pytest.raises(PermissionError, match="changed before replacement"):
-        bump_docs.update_documentation_files(
-            bump_docs.DocumentationTargets(tmp_path, (document,)),
-            "1.2.3",
-            {"alpha"},
-            dry_run=False,
-        )
-
-    assert document.read_text(encoding="utf-8") == concurrent_edit, (
-        "the stale documentation rewrite must not overwrite a concurrent edit"
-    )
-
-
-def test_documentation_rewrite_preserves_crlf_bytes(tmp_path: pathlib.Path) -> None:
-    """A changed CRLF document passes its exact-source check and keeps CRLF."""
-    _require_bounded_write_support()
-    document = tmp_path / "guide.md"
-    original = b'```toml\r\n[dependencies]\r\nalpha = "0.1.0"\r\n```\r\n'
-    document.write_bytes(original)
-
-    changed = bump_docs.update_documentation_files(
-        bump_docs.DocumentationTargets(tmp_path, (document,)),
-        "1.2.3",
-        {"alpha"},
-        dry_run=False,
-    )
-
-    assert changed == {document.resolve()}, (
-        "the CRLF document should be reported as rewritten"
-    )
-    assert document.read_bytes() == (
-        b'```toml\r\n[dependencies]\r\nalpha = "1.2.3"\r\n```\r\n'
-    ), "the changed document must retain its exact CRLF convention"
-
-
-def test_rewrite_keeps_an_eof_opening_fence_on_its_own_line(
-    tmp_path: pathlib.Path,
-) -> None:
-    """An EOF-terminated empty fence stays separate from its generated close."""
-    _require_bounded_write_support()
-    document = tmp_path / "guide.md"
-    document.write_text(
-        '```toml\n[dependencies]\nalpha = "0.1.0"\n```\n\n```toml',
-        encoding="utf-8",
-        newline="",
-    )
-
-    bump_docs.update_documentation_files(
-        bump_docs.DocumentationTargets(tmp_path, (document,)),
-        "1.2.3",
-        {"alpha"},
-        dry_run=False,
-    )
-
-    text = document.read_text(encoding="utf-8")
-    assert 'alpha = "1.2.3"' in text, "the preceding TOML fence should be rewritten"
-    assert text.endswith("```toml\n```\n"), (
-        "the generated closing marker must begin on a separate line"
-    )
-
-
-def test_render_bare_eof_fence_keeps_opening_and_closing_separate() -> None:
-    """A bare unterminated fence remains valid when the caller adds its info."""
-    lines = ["```"]
-    token = MarkdownIt("commonmark").parse("```")[0]
-
-    rendered = bump_docs.render_fence(token, lines, "toml", lambda body: body)
-
-    assert rendered == "```toml\n```\n", (
-        "the supplied language and closing marker must not merge with the opener"
-    )
-
-
-def test_unterminated_fence_uses_final_body_line_ending() -> None:
-    """An unterminated fence's last body line contributes its CRLF style."""
-    opening, body, closing = bump_docs_fence_lines.preserve_fence_line_endings(
-        ["```toml\n", 'version = "0.1.0"\r\n'],
-        [0, 2],
-        "```",
-        'version = "1.2.3"',
-    )
-
-    assert (opening, body, closing) == (
-        "\n",
-        'version = "1.2.3"\r\n',
-        "\r\n",
-    ), "the final body and generated fence closer must retain CRLF"
-
-
-def test_documentation_targets_resolve_relative_workspace_root(
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Glob resolution and containment use one canonical workspace root."""
-    readme = tmp_path / "README.md"
-    readme.write_text("# Fixture workspace\n", encoding="utf-8")
-    chdir_for_test(monkeypatch, tmp_path.parent)
-
-    targets = bump_docs.resolve_documentation_targets(
-        pathlib.Path(tmp_path.name),
-        config.DocumentationConfig(globs=("README.md",)),
-    )
-
-    assert targets.workspace_root == tmp_path.resolve(), (
-        "relative workspace roots should be canonicalized in the returned record"
-    )
-    assert targets.paths == (readme.resolve(),), (
-        "globbing from the canonical root should select relative-root files"
-    )
-
-
-def test_direct_documentation_target_resolves_relative_root_prefix_once(
-    tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """A final path already prefixed with a relative root is not joined twice."""
-    _require_bounded_write_support()
-    chdir_for_test(monkeypatch, tmp_path.parent)
-    workspace_root = pathlib.Path(tmp_path.name)
-    readme = workspace_root / "README.md"
-    readme.write_text(
-        '```toml\n[dependencies]\nalpha = "0.1.0"\n```\n', encoding="utf-8"
-    )
-    targets = bump_docs.DocumentationTargets(workspace_root, (readme,))
-
-    changed = bump_docs.update_documentation_files(
-        targets, "1.2.3", {"alpha"}, dry_run=False
-    )
-
-    assert changed == {readme.resolve()}, (
-        "direct targets should report the canonical file path"
-    )
-    assert 'alpha = "1.2.3"' in readme.read_text(encoding="utf-8"), (
-        "the already-rooted relative path should update its intended file"
-    )
-
-
-def _require_bounded_write_support() -> None:
-    """Skip filesystem-write cases when safe descriptor writes are unavailable."""
-    if not bump_docs.bump_toml_files._supports_bounded_directory_operations():
-        pytest.skip("workspace-bounded writes are unavailable on this platform")
-
 
 @dc.dataclass(frozen=True, slots=True)
 class _ReadmeTransposeScenario:
@@ -292,11 +30,10 @@ class _ReadmeTransposeScenario:
     check_version_unchanged: bool = False
 
 
-def test_readme_transposition_failure_is_logged_at_pipeline_boundary(
+def test_readme_transposition_failure_propagates_from_preparation(
     tmp_path: pathlib.Path,
-    caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """README failures are logged once with the affected crate name."""
+    """A README failure propagates unchanged for the CLI to diagnose."""
     workspace, _manifests = _build_workspace_with_internal_deps(
         tmp_path,
         specs=(_CrateSpec(name="alpha", readme_workspace=True),),
@@ -307,15 +44,11 @@ def test_readme_transposition_failure_is_logged_at_pipeline_boundary(
         bump.BumpOptions(configuration=configuration, workspace=workspace),
     )
 
-    with (
-        caplog.at_level(logging.ERROR, logger=bump_pipeline._log.name),
-        pytest.raises(ReadmeTranspositionError),
-    ):
-        bump_pipeline._process_readme_transposition(context, dry_run=False)
+    with pytest.raises(ReadmeTranspositionError) as excinfo:
+        bump_pipeline._prepare_plan(context, "1.2.3")
 
-    assert caplog.messages == ["README transposition failed for crate 'alpha'"], (
-        "the pipeline boundary must log the README failure once with the "
-        "affected crate name"
+    assert "Workspace README.md is required" in str(excinfo.value), (
+        "preparation must propagate the actionable README diagnostic"
     )
 
 

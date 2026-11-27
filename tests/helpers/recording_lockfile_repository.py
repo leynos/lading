@@ -3,21 +3,25 @@
 import collections.abc as cabc
 import pathlib
 
+from lading.commands.bump_lockfile_planning import LockfilePlan
+
 
 class RecordingLockfileRepository:
     """Record calls to the bump lockfile repository port without using Cargo.
 
-    The double returns the workspace's single ``Cargo.lock`` path and records
-    each request. An optional callback can inspect workspace state immediately
-    before a regeneration request is recorded.
+    The double records each planned and regenerated request. An optional
+    callback can inspect workspace state immediately before a regeneration
+    request is recorded.
 
     Attributes
     ----------
-    resolved : list[tuple[pathlib.Path, tuple[str, ...]]]
-        Workspace roots and manifest selections passed to resolution.
+    planned : list[tuple[pathlib.Path, tuple[str, ...]]]
+        Workspace roots and manifest selections passed to planning.
     regenerated : list[tuple[pathlib.Path, tuple[str, ...]]]
         Workspace roots and manifest selections successfully passed to
         regeneration.
+    resolved : list[tuple[pathlib.Path, tuple[str, ...]]]
+        Legacy projection requests recorded for callers that still use them.
     before_regenerate : collections.abc.Callable or None
         Optional callback invoked before each regeneration request is recorded.
     """
@@ -37,29 +41,45 @@ class RecordingLockfileRepository:
             ``None``. If it raises, the exception propagates and no regeneration
             record is added.
         """
-        self.resolved: list[tuple[pathlib.Path, tuple[str, ...]]] = []
+        self.planned: list[tuple[pathlib.Path, tuple[str, ...]]] = []
         self.regenerated: list[tuple[pathlib.Path, tuple[str, ...]]] = []
+        self.resolved: list[tuple[pathlib.Path, tuple[str, ...]]] = []
         self.before_regenerate = before_regenerate
+        self._plan_requests: dict[int, tuple[pathlib.Path, tuple[str, ...]]] = {}
+
+    def plan_lockfiles(
+        self,
+        workspace_root: pathlib.Path,
+        lockfile_manifests: cabc.Sequence[str],
+    ) -> LockfilePlan:
+        """Record a planning request and return its single-lockfile plan."""
+        manifests = tuple(lockfile_manifests)
+        self.planned.append((workspace_root, manifests))
+        plan = LockfilePlan(
+            root=workspace_root,
+            manifests=(workspace_root / "Cargo.toml",),
+            lockfiles=(workspace_root / "Cargo.lock",),
+        )
+        self._plan_requests[id(plan)] = (workspace_root, manifests)
+        return plan
+
+    def regenerate_planned(
+        self,
+        plan: LockfilePlan,
+    ) -> tuple[pathlib.Path, ...]:
+        """Record a regeneration request and return the planned lockfiles."""
+        root, manifests = self._plan_requests.get(id(plan), (plan.root, ()))
+        if self.before_regenerate is not None:
+            self.before_regenerate(root, manifests)
+        self.regenerated.append((root, manifests))
+        return plan.lockfiles
 
     def resolve_lockfile_paths(
         self,
         workspace_root: pathlib.Path,
         lockfile_manifests: cabc.Sequence[str],
     ) -> tuple[pathlib.Path, ...]:
-        """Record a resolution request and return the workspace lockfile.
-
-        Parameters
-        ----------
-        workspace_root : pathlib.Path
-            Root directory of the workspace whose lockfile is selected.
-        lockfile_manifests : collections.abc.Sequence[str]
-            Manifest paths whose lockfiles the repository is asked to resolve.
-
-        Returns
-        -------
-        tuple[pathlib.Path, ...]
-            A one-element tuple containing ``workspace_root / "Cargo.lock"``.
-        """
+        """Record a legacy projection request and return the workspace lockfile."""
         self.resolved.append((workspace_root, tuple(lockfile_manifests)))
         return (workspace_root / "Cargo.lock",)
 
@@ -68,27 +88,7 @@ class RecordingLockfileRepository:
         workspace_root: pathlib.Path,
         lockfile_manifests: cabc.Sequence[str],
     ) -> tuple[pathlib.Path, ...]:
-        """Record a regeneration request and return the workspace lockfile.
-
-        Parameters
-        ----------
-        workspace_root : pathlib.Path
-            Root directory of the workspace whose lockfile is regenerated.
-        lockfile_manifests : collections.abc.Sequence[str]
-            Manifest paths whose lockfiles the repository is asked to
-            regenerate.
-
-        Returns
-        -------
-        tuple[pathlib.Path, ...]
-            A one-element tuple containing ``workspace_root / "Cargo.lock"``.
-
-        Notes
-        -----
-        If ``before_regenerate`` is set, call it with the workspace root and
-        selected manifests before appending the regeneration record. Propagate
-        any exception it raises without adding a record.
-        """
+        """Record a legacy regeneration request and return the workspace lockfile."""
         manifests = tuple(lockfile_manifests)
         if self.before_regenerate is not None:
             self.before_regenerate(workspace_root, manifests)

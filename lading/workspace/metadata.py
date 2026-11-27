@@ -69,7 +69,10 @@ class CargoMetadataParseError(CargoMetadataError):
 
 _CARGO_PROGRAM = "cargo"
 _CARGO_METADATA_ARGS = ("metadata", "--format-version", "1")
-_CARGO_METADATA_COMMAND = (_CARGO_PROGRAM, *_CARGO_METADATA_ARGS)
+# ``--no-deps`` keeps discovery to the workspace itself. Bump needs the member
+# set only, and resolving the dependency graph is what makes Cargo want to write
+# ``Cargo.lock``; publish keeps the full metadata it reasons about.
+_CARGO_METADATA_NO_DEPS_ARGS = (*_CARGO_METADATA_ARGS, "--no-deps")
 
 
 _COMMAND_RUNNER: contextvars.ContextVar[CommandRunner | None] = contextvars.ContextVar(
@@ -98,14 +101,29 @@ def _active_command_runner(runner: CommandRunner | None = None) -> CommandRunner
     return active_runner
 
 
+def _metadata_command(
+    *,
+    no_deps: bool,
+    manifest_path: Path | None = None,
+) -> tuple[str, ...]:
+    """Return the ``cargo metadata`` argument tuple for the supplied options."""
+    args = list(_CARGO_METADATA_NO_DEPS_ARGS if no_deps else _CARGO_METADATA_ARGS)
+    if manifest_path is not None:
+        args.extend(("--manifest-path", str(manifest_path)))
+    return (_CARGO_PROGRAM, *args)
+
+
 def _invoke_cargo_metadata(
     command_runner: CommandRunner,
     root_path: Path | None,
+    *,
+    no_deps: bool,
+    manifest_path: Path | None = None,
 ) -> tuple[int, str, str]:
     """Run ``cargo metadata`` and return (exit_code, stdout, stderr) as text."""
     try:
         exit_code, stdout, stderr = command_runner(
-            _CARGO_METADATA_COMMAND,
+            _metadata_command(no_deps=no_deps, manifest_path=manifest_path),
             cwd=root_path,
             echo_stdout=False,
         )
@@ -135,6 +153,8 @@ def load_cargo_metadata(
     workspace_root: Path | str | None = None,
     *,
     runner: CommandRunner | None = None,
+    no_deps: bool = False,
+    manifest_path: Path | None = None,
 ) -> cabc.Mapping[str, typ.Any]:
     """Execute ``cargo metadata`` and parse the resulting JSON payload.
 
@@ -144,6 +164,14 @@ def load_cargo_metadata(
         Directory to run ``cargo metadata`` in; ``None`` uses cargo's default.
     runner : CommandRunner | None
         Explicit command runner to use instead of the ambient/default runner.
+    no_deps : bool, optional
+        Pass ``--no-deps`` so Cargo reports only the workspace members it can
+        read from the manifests. Bump discovery uses this to keep the metadata
+        phase read-only and cheap; publish keeps the full dependency graph.
+    manifest_path : Path | None, optional
+        Pass ``--manifest-path`` so Cargo resolves the workspace containing a
+        specific manifest. Lockfile planning uses this to learn the effective
+        workspace root of each configured or discovered manifest.
 
     Returns
     -------
@@ -171,7 +199,7 @@ def load_cargo_metadata(
     root_path = normalize_workspace_root(workspace_root)
     command_runner = _active_command_runner(runner)
     exit_code, stdout_text, stderr_text = _invoke_cargo_metadata(
-        command_runner, root_path
+        command_runner, root_path, no_deps=no_deps, manifest_path=manifest_path
     )
     if exit_code != 0:
         raise CargoMetadataInvocationError(exit_code, stdout_text, stderr_text)

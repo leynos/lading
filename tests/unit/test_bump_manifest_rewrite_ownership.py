@@ -37,26 +37,14 @@ def test_skips_workspace_and_member_manifests(
     assert not plans, "workspace and member manifests must be skipped"
     assert [record.getMessage() for record in caplog.records] == [
         (
-            "Skipping configured manifest rewrite Cargo.toml because it resolves to "
-            f"a workspace-owned manifest at {root_manifest.resolve()}"
+            "Skipping configured manifest rewrite Cargo.toml because it is a "
+            f"workspace-owned manifest at {root_manifest.resolve()}"
         ),
         (
-            "Skipping configured manifest rewrite crates/alpha/Cargo.toml because it "
-            f"resolves to a workspace-owned manifest at {member_manifest.resolve()}"
+            "Skipping configured manifest rewrite crates/alpha/Cargo.toml because "
+            f"it is a workspace-owned manifest at {member_manifest.resolve()}"
         ),
     ], "skip logs must identify both the configured and resolved path"
     assert root_manifest.read_text(encoding="utf-8").endswith('alpha = "1.0.0"\n'), (
         "the rewrite planner must leave the root manifest to its owner stage"
     )
-
-
-def test_skips_missing_member_manifest_before_file_validation(
-    tmp_path: pathlib.Path,
-) -> None:
-    """Configured member paths remain skipped even if the file is absent."""
-    member_manifest = tmp_path / "crates/alpha/Cargo.toml"
-    group = ManifestRewriteConfig(paths=("crates/alpha/Cargo.toml",))
-
-    plans = plan_fixture_rewrites(tmp_path, (group,), members=(member_manifest,))
-
-    assert not plans, "missing member manifests must be skipped before validation"

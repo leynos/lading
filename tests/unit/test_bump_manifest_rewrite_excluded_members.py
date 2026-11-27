@@ -2,20 +2,17 @@
 
 from pathlib import Path
 
-import pytest
 from tomlkit import parse as parse_toml
 
 from lading import config as config_module
-from lading.commands import bump, bump_toml_files
-from tests.helpers.manifest_rewrite_recovery import _make_partial_write_failure_case
+from lading.commands import bump, bump_toml
+from tests.helpers.manifest_rewrite_cases import _make_partial_write_failure_case
 
 
 def test_excluded_member_can_inherit_the_updated_workspace_version(
     tmp_path: Path,
 ) -> None:
     """Rewrite active member references while an excluded member inherits."""
-    if not bump_toml_files._supports_bounded_directory_operations():
-        pytest.skip("the bounded atomic writer is unavailable")
     case = _make_partial_write_failure_case(tmp_path)
     alpha_manifest = tmp_path / "crates/alpha/Cargo.toml"
     fixture = case.fixtures[0]
@@ -50,8 +47,8 @@ def test_excluded_member_can_inherit_the_updated_workspace_version(
         ),
     )
 
-    workspace_document = bump_toml_files.parse_manifest(case.root / "Cargo.toml")
-    member_document = bump_toml_files.parse_manifest(alpha_manifest)
+    workspace_document = bump_toml.parse_manifest(case.root / "Cargo.toml")
+    member_document = bump_toml.parse_manifest(alpha_manifest)
     rewritten_fixture = parse_toml(fixture.read_text(encoding="utf-8"))
     fixture_dependencies = rewritten_fixture["dependencies"]
     fixture_patch = rewritten_fixture["patch"]["crates-io"]

@@ -1,5 +1,6 @@
 """Workspace discovery utilities for :mod:`lading`."""
 
+from .confined_discovery import load_bump_workspace
 from .graph_build import (
     build_workspace_graph,
     load_workspace,
@@ -26,6 +27,7 @@ __all__ = [
     "WorkspaceGraph",
     "WorkspaceModelError",
     "build_workspace_graph",
+    "load_bump_workspace",
     "load_cargo_metadata",
     "load_workspace",
 ]

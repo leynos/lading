@@ -1,4 +1,4 @@
-"""Unit tests for crate manifest updates and result formatting.
+"""Unit tests for manifest selection through ``bump_pipeline._prepare_plan``.
 
 Exercises single-crate manifest updates (exclusion handling and dependency
 rewrites) and hosts the workspace-construction fixtures those assertions share.
@@ -11,7 +11,8 @@ from pathlib import Path
 import pytest
 from tomlkit import parse as parse_toml
 
-from lading.commands import bump, bump_pipeline_crate_manifests
+from lading.commands import bump, bump_pipeline
+from lading.commands.bump_plan import commit_plan
 from lading.workspace import WorkspaceCrate, WorkspaceDependency, WorkspaceGraph
 from tests.helpers.workspace_builders import _make_config
 
@@ -34,9 +35,10 @@ def _make_test_crate_with_dependency(
     crate_version: str = "0.1.0",
     dependency: tuple[str, str] = ("alpha", "0.1.0"),
 ) -> WorkspaceCrate:
-    """Create a test crate manifest with a single dependency."""
+    """Create a member crate manifest with a single dependency."""
     dependency_name, dependency_version = dependency
-    manifest_path = tmp_path / "Cargo.toml"
+    manifest_path = tmp_path / "crates" / crate_name / "Cargo.toml"
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
     manifest_path.write_text(
         f"""
         [package]
@@ -74,7 +76,7 @@ def _make_workspace_with_alpha_dependency(
     """Create a workspace with a beta crate depending on an alpha crate."""
     beta_crate = _make_test_crate_with_dependency(tmp_path, dependency=dependency)
 
-    alpha_manifest = tmp_path / "alpha" / "Cargo.toml"
+    alpha_manifest = tmp_path / "crates" / "alpha" / "Cargo.toml"
     alpha_manifest.parent.mkdir(parents=True, exist_ok=True)
     alpha_manifest.write_text(
         '[package]\nname = "alpha"\nversion = "0.1.0"\n',
@@ -91,6 +93,11 @@ def _make_workspace_with_alpha_dependency(
         dependencies=(),
     )
 
+    (tmp_path / "Cargo.toml").write_text(
+        '[workspace]\nmembers = ["crates/alpha", "crates/beta"]\n\n'
+        '[workspace.package]\nversion = "0.1.0"\n',
+        encoding="utf-8",
+    )
     workspace = WorkspaceGraph(
         workspace_root=tmp_path,
         crates=(beta_crate, alpha_crate),
@@ -143,13 +150,12 @@ def test_update_crate_manifest(tmp_path: Path, params: UpdateCrateTestParams) ->
         ),
     )
 
-    outcome = bump_pipeline_crate_manifests._apply_crate_manifest_update(
-        crate, "1.2.3", context
-    )
+    plan = bump_pipeline._prepare_plan(context, "1.2.3")
+    commit_plan(plan)
 
-    assert outcome is bump_pipeline_crate_manifests._CrateManifestOutcome.UPDATED, (
-        f"expected manifest update for {params.test_id}"
-    )
+    assert any(
+        proposal.path.path == crate.manifest_path for proposal in plan.proposals
+    ), f"expected a planned write for {params.test_id}"
     package_version, alpha_version = _parse_manifest_versions(crate.manifest_path)
     assert package_version == params.expected_package_version, (
         f"unexpected package version for {params.test_id}"

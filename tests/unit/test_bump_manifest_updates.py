@@ -242,7 +242,7 @@ def test_run_uses_loaded_configuration_and_workspace(
     workspace = _make_workspace(tmp_path)
     configuration = _make_config()
     monkeypatch.setattr(config_module, "current_configuration", lambda: configuration)
-    monkeypatch.setattr("lading.workspace.load_workspace", lambda root: workspace)
+    monkeypatch.setattr("lading.workspace.load_bump_workspace", lambda root: workspace)
     bump.run(tmp_path, "9.9.9")
     assert (
         _load_version(tmp_path / "Cargo.toml", ("workspace", "package")) == "9.9.9"

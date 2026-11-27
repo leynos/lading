@@ -144,6 +144,29 @@ handling workspace READMEs.
   - **Completion Criteria:** End-to-end tests verify that bump creates adopted
     crate README files before publish runs.
 
+______________________________________________________________________
+
+### 2.3. Confinement Preflight
+
+**Description:** Validate every write target before the first mutation and
+confine the whole operation to the canonical workspace root.
+
+**Tasks:**
+
+- [x] **Confine every bump write target (closes `#409`):**
+
+  - **Outcome:** `lading bump` validates member and exclusion patterns
+    lexically, walks every path component with `lstat` before resolving it,
+    rejects symlinks, junctions, dangling links, aliases, and non-regular
+    targets, and proves canonical containment. Discovery uses
+    `cargo metadata --no-deps`, and the complete manifest, documentation,
+    README, and lockfile plan is validated before the first write.
+  - **Completion Criteria:** Command-level tests reject unsafe members,
+    escaping and symlinked documentation, symlinked README destinations, and
+    invalid lockfile manifests with exit status 1 while workspace and external
+    sentinel snapshots remain unchanged; a real-Cargo lane proves discovery
+    leaves missing and stale lockfiles untouched.
+
 ## 3. `lading publish` Subcommand Implementation
 
 **Objective:** Deliver a robust `publish` command that safely and correctly

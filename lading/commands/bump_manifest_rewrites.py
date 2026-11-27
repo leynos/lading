@@ -28,9 +28,6 @@ import typing as typ
 from tomlkit import parse as parse_toml
 from tomlkit.exceptions import TOMLKitError
 
-from lading.commands.bump_manifest_rewrite_application import (
-    apply_manifest_rewrites,
-)
 from lading.commands.bump_manifest_rewrite_dependencies import (
     rewrite_dependency_requirements,
 )
@@ -55,7 +52,6 @@ __all__ = [
     "ManifestRewriteSource",
     "ManifestRewriteVersions",
     "ManifestRewriteWriteError",
-    "apply_manifest_rewrites",
     "plan_manifest_rewrites",
 ]
 

@@ -1,6 +1,5 @@
 """Unit tests for workspace README transposition during version bumps."""
 
-import tempfile
 import typing as typ
 from pathlib import Path
 
@@ -233,48 +232,6 @@ def test_transpose_readme_to_crate_rejects_external_crate_root(
 
     assert snapshot == str(excinfo.value), (
         "an out-of-workspace crate root must be rejected with the canonical error"
-    )
-
-
-def test_transpose_readme_rejects_external_destination_symlink(
-    tmp_path: Path,
-) -> None:
-    """A crate README symlink cannot redirect a transposition outside root."""
-    crate = _make_crate(tmp_path)
-    (tmp_path / "README.md").write_text("# Project\n", encoding="utf-8")
-
-    with tempfile.TemporaryDirectory(dir=tmp_path.parent) as outside_directory:
-        outside_readme = Path(outside_directory) / "README.md"
-        outside_readme.write_text("external content\n", encoding="utf-8")
-        target_readme = crate.root_path / "README.md"
-        target_readme.symlink_to(outside_readme)
-
-        with pytest.raises(ReadmeTranspositionError, match="within the workspace"):
-            bump_readme.transpose_readme_to_crate(tmp_path, crate, dry_run=False)
-
-        assert target_readme.is_symlink(), "the escaping destination link must remain"
-        assert outside_readme.read_text(encoding="utf-8") == "external content\n", (
-            "transposition must not overwrite a file outside the workspace"
-        )
-
-
-def test_transpose_readme_rejects_destination_symlink_to_workspace_readme(
-    tmp_path: Path,
-) -> None:
-    """A crate README cannot redirect transposition into its source README."""
-    crate = _make_crate(tmp_path)
-    source_readme = tmp_path / "README.md"
-    original = "# Project\n\nSee [Guide](docs/guide.md).\n"
-    source_readme.write_text(original, encoding="utf-8")
-    target_readme = crate.root_path / "README.md"
-    target_readme.symlink_to(source_readme)
-
-    with pytest.raises(ReadmeTranspositionError, match="crate's own README"):
-        bump_readme.transpose_readme_to_crate(tmp_path, crate, dry_run=False)
-
-    assert target_readme.is_symlink(), "the crate README link must remain intact"
-    assert source_readme.read_text(encoding="utf-8") == original, (
-        "transposition must preserve the workspace README source bytes"
     )
 
 

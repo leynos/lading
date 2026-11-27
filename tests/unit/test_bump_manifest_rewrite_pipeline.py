@@ -1,24 +1,24 @@
 """Pipeline integration for configured non-member manifest rewrites."""
 
 import dataclasses as dc
-import pathlib
 import typing as typ
 
 import pytest
 
 from lading import config as config_module
-from lading.commands import bump, bump_toml_files
+from lading.commands import bump, bump_toml
 from lading.commands.bump_manifest_rewrites import ManifestRewriteError
 from lading.config import ManifestRewriteConfig, StringValueRewriteConfig
 from tests.helpers.manifest_rewrite_metrics import (
     manifest_rewrite_counter_value,
     manifest_rewrite_duration_stats,
 )
-from tests.helpers.manifest_rewrite_writes import record_workspace_write_attempts
 from tests.helpers.recording_lockfile_repository import RecordingLockfileRepository
 from tests.helpers.workspace_builders import _make_workspace
 
 if typ.TYPE_CHECKING:
+    import pathlib
+
     from lading.workspace.models import WorkspaceGraph
 
 pytestmark = pytest.mark.usefixtures("reset_process_metrics")
@@ -130,8 +130,6 @@ def test_rewrites_fixture_before_lockfile_regeneration(
     tmp_path: pathlib.Path,
 ) -> None:
     """Fixture changes are written before the lockfile port runs."""
-    if not bump_toml_files._supports_bounded_directory_operations():
-        pytest.skip("the bounded atomic writer is unavailable")
     case = _make_standalone_fixture_rewrite_case(tmp_path)
     message = bump.run(
         tmp_path,
@@ -145,12 +143,10 @@ def test_rewrites_fixture_before_lockfile_regeneration(
     _assert_fixture_rewritten_before_lockfile(case, message)
 
 
-def test_rewrite_duration_excludes_intervening_manifest_stages(
+def test_rewrite_records_planning_and_application_durations(
     tmp_path: pathlib.Path,
 ) -> None:
-    """Rewrite timing excludes workspace and member manifest processing."""
-    if not bump_toml_files._supports_bounded_directory_operations():
-        pytest.skip("the bounded atomic writer is unavailable")
+    """Each configured rewrite phase records one duration sample."""
     workspace = _make_workspace(tmp_path)
     fixture = tmp_path / "tests/fixtures/standalone/Cargo.toml"
     fixture.parent.mkdir(parents=True)
@@ -162,29 +158,30 @@ def test_rewrite_duration_excludes_intervening_manifest_stages(
             )
         )
     )
-    clock_readings = iter((10.0, 12.0, 100.0, 103.0))
-
     bump.run(
         tmp_path,
         "1.2.3",
         options=bump.BumpOptions(
-            clock=lambda: next(clock_readings),
             rebuild_lockfiles=False,
             configuration=configuration,
             workspace=workspace,
         ),
     )
 
-    sample = manifest_rewrite_duration_stats(
+    planning = manifest_rewrite_duration_stats(
+        outcome="planned",
+        dry_run="false",
+        error_category="none",
+    )
+    application = manifest_rewrite_duration_stats(
         outcome="applied",
         dry_run="false",
         error_category="none",
     )
-    assert sample.count == 1, "the configured rewrite should record one duration"
-    assert sample.total_seconds == pytest.approx(5.0), (
-        "duration should sum two seconds of planning and three seconds of "
-        "application, excluding the intervening member stages"
-    )
+    assert planning.count == 1, "planning should record one duration"
+    assert application.count == 1, "application should record one duration"
+    assert planning.total_seconds >= 0.0, "planning duration must be non-negative"
+    assert application.total_seconds >= 0.0, "application duration must be non-negative"
 
 
 def test_dry_run_reports_fixture_and_projects_lockfiles_without_writes(
@@ -223,7 +220,7 @@ def test_dry_run_reports_fixture_and_projects_lockfiles_without_writes(
     assert "- tests/fixtures/standalone/Cargo.toml" in message, (
         "dry-run must report the configured fixture manifest"
     )
-    assert repository.resolved == [(tmp_path.resolve(), ("nested/Cargo.toml",))], (
+    assert repository.planned == [(tmp_path.resolve(), ("nested/Cargo.toml",))], (
         "dry-run must project the configured lockfile target"
     )
     assert not repository.regenerated, "dry-run must not regenerate lockfiles"
@@ -242,8 +239,6 @@ def test_manifest_rewrite_overlap_with_member_is_reported_once(
     tmp_path: pathlib.Path,
 ) -> None:
     """A configured member path remains owned and reported by the member stage."""
-    if not bump_toml_files._supports_bounded_directory_operations():
-        pytest.skip("the bounded atomic writer is unavailable")
     workspace = _make_workspace(tmp_path)
     member_manifest = tmp_path / "crates/alpha/Cargo.toml"
     configuration = config_module.LadingConfig(
@@ -302,9 +297,17 @@ def test_missing_rewrite_manifest_fails_before_any_workspace_write(
             )
         )
     )
-    write_attempts = record_workspace_write_attempts(monkeypatch, tmp_path)
+    write_attempts: list[pathlib.Path] = []
+    original_write = bump_toml.write_atomic_text
 
-    with pytest.raises(ManifestRewriteError, match="regular file"):
+    def record_write(path: pathlib.Path, content: str) -> None:
+        """Record and forward an atomic write attempt."""
+        write_attempts.append(path)
+        original_write(path, content)
+
+    monkeypatch.setattr(bump_toml, "write_atomic_text", record_write)
+
+    with pytest.raises(ManifestRewriteError, match=r"regular Cargo\.toml file"):
         bump.run(
             tmp_path,
             "1.2.3",

@@ -1,10 +1,12 @@
-"""Documentation processing utilities for version bumping.
+r"""Documentation processing utilities for version bumping.
 
-This module resolves and updates Markdown documentation files. It scans fenced
-TOML code blocks (e.g., Cargo.toml snippets in README files) and delegates TOML
-changes to :mod:`lading.commands.bump_docs_toml`. Its public surface includes
-``resolve_documentation_targets``, ``update_documentation_files``,
-``rewrite_markdown_toml_fences``, and ``update_toml_snippet_versions``.
+This module provides utilities for updating version references within Markdown
+documentation files. It scans fenced TOML code blocks (e.g., Cargo.toml
+snippets in README files) and rewrites version entries to match the target
+workspace version. The preparation surface is
+``prepare_documentation_updates``; the rewriting helpers
+``rewrite_markdown_toml_fences`` and ``update_toml_snippet_versions`` remain
+independently testable.
 
 Examples
 --------
@@ -14,352 +16,124 @@ Examples
 >>> from lading.commands import bump_docs
 >>> with tempfile.TemporaryDirectory() as directory:
 ...     workspace = Path(directory)
-...     _ = (workspace / "README.md").write_text("", encoding="utf-8")
-...     documentation = config.DocumentationConfig(globs=("README.md",))
-...     targets = bump_docs.resolve_documentation_targets(
-...         workspace, documentation
+...     _ = (workspace / "README.md").write_text(
+...         '```toml\n[dependencies]\nmy-crate = "1.0.0"\n```\n',
+...         encoding="utf-8",
 ...     )
-...     [path.name for path in targets.paths]
+...     documentation = config.DocumentationConfig(globs=("README.md",))
+...     request = bump_docs.DocumentationUpdateRequest(
+...         target_version="1.2.0",
+...         updated_crates=frozenset({"my-crate"}),
+...         read_source=lambda path: path.path.read_text(encoding="utf-8"),
+...     )
+...     updates = bump_docs.prepare_documentation_updates(
+...         workspace, documentation, request
+...     )
+...     [path.relative.as_posix() for path, _content in updates]
 ['README.md']
-
-``update_documentation_files(targets, "1.2.0", {"my-crate"}, dry_run=False)``
-then rewrites the version entries in those files and returns the ones it
-changed. The targets retain their workspace root so direct callers receive the
-same containment checks as targets collected from configuration.
 """
 
 import collections.abc as cabc
 import dataclasses as dc
-import logging
-import re
 import typing as typ
-from pathlib import Path
 
-from markdown_it import MarkdownIt
-
-from lading.commands import (
-    bump_docs_fence_lines,
-    bump_toml_files,
-    bump_toml_write_options,
-    manifest_paths,
+from lading.commands.bump_docs_fences import (
+    rewrite_markdown_toml_fences,
+    update_toml_snippet_dependencies,
+    update_toml_snippet_versions,
 )
-from lading.commands.bump_docs_toml import (
-    update_toml_snippet_dependencies as update_toml_snippet_dependencies,
+from lading.utils.confinement import (
+    ConfinedPath,
+    GlobOptions,
+    MatchExpectation,
+    UnmatchedPolicy,
+    expand_confined_glob,
 )
-from lading.commands.bump_docs_toml import (
-    update_toml_snippet_versions as update_toml_snippet_versions,
-)
-from lading.exceptions import LadingError
 
-_LOGGER = logging.getLogger(__name__)
+__all__ = [
+    "DocumentationUpdateRequest",
+    "prepare_documentation_updates",
+    "rewrite_markdown_toml_fences",
+    "update_toml_snippet_dependencies",
+    "update_toml_snippet_versions",
+]
 
-if typ.TYPE_CHECKING:
-    from markdown_it.token import Token
+if typ.TYPE_CHECKING:  # pragma: no cover - import-time typing aids only
+    from pathlib import Path
 
     from lading import config as config_module
 
 
 @dc.dataclass(frozen=True, slots=True)
-class DocumentationTargets:
-    """Resolved documentation paths paired with their owning workspace.
+class DocumentationUpdateRequest:
+    """Inputs that describe one documentation-update pass.
 
-    Parameters
+    Attributes
     ----------
-    workspace_root
-        Workspace root against which every path must be checked.
-    paths
-        Final documentation paths, in resolver order. Relative paths are
-        interpreted from the current working directory and should normally be
-        assembled as ``workspace_root / relative_path``.
-
-    Examples
-    --------
-    >>> from pathlib import Path
-    >>> targets = DocumentationTargets(Path("/workspace"), ())
-    >>> targets.paths
-    ()
-    """
-
-    workspace_root: Path
-    paths: tuple[Path, ...]
-
-
-def resolve_documentation_targets(
-    workspace_root: Path, documentation: config_module.DocumentationConfig
-) -> DocumentationTargets:
-    """Return documentation files that should be scanned for version updates.
-
-    Parameters
-    ----------
-    workspace_root
-        The root directory of the workspace to search within.
-    documentation
-        Configuration specifying glob patterns for documentation files.
-
-    Returns
-    -------
-    DocumentationTargets
-        Workspace-bound paths matching the configured patterns. The root is
-        retained for containment checks before updates.
-
-    """
-    resolved_root = workspace_root.resolve()
-    patterns = documentation.globs
-    if not patterns:
-        return DocumentationTargets(resolved_root, ())
-
-    resolved: set[Path] = set()
-    for pattern in patterns:
-        for candidate in resolved_root.glob(pattern):
-            safe_candidate = manifest_paths.resolve_workspace_path(
-                resolved_root,
-                candidate,
-                error_type=LadingError,
-                label="Documentation",
-            )
-            if safe_candidate.is_file():
-                resolved.add(safe_candidate)
-    return DocumentationTargets(resolved_root, tuple(resolved))
-
-
-def update_documentation_files(
-    documentation_targets: DocumentationTargets,
-    target_version: str,
-    updated_crates: cabc.Collection[str],
-    *,
-    dry_run: bool,
-) -> set[Path]:
-    """Rewrite documentation TOML fences that mention workspace crates.
-
-    Parameters
-    ----------
-    documentation_targets
-        Resolved documentation paths paired with the workspace boundary.
-    target_version
-        The version string to apply to matching entries.
-    updated_crates
+    target_version : str
+        Version to apply inside matching TOML fences.
+    updated_crates : frozenset[str]
         Names of crates whose dependency entries should be updated.
-    dry_run
-        When True, report changes without modifying files.
-
-    Returns
-    -------
-    set[Path]
-        Paths to documentation files that were (or would be) modified.
-
-    Notes
-    -----
-    A bounded write rejects a file changed after it was read. The resulting
-    ``PermissionError`` stops the bump and preserves the concurrent edit;
-    earlier documentation files updated in this call remain updated.
-
+    read_source : cabc.Callable[[ConfinedPath], str]
+        Reader that honours earlier proposed content.
     """
-    changed: set[Path] = set()
-    dependency_targets = {name for name in updated_crates if name}
-    for candidate in documentation_targets.paths:
-        doc_path = manifest_paths.resolve_workspace_path(
-            documentation_targets.workspace_root,
-            candidate.resolve(),
-            error_type=LadingError,
-            label="Documentation",
-        )
-        try:
-            with doc_path.open("r", encoding="utf-8", newline="") as handle:
-                original_text = handle.read()
-        except OSError as exc:
-            _LOGGER.warning("Skipping %s: %s", doc_path, exc)
-            continue
-        updated_text, snippet_changed = rewrite_markdown_toml_fences(
-            original_text, dependency_targets, target_version
-        )
-        if not snippet_changed:
-            continue
-        changed.add(doc_path)
-        if not dry_run:
-            bump_toml_files.write_atomic_text(
-                doc_path,
-                updated_text,
-                bump_toml_write_options.AtomicWriteOptions(
-                    workspace_root=documentation_targets.workspace_root,
-                    expected_current_text=original_text,
-                ),
-            )
-    return changed
+
+    target_version: str
+    updated_crates: frozenset[str]
+    read_source: cabc.Callable[[ConfinedPath], str]
 
 
-def rewrite_markdown_toml_fences(
-    markdown_text: str,
-    dependency_targets: cabc.Collection[str],
-    target_version: str,
-) -> tuple[str, bool]:
-    """Rewrite TOML fences for ``dependency_targets`` within Markdown text.
+def prepare_documentation_updates(
+    workspace_root: Path,
+    documentation: config_module.DocumentationConfig,
+    request: DocumentationUpdateRequest,
+) -> tuple[tuple[ConfinedPath, str], ...]:
+    """Return the documentation writes a bump should perform.
 
     Parameters
     ----------
-    markdown_text
-        The Markdown source text containing TOML code fences.
-    dependency_targets
-        Names of crates whose dependency entries should be updated.
-    target_version
-        The version string to apply to matching entries.
+    workspace_root : Path
+        Canonical workspace root.
+    documentation : config_module.DocumentationConfig
+        Configured glob patterns.
+    request : DocumentationUpdateRequest
+        Target version, crate names, and the reader for selected files.
 
     Returns
     -------
-    tuple[str, bool]
-        A tuple of (updated_text, changed) where changed indicates whether
-        any modifications were made.
-
-    """
-    changed = False
-
-    def _apply(snippet: str) -> str:
-        """Apply dependency version rewrites to one TOML fence."""
-        nonlocal changed
-        replacement, snippet_changed = update_toml_snippet_versions(
-            snippet, dependency_targets, target_version
-        )
-        if snippet_changed:
-            changed = True
-        return replacement
-
-    updated = replace_markdown_fences(markdown_text, "toml", _apply)
-    return updated, changed
-
-
-def replace_markdown_fences(
-    markdown_text: str,
-    language: str,
-    transform: cabc.Callable[[str], str],
-) -> str:
-    """Replace fenced code blocks of ``language`` with ``transform``.
-
-    Parameters
-    ----------
-    markdown_text
-        The Markdown source text to process.
-    language
-        The language identifier for code fences to match (e.g., "toml").
-    transform
-        A callable that receives fence content and returns transformed content.
-
-    Returns
-    -------
-    str
-        The Markdown text with matching fences replaced by transformed content.
-
-    """
-    parser = MarkdownIt("commonmark")
-    tokens = parser.parse(markdown_text)
-    lines = markdown_text.splitlines(keepends=True)
-    output: list[str] = []
-    last_index = 0
-    for token in tokens:
-        if not token_matches_language(token, language) or token.map is None:
-            continue
-        start, end = token.map
-        output.append("".join(lines[last_index:start]))
-        output.append(render_fence(token, lines, language, transform))
-        last_index = end
-    output.append("".join(lines[last_index:]))
-    return "".join(output)
-
-
-def token_matches_language(token: Token, language: str) -> bool:
-    """Return ``True`` when ``token`` is a fence with ``language``.
-
-    Parameters
-    ----------
-    token
-        A markdown-it token to inspect.
-    language
-        The language identifier to match against.
-
-    Returns
-    -------
-    bool
-        True if the token is a fence block with the specified language.
-
-    """
-    if token.type != "fence":
-        return False
-    info = (token.info or "").split()
-    info_lang = info[0].lower() if info else ""
-    return info_lang == language.lower()
-
-
-def render_fence(
-    token: Token,
-    lines: list[str],
-    language: str,
-    transform: cabc.Callable[[str], str],
-) -> str:
-    """Return a rewritten fence for ``token`` using ``transform``.
-
-    Parameters
-    ----------
-    token
-        A markdown-it fence token with map data.
-    lines
-        The original Markdown text split into lines with endings preserved.
-    language
-        The language identifier for the fence.
-    transform
-        A callable that receives fence content and returns transformed content.
-
-    Returns
-    -------
-    str
-        The rendered fence block with transformed content.
+    tuple[tuple[ConfinedPath, str], ...]
+        Confined paths and their complete rewritten text, in expansion order.
 
     Raises
     ------
-    ValueError
-        If the token is missing map data.
-
-    """
-    if token.map is None:
-        message = "Fence token missing map data"
-        raise ValueError(message)
-    token_map = token.map
-    start = token_map[0]
-    fence_marker = token.markup or "```"
-    indent = extract_fence_indent(lines[start], fence_marker)
-    info = token.info or language
-    original_body = token.content
-    new_body = transform(original_body)
-    suffix_match = re.search(r"(\r?\n+)$", original_body)
-    suffix = suffix_match.group(1) if suffix_match else ""
-    body_text = new_body.rstrip("\r\n") + suffix
-    opening_ending, body_text, closing_ending = (
-        bump_docs_fence_lines.preserve_fence_line_endings(
-            lines, token_map, fence_marker, body_text
+    UnsafeBumpTargetError
+        If a pattern escapes the workspace or matches a symlink or special
+        file.
+    BumpTargetExaminationError
+        If a directory or selected file cannot be examined.
+    """  # ruff: ignore[docstring-extraneous-exception]  # raised by expand_confined_glob
+    dependency_targets = {name for name in request.updated_crates if name}
+    updates: list[tuple[ConfinedPath, str]] = []
+    seen: set[tuple[str, ...]] = set()
+    for index, pattern in enumerate(documentation.globs):
+        matches = expand_confined_glob(
+            workspace_root,
+            pattern,
+            key=f"bump.documentation.globs[{index}]",
+            options=GlobOptions(
+                expect=MatchExpectation.REGULAR_FILE,
+                unmatched=UnmatchedPolicy.IGNORE,
+            ),
         )
-    )
-    indented_body = "".join(
-        f"{indent}{line}" for line in body_text.splitlines(keepends=True)
-    )
-    return (
-        f"{indent}{fence_marker}{info}{opening_ending}"
-        f"{indented_body}{indent}{fence_marker}"
-        f"{closing_ending}"
-    )
-
-
-def extract_fence_indent(line: str, fence_marker: str) -> str:
-    """Return indentation preceding ``fence_marker`` in ``line``.
-
-    Parameters
-    ----------
-    line
-        A line of text potentially containing a fence marker.
-    fence_marker
-        The fence marker string to search for (e.g., "```").
-
-    Returns
-    -------
-    str
-        The whitespace preceding the fence marker, or empty string if not found.
-
-    """
-    position = line.find(fence_marker)
-    return "" if position < 0 else line[:position]
+        for match in matches:
+            if match.parts in seen:
+                continue
+            seen.add(match.parts)
+            text = request.read_source(match)
+            updated_text, changed = rewrite_markdown_toml_fences(
+                text, dependency_targets, request.target_version
+            )
+            if not changed:
+                continue
+            updates.append((match, updated_text))
+    return tuple(updates)

@@ -1,6 +1,5 @@
 """Unit tests for low-level bump TOML table and version helpers."""
 
-import pytest
 from tomlkit import parse as parse_toml
 
 from lading.commands import bump_toml
@@ -20,17 +19,6 @@ def test_select_table_returns_none_for_missing() -> None:
     document = parse_toml("[workspace]\nmembers = []\n")
     table = bump_toml.select_table(document, ("workspace", "package"))
     assert table is None, "a selector with no matching table should return None"
-
-
-def test_select_table_accepts_inline_tables() -> None:
-    """Inline tables are valid targets for explicit TOML selectors."""
-    document = parse_toml('dependencies = { alpha = "1.0.0" }')
-
-    table = bump_toml.select_table(document, ("dependencies",))
-
-    assert table is document["dependencies"], (
-        "an inline table should resolve through the same selector path"
-    )
 
 
 def test_assign_version_handles_absent_table() -> None:
@@ -79,153 +67,6 @@ def test_value_matches_handles_toml_items() -> None:
     )
 
 
-@pytest.mark.parametrize(
-    ("source", "expected"),
-    [
-        ('"old"', 'path = "new" # keep\n'),
-        ("'old'", "path = 'new' # keep\n"),
-        ('"""old"""', 'path = """new""" # keep\n'),
-        ("'''old'''", "path = '''new''' # keep\n"),
-    ],
-    ids=["basic", "literal", "multiline-basic", "multiline-literal"],
-)
-def test_prepare_string_value_replacement_preserves_style_and_comment(
-    source: str,
-    expected: str,
-) -> None:
-    """Replacement retains the original TOML string delimiters and trivia."""
-    document = parse_toml(f"path = {source} # keep\n")
-
-    replacement = bump_toml.prepare_string_value_replacement(document["path"], "new")
-
-    assert replacement is not None, "a differing string value should be replaced"
-    document["path"] = replacement
-    assert document.as_string() == expected, (
-        "replacement should preserve string style and the trailing comment"
-    )
-
-
-def test_prepare_version_replacement_preserves_comment() -> None:
-    """Version replacement retains the original item's trailing comment."""
-    document = parse_toml('version = "^1.0.0" # keep\n')
-
-    replacement = bump_toml.prepare_version_replacement(document["version"], "2.0.0")
-
-    assert replacement is not None, "a differing requirement should be replaced"
-    document["version"] = replacement
-    assert document.as_string() == 'version = "^2.0.0" # keep\n', (
-        "version replacement should preserve trailing trivia"
-    )
-
-
-@pytest.mark.parametrize(
-    ("replacement_text", "expected"),
-    [
-        ("it's new", 'path = "it\'s new" # keep\n'),
-        ("first\nsecond", 'path = "first\\nsecond" # keep\n'),
-    ],
-    ids=["apostrophe", "newline"],
-)
-def test_prepare_literal_replacement_falls_back_to_basic_string(
-    replacement_text: str,
-    expected: str,
-) -> None:
-    """Unrepresentable literal values fall back without losing trivia."""
-    document = parse_toml("path = 'old' # keep\n")
-
-    replacement = bump_toml.prepare_string_value_replacement(
-        document["path"], replacement_text
-    )
-
-    assert replacement is not None, "a differing string value should be replaced"
-    document["path"] = replacement
-    rendered = document.as_string()
-    assert rendered == expected, "fallback should use an escaped basic string"
-    assert parse_toml(rendered)["path"] == replacement_text, (
-        "the serialized replacement should retain its exact string value"
-    )
-
-
-@pytest.mark.parametrize(
-    ("delimiter", "content_newline", "expected"),
-    [
-        ('"""', "\n", 'path = """\n\nnew""" # keep\n'),
-        ("'''", "\n", "path = '''\n\nnew''' # keep\n"),
-        ('"""', "\r\n", 'path = "\\r\\nnew" # keep\n'),
-        ("'''", "\r\n", 'path = "\\r\\nnew" # keep\n'),
-    ],
-    ids=[
-        "multiline-basic-lf",
-        "multiline-literal-lf",
-        "multiline-basic-crlf",
-        "multiline-literal-crlf",
-    ],
-)
-def test_prepare_multiline_replacement_preserves_leading_newline(
-    delimiter: str,
-    content_newline: str,
-    expected: str,
-) -> None:
-    """Multiline replacements round-trip LF and CRLF content newlines."""
-    document = parse_toml(f"path = {delimiter}\n\nold{delimiter} # keep\n")
-
-    replacement = bump_toml.prepare_string_value_replacement(
-        document["path"], f"{content_newline}new"
-    )
-
-    assert replacement is not None, "a changed multiline string should be replaced"
-    document["path"] = replacement
-    rendered = document.as_string()
-    reparsed = parse_toml(rendered)
-    assert rendered == expected, "the replacement should retain its original style"
-    assert reparsed["path"] == f"{content_newline}new", (
-        "serializing and reparsing must retain the leading content newline"
-    )
-
-
-@pytest.mark.parametrize("delimiter", ['"""', "'''"])
-def test_prepare_multiline_replacement_escapes_bare_carriage_return(
-    delimiter: str,
-) -> None:
-    """Bare carriage returns use a basic string to stay valid TOML."""
-    document = parse_toml(f"path = {delimiter}old{delimiter} # keep\n")
-    replacement_text = "before\rafter"
-
-    replacement = bump_toml.prepare_string_value_replacement(
-        document["path"], replacement_text
-    )
-
-    assert replacement is not None, "a changed multiline string should be replaced"
-    document["path"] = replacement
-    rendered = document.as_string()
-    assert rendered == 'path = "before\\rafter" # keep\n', (
-        "bare carriage returns must be escaped in a single-line basic string"
-    )
-    assert parse_toml(rendered)["path"] == replacement_text, (
-        "the escaped replacement must preserve the exact string value"
-    )
-
-
-def test_prepare_replacement_escapes_carriage_return_and_lf_together() -> None:
-    """Escaped CRLF stays a value pair instead of becoming a physical line end."""
-    document = parse_toml('path = """v1.0.0\\r\\nkeep""" # keep\n')
-    replacement_text = document["path"].replace("v1.0.0", "v2.0.0")
-
-    replacement = bump_toml.prepare_string_value_replacement(
-        document["path"], replacement_text
-    )
-
-    assert replacement is not None, "a differing CRLF string should be replaced"
-    document["path"] = replacement
-    rendered = document.as_string()
-    assert rendered == 'path = "v2.0.0\\r\\nkeep" # keep\n', (
-        "CRLF content must be escaped in a basic string"
-    )
-    assert parse_toml(rendered)["path"] == replacement_text, (
-        "the emitted TOML must preserve the exact CRLF value"
-    )
-
-
 def test_select_table_handles_out_of_order_package() -> None:
     """Out-of-order tables (OutOfOrderTableProxy) are accepted."""
     # When [package.metadata.docs.rs] appears after other tables,
@@ -261,27 +102,3 @@ def test_assign_version_works_with_out_of_order_table() -> None:
     assert table.get("version") == "2.0.0", (
         "out-of-order table version should be rewritten"
     )
-
-
-@pytest.mark.parametrize(
-    ("requirement", "target", "expected"),
-    [
-        (">=1.0.0, <2", "2.0.0", ">=2.0.0, <2"),
-        ("<0.7", "0.6.0", "<0.6.0"),
-        (">0.6.0-beta4", "0.6.0", ">0.6.0"),
-        (">=0.6.0-beta4, <0.7", "0.6.0", ">=0.6.0, <0.7"),
-    ],
-)
-def test_prepare_version_replacement_is_pure(
-    caplog: pytest.LogCaptureFixture,
-    requirement: str,
-    target: str,
-    expected: str,
-) -> None:
-    """Requirement construction leaves warnings to the mutation boundary."""
-    replacement = bump_toml.prepare_version_replacement(requirement, target)
-
-    assert bump_toml.value_as_string(replacement) == expected, (
-        "requirement construction should preserve the comparator and bounds"
-    )
-    assert not caplog.records, "a pure replacement helper must not log warnings"

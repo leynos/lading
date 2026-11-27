@@ -302,14 +302,9 @@ lading bump <new_version> [--dry-run]
 **Execution Flow:**
 
 1. **Discover Workspace:** Build the internal workspace model.
-2. **Plan Configured Non-member Rewrites:** Resolve opted-in standalone
-   manifests and plan dependency requirement and selected TOML string rewrites
-   from their original files. The root manifest and every workspace-member
-   manifest are skipped because the workspace and member stages own them.
-   Planning errors stop the bump before any manifest write.
-3. **Update Workspace **`Cargo.toml`**:** Set `workspace.package.version` to
+2. **Update Workspace **`Cargo.toml`**:** Set `workspace.package.version` to
    `<new_version>`.
-4. **Update Member Crates:** For each crate in the workspace (not just
+3. **Update Member Crates:** For each crate in the workspace (not just
    publishable ones):
 
     - Update `package.version` in its `Cargo.toml`.
@@ -319,17 +314,16 @@ lading bump <new_version> [--dry-run]
       operators (e.g., `^`, `~`). This prevents version drift between internal
       crates.
 
-5. **Apply Configured Non-member Rewrites:** Apply the completed plans after
-   workspace and member manifest updates, before documentation, README
-   transposition, and lockfile regeneration. If application fails, restore a
-   changed workspace or member manifest only when it still contains the exact
-   text written by this run. Leave and report files changed by another writer;
-   restore the other matching manifests to the exact text this run parsed
-   before updating them. This retains edits observed after planning and the
-   original crate versions when no such edit occurs, allowing retries to finish
-   stale fixture string rewrites after earlier fixture writes succeeded.
+4. **Handle Workspace READMEs:** For each crate where `readme_is_workspace` is
+   `true`:
 
-6. **Update Documentation Files:**
+    - Copy the `README.md` file from the workspace root to the crate's
+      directory, rewriting relative Markdown links for the crate directory and
+      overwriting any existing file when content changes. This action is part
+      of the versioning workflow, so the result can be reviewed and committed
+      before publishing.
+
+5. **Update Documentation Files:** _(deferred to Step 2.2)_
 
     - Introduce configuration-driven glob patterns for documentation files.
     - For each matching file, scan for TOML fenced code blocks (three backticks
@@ -338,16 +332,8 @@ lading bump <new_version> [--dry-run]
       dependency that is also a workspace member to `<new_version>`. This
       replaces the previous hardcoded logic.
 
-7. **Handle Workspace READMEs:** For each crate where `readme_is_workspace` is
-   `true`, copy the workspace README into the crate directory, rewrite relative
-   Markdown links, and overwrite only when the content changes.
-
-8. **Regenerate Lockfiles:** When enabled and any manifest changed, regenerate
-   the root, discovered, and configured lockfiles. Non-member manifest
-   rewriting does not add lockfile targets.
-
-9. **Report Changes:** Output a summary of all files that were (or would be)
-   modified. Rewritten non-member manifests use the existing manifest category.
+6. **Report Changes:** Output a summary of all files that were (or would be)
+   modified.
 
 ### Implementation notes (Step 2.1)
 
@@ -405,118 +391,91 @@ lading bump <new_version> [--dry-run]
   documentation counts, and documentation entries are suffixed with
   `(documentation)` for clarity.
 
-### Implementation notes (configured non-member rewrites)
+### Confinement preflight
 
-- `bump.manifest_rewrites` is an opt-in path/glob allowlist for standalone
-  Cargo manifests. It updates matching dependency requirements and explicit
-  TOML string selectors while leaving root and member manifest ownership with
-  the normal bump stages.
-- `bump_manifest_rewrite_filesystem` resolves and reads allowlisted sources;
-  `bump_manifest_rewrites` plans edits from supplied TOML text and version
-  metadata without filesystem access. `bump_manifest_rewrite_model` owns the
-  shared plans and rewrite error.
-- `bump_manifest_rewrite_dependencies` owns dependency-section traversal for
-  direct, target, and workspace requirements. `bump_toml_types` owns the shared
-  TOML table-node type and runtime checks; `bump_toml` and
-  `bump_toml_dependencies` encapsulate requirement composition and formatting
-  preservation. `bump_docs_toml` reuses this traversal for dependency tables in
-  documentation fences. The planner parses supplied TOML text directly;
-  `bump_toml_files` owns manifest file I/O. Comparator warnings are returned as
-  data and logged at the command boundary.
-- `bump_manifest_rewrite_strings` owns string-template matching, stale
-  reference detection, and replacement conflict checks. Its private operations
-  are called by the rewrite planner; they receive parsed TOML and version
-  metadata, perform no file access, and do not update dependencies.
-- `manifest_paths.resolve_workspace_path` is the shared path boundary for bump
-  targets that must remain in the workspace before reads or writes. Its current
-  callers are configured manifest rewrites, documentation updates, and README
-  transposition. It resolves symlinks and returns the contained target;
-  `resolve_manifest_candidate` composes that check with the `Cargo.toml`
-  filename rule. Callers provide their domain error and retain their own
-  existence and file-type checks. Documentation, README, and configured
-  manifest rewrite writes pass the workspace root to the atomic writer, which
-  repeats containment checks immediately before selecting the replacement
-  target. Bounded atomic writes require directory-relative no-follow operations
-  and pin the parent directory while replacing; if the platform lacks those
-  operations, the writer fails before creating a temporary file. Configured
-  manifest rewrites also require the planned path to remain unchanged. README
-  transposition requires the resolved path to be that crate's own `README.md`,
-  so an internal link cannot redirect a crate-specific rewrite into the
-  workspace README.
-- `bump_pipeline_manifest_sources` snapshots workspace and member manifest
-  text before writes, derives effective package versions, and revalidates those
-  versions before the first write and before applying cached fixture plans.
-  Each captured `[package].name` must also match workspace discovery, so a
-  member renamed after discovery cannot retain its former identity. The later
-  check also confirms that the root `Cargo.toml` entry still resolves to the
-  discovered workspace manifest. The pipeline repeats this later check under
-  the workspace write lock immediately before fixture application. The source
-  module performs no writes.
-- `bump_pipeline_manifest_rewrites` owns planning and applying the configured
-  rewrite stage. It restores manifests changed by those stages if a configured
-  rewrite fails, but only while their content still matches the text written by
-  this run. `bump_pipeline_manifest_recovery` owns callback registration,
-  member-manifest revalidation, and rollback orchestration.
-  `bump_pipeline_pending_reconciliation` decides whether a prepared replacement
-  reached disk before its completion callback and therefore belongs to this
-  run. Application reads planned sources through the bounded, non-blocking
-  reader, so a FIFO destination cannot stall the workspace lock. Restoration
-  writes use the same workspace-root boundary as forward writes, using the
-  destination resolved before the member write so a changed symlink cannot
-  redirect rollback outside the workspace. It reports and preserves concurrent
-  edits. `bump_pipeline` owns overall timing, metrics, and stage ordering; it
-  plans every selected manifest before the workspace manifest stage writes,
-  then applies plans after member manifests and before documentation, README
-  transposition, and lockfile work. It supplies `_ManifestUpdateContext` with
-  the workspace boundary; member updates retain their resolved write
-  destination for bounded rollback and verify the alias still resolves to that
-  destination before writing.
-- `bump_workspace_write_lock.workspace_write_lock` provides a per-workspace
-  advisory lock for bounded Lading replacements and complete live bump runs. A
-  live run holds it from rewrite planning until the last pipeline stage,
-  including rollback after a failed stage; dry runs take no lock. The
-  non-member rewrite stage also holds it across its final version check and all
-  configured fixture writes, and nested atomic writes reuse the same thread's
-  lock. The lock coordinates Lading processes running as the same
-  operating-system user. Processes running as another user, editors and tools
-  that ignore it are outside its guarantee. It lives in a stable per-user state
-  directory derived from the account's passwd entry, so process-specific `HOME`
-  and `XDG_CACHE_HOME` values do not split the lock identity; a POSIX host must
-  provide that entry. It is acquired without waiting and released when the
-  outer operation exits. Bounded writers verify the opened workspace directory
-  still matches the identity used for lock selection. `bump_toml_files` records
-  replacement completion and the temporary file's filesystem identity when it
-  is atomically installed. Manifest recovery uses both that identity and the
-  written text to distinguish this run's output from a later write with
-  identical contents. `write_atomic_text` checks the expected source text and
-  identity immediately before replacement when the caller supplies them. This
-  coordinates Lading processes and refuses a write when a lock is unavailable;
-  editors that ignore advisory locks can still race the final comparison.
-- `bump_toml_files` owns manifest parsing and atomic writes. Its internal
-  `_read_and_parse_manifest` operation returns the exact input text alongside
-  the parsed document from one read, so bump recovery can retain the source
-  used for the corresponding manifest update.
-- Changed non-member manifests appear in the existing manifest report
-  category. Rewriting does not add lockfile targets; `bump.lockfile_manifests`
-  continues to control additional lockfile regeneration.
+Every bump write target passes through the shared confinement policy in
+`lading/utils/confinement/` before the first mutation. The policy establishes
+one canonical root, validates patterns lexically under POSIX and Windows
+spellings, walks each component below the root with `lstat` before resolving
+anything, and proves canonical containment as an independent second check. See
+[ADR-012](adrs/adr-0012-confine-bump-write-targets.md).
+
+Bump discovery is bump-only. `lading.workspace.confined_discovery` validates
+the root manifest and the declared `[workspace].members` and `exclude`
+patterns, expands members without following links, and then invokes
+`cargo metadata --no-deps`; every reported member manifest is confined and
+checked to be a regular `Cargo.toml` before the graph builder reads it. Publish
+keeps its existing full-metadata discovery path.
+
+The bump workflow is split into preparation and mutation. A `PlanBuilder`
+accumulates `PlannedWrite` values in `lading.commands.bump_plan`, keyed by
+confined path and carrying every change category that touched the file. Later
+stages read earlier proposed content, so an adopted README composes from a
+documentation rewrite of the workspace README. `bump_prepare` prepares
+manifests, documentation, and READMEs; only after every stage succeeds does
+`commit_plan()` write, in deterministic root-manifest, member-manifest,
+documentation, README order. A dry run reports the plan and writes nothing.
+
+Configured non-member manifests join the same plan. The
+`bump_manifest_rewrite_filesystem` adapter confines each configured path or
+glob through `lading.utils.confinement`, skips the root and member manifests,
+and reads UTF-8 source records. `bump_manifest_rewrites` plans dependency and
+selected string-value edits without filesystem access; string planning protects
+SemVer prerelease and build-metadata text, and dependency planning retains
+later comparators while matching `package` aliases.
+`bump_prepare_manifest_rewrites` confines every planned destination and
+proposes the complete new text as a `FIXTURE_MANIFEST` write. That category
+commits after the workspace and member manifests and before documentation,
+README, and lockfile work, and a fixture-only change satisfies the
+manifest-change gate for lockfile regeneration. Preparation writes nothing, so
+a rejected rewrite cannot leave a partial fixture. The commit phase writes each
+proposal atomically but does not roll back earlier proposals:
+validation-before-mutation is the guarantee, and a failed commit reports the
+failure for repair and retry.
+
+Live bump runs also hold a per-workspace advisory lock from planning through
+commit and lockfile regeneration, so two cooperating Lading runs cannot
+interleave. The lock lives in a stable per-user state directory derived from
+the account's passwd entry rather than `HOME`; a POSIX host must provide a
+passwd entry and a writable home, or provision the derived private directory.
+Dry runs take no lock. Editors and tools that ignore advisory locks are outside
+the guarantee.
 
 ### Lockfile repository port (bump side)
 
-The bump domain reaches Cargo lockfile projection and regeneration through a
+The bump domain reaches Cargo lockfile planning and regeneration through a
 `LockfileRepository` port defined in `lading.commands.bump_lockfiles`.
 `CargoLockfileRepository` is the cargo- and git-backed adapter; it is
-constructed with an optional `CommandRunner`, merges configured manifests with
-manifests discovered from tracked lockfiles, and delegates projection and
-regeneration through the `lading.commands.bump_lockfiles` compatibility façade.
+constructed with an optional `CommandRunner` and an optional environment
+mapping. The port exposes two pairs of operations. `plan_lockfiles` validates
+configured and git-discovered manifests, asks Cargo with
+`--no-deps --manifest-path` for each manifest's effective workspace root, and
+returns an immutable `LockfilePlan` of deduplicated destinations;
+`regenerate_planned` consumes that plan without rediscovery. Both
+`plan_lockfiles` and `regenerate_planned` are required members of the injected
+`LockfileRepository`: bump calls `plan_lockfiles` whenever lockfile
+regeneration is enabled, because planning is read-only and must reject an
+invalid configured manifest before any write, and calls `regenerate_planned`
+only when a manifest change makes regeneration necessary. The established
+`resolve_lockfile_paths` and `regenerate_lockfiles` methods remain for callers
+that supply a manifest tuple directly, but they alone no longer satisfy
+`BumpOptions.lockfile_repository`.
+
 The façade keeps the port, adapter, and established public imports in one
 boundary while cohesive helper modules hold the implementation:
 `bump_lockfile_manifests` merges configured and discovered manifests,
-`bump_lockfile_paths` validates manifests and projects lockfile paths, and
+`bump_lockfile_paths` validates manifests and projects adjacent lockfile paths,
+`bump_lockfile_planning` resolves effective workspace-root destinations, and
 `bump_lockfile_regeneration` invokes Cargo and aggregates failures.
 `BumpOptions.lockfile_repository` is the injection point; when `None`, bump
 substitutes `CargoLockfileRepository` bound to the default subprocess runner,
 and the CLI binds the adapter at the composition root. This keeps the bump
-domain free of a raw `CommandRunner` (issue #82).
+domain free of a raw `CommandRunner` (issue #82). A non-empty
+`CARGO_RESOLVER_LOCKFILE_PATH`, a `resolver.lockfile-path` in Cargo
+configuration, and Cargo's `include`d configuration files are checked during
+planning because Cargo would otherwise write a lockfile the validated plan does
+not name. The plan records the environment it was validated against, and
+regeneration refuses to run if `CARGO_HOME` or the override variable changed.
 
 ## 4. `publish` Subcommand Design
 
@@ -805,9 +764,9 @@ to do.
 
 Every automatically created staging tree therefore carries a
 `.lading-staging-lock` file, which its publisher opens and holds under an
-exclusive, non-blocking lock for the tree's whole life. The shared
-`lading.utils.file_lock` module selects `fcntl.flock` on POSIX and
-`msvcrt.locking` on Windows; `staging_lock` owns the staging-tree lifecycle.
+exclusive, non-blocking lock for the tree's whole life: `fcntl.flock` on POSIX,
+`msvcrt.locking` on Windows, both behind the single `staging_lock` module so
+callers do not choose a platform.
 
 The claim is a kernel-held lock rather than a marker file recording a process
 identifier, because a marker fails in both directions that matter here. A

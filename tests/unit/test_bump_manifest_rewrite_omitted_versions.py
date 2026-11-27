@@ -3,18 +3,15 @@
 from pathlib import Path
 
 import msgspec
-import pytest
 
-from lading.commands import bump, bump_toml_files
-from tests.helpers.manifest_rewrite_recovery import _make_partial_write_failure_case
+from lading.commands import bump, bump_toml
+from tests.helpers.manifest_rewrite_cases import _make_partial_write_failure_case
 
 
 def test_selected_member_without_version_is_assigned_target_version(
     tmp_path: Path,
 ) -> None:
     """A selected package with no version is bumped and passes validation."""
-    if not bump_toml_files._supports_bounded_directory_operations():
-        pytest.skip("the bounded atomic writer is unavailable")
     case = _make_partial_write_failure_case(tmp_path)
     alpha_manifest = tmp_path / "crates/alpha/Cargo.toml"
     alpha_manifest.write_text('[package]\nname = "alpha"\n', encoding="utf-8")
@@ -41,8 +38,8 @@ def test_selected_member_without_version_is_assigned_target_version(
         ),
     )
 
-    member_document = bump_toml_files.parse_manifest(alpha_manifest)
-    fixture_document = bump_toml_files.parse_manifest(case.fixtures[0])
+    member_document = bump_toml.parse_manifest(alpha_manifest)
+    fixture_document = bump_toml.parse_manifest(case.fixtures[0])
     assert member_document["package"]["version"] == "1.2.3", (
         "the member updater should add the requested version field"
     )

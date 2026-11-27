@@ -1112,6 +1112,31 @@ tests skip there; `make test` and CI still provision and verify it, and
 provisioning it in the mutation environment is part of
 [shared-actions#591](https://github.com/leynos/shared-actions/issues/591).
 
+## Bump preflight test infrastructure
+
+Command-level preflight tests drive `lading.cli` in process and assert that a
+rejected plan changes nothing.
+
+- `tests/helpers/fs_snapshot.py` records a non-following tree snapshot with
+  `scandir` and `lstat`. Symlinks record their target text rather than being
+  followed, and only regular files are opened, so a special file cannot block a
+  snapshot. `changed_paths` compares two snapshots.
+- `tests/helpers/recording_runner.py` journals every command, serves
+  `cargo metadata` and `cargo update` from a fixture, and reports Git discovery
+  as an empty tracked-lockfile set. Install it with
+  `runner.install(monkeypatch)`, which replaces `lading.cli._select_runner` for
+  the test.
+- `tests/helpers/bump_cli_workspace.py` materializes a real workspace and the
+  matching Cargo metadata payload, so the stub and the filesystem cannot drift
+  apart. Use `WorkspaceOptions` for members, a root package, README adoption,
+  documentation globs, and lockfile manifests.
+
+Place a valid member before each invalid input, snapshot the workspace and an
+external sentinel, and assert both are unchanged after the rejection. The
+real-Cargo lane in `tests/integration/test_bump_confinement_cargo.py` uses an
+isolated `CARGO_HOME` and `CARGO_NET_OFFLINE=true`; it is the evidence for the
+read-only `cargo metadata --no-deps` contract.
+
 ## Publish test infrastructure (`tests/unit/publish/conftest.py`)
 
 The publish unit-test conftest exports the following shared helpers:
@@ -1140,10 +1165,36 @@ parametrized and property-based tests that must exercise arbitrary chain sizes.
 
 ## Bump command internals
 
-`lading.commands.bump` coordinates manifest updates, documentation updates,
-README adoption, and lockfile reporting. Keep user-facing summary construction
-in `lading.commands.bump_output` rather than formatting messages inline in the
-workflow.
+`lading.commands.bump` coordinates a prepare-then-commit workflow. Keep
+user-facing summary construction in `lading.commands.bump_output` rather than
+formatting messages inline in the workflow.
+
+### Confinement preflight modules
+
+`lading/utils/confinement/` owns the shared filesystem policy. `errors` defines
+`BumpPreflightError` and its unsafe, examination, and missing-target subclasses;
+`patterns` validates workspace-relative patterns under POSIX and Windows
+spellings; `walk` performs the `lstat` component walk and canonical containment
+proof; `glob` expands patterns with `scandir` without following links. The
+package is bump-scoped by its error vocabulary, but the checking helpers hold
+no bump state and may be reused by another command that supplies its own error
+base. Callers import from the package root (`lading.utils.confinement`), not
+from the private modules.
+
+`lading/workspace/confined_discovery.py` owns bump discovery.
+`load_bump_workspace` validates the declared member and exclusion patterns
+before any Cargo invocation, calls `load_cargo_metadata` with `no_deps=True`,
+and validates every reported member manifest before `build_workspace_graph`
+reads it. Publish discovery is unchanged and continues to use
+`lading.workspace.load_workspace`.
+
+`lading/commands/bump_plan.py` owns the frozen `BumpPlan`/`PlannedWrite`
+models, the `PlanBuilder` proposal sink, the deterministic commit order, and the
+`BumpChanges` projection. `lading/commands/bump_prepare.py` owns preparation
+of manifests, documentation, and adopted READMEs. `bump_pipeline` only
+orchestrates: prepare, then commit, then regenerate. A new bump target kind
+must be added to preparation and to `commit_plan`, never written directly from
+a pipeline stage.
 
 `lading.commands.bump_output` is the sole owner of `BumpChanges` and all bump
 result-message formatting; `bump.py` imports these helpers and must not
@@ -1163,115 +1214,52 @@ spans are preserved verbatim.
 
 `lading.config_manifest_rewrites` owns the immutable records and strict schema
 for `bump.manifest_rewrites`. `lading.config_validation` provides shared TOML
-coercion, mapping-key validation, and selector-segment validation for
-configuration records.
+coercion, mapping-key validation, and selector-segment validation for those
+records.
 
-`lading.commands.manifest_paths.resolve_manifest_candidate` owns the shared
-workspace-containment and `Cargo.toml` filename check. The lockfile path module
-supplies its lockfile error type and label; the rewrite planner supplies its
-manifest-rewrite error type and label. File existence and regular-file checks
-remain with each caller.
+`lading.commands.bump_manifest_rewrite_filesystem` resolves the allowlist
+through `lading.utils.confinement`, skips the workspace and member manifests,
+and reads each selected manifest's UTF-8 text. It returns
+`ManifestRewriteSource` records and performs no TOML rewrite policy.
+`lading.commands.bump_manifest_rewrites` plans dependency and string-value
+edits from those records without filesystem access.
 
-`lading.commands.bump_manifest_rewrite_filesystem` resolves the allowlist,
-skips the workspace and member manifests, validates each candidate, and reads
-its UTF-8 text. It returns `ManifestRewriteSource` records and performs no TOML
-rewrite policy. `lading.commands.bump_manifest_rewrites` plans dependency and
-string-value edits from those records. It parses supplied TOML text but does
-not access the filesystem. `lading.commands.bump_toml_strings` owns traversal
-of direct and named-field string values in parsed TOML tables through
-`update_string_values`. It delegates value replacement and formatting
-preservation to `bump_toml`, and `bump_manifest_rewrite_strings` calls it.
-`lading.commands.bump_toml_types` owns the shared table-like type and runtime
-checks used by the TOML helpers. `bump_toml` and `bump_toml_dependencies`
-handle requirement composition, dependency aliases, and requirement replacement.
-`bump_docs_toml` reuses dependency traversal for top-level, workspace, and
-target-specific TOML tables. The rewrite planner parses supplied text with
-tomlkit directly; `bump_toml_files` owns manifest reads and atomic writes.
-`lading.commands.bump_manifest_rewrite_model` owns `ManifestRewritePlan`,
-`ManifestRewriteSource`, `ManifestRewriteVersions`, `ManifestRewriteError`, and
-`ManifestRewriteWriteError`; the records keep filesystem, planning, and
-application boundaries independent. The CLI logs structured completed/planned
-progress only for `ManifestRewriteWriteError` failures.
-`lading.commands.bump_manifest_rewrite_application` re-reads each manifest
-before writing and rejects a stale plan if its content changed. It then writes
-atomically with the planned source text as a final replacement precondition. A
-write failure carries its path and completed and planned counts; the CLI
-reports it in one structured error event.
-`lading.commands.bump_manifest_rewrite_metrics` records bounded outcome
-counters and rewrite-only duration observations.
-`lading.commands.bump_pipeline_manifest_sources` reads the pre-write workspace
-and member snapshots, derives effective package versions, and revalidates those
-versions before the first write. Each captured `[package].name` must also match
-workspace discovery, so a member renamed after discovery cannot pass as its
-former identity. It performs no writes.
-`lading.commands.bump_pipeline_manifest_rewrites` owns the configured rewrite
-pipeline stage. It plans the rewrites before the first write, then applies them
-after member manifests. If application fails, it restores a workspace or member
-manifest only while its current filesystem identity and contents still match
-the latest output written by this run. `bump_pipeline_manifest_recovery` owns
-callback registration, member-manifest revalidation, and rollback orchestration.
-`bump_pipeline_pending_reconciliation` reconciles pending writes after
-ordinary failures as well as interrupts, so a replacement that completed before
-its callback can be restored without claiming an edit this run did not make.
-The atomic writer records the temporary file identity at replacement in
-`AtomicWriteStatus`, so matching text without replacement evidence is never
-claimed as this process's write. Application reads each planned source through
-the bounded, non-blocking reader, so a destination replaced by a FIFO cannot
-block the workspace lock before the writer rejects it. A changed file is
-preserved and reported. Inspect and repair every reported recovery path before
-retrying. Recovery uses `bump_toml_files` for conditional atomic restoration
-writes. Before applying fixture plans, the pipeline repeats its post-bump
-version validation while holding the workspace lock through every configured
-non-member rewrite. A live bump holds that lock from rewrite planning until the
-last pipeline stage finishes, including rollback after a failed stage; dry runs
-write nothing and take no lock. A concurrent Lading bump or write therefore
-fails before changing a manifest instead of interleaving with this run.
-`bump_workspace_write_lock` coordinates workspace-bounded writes from Lading
-processes running as the same operating-system user, using a per-workspace
-advisory lock in a stable per-user state directory derived from the account's
-passwd entry rather than `HOME`. A POSIX host must provide a passwd entry for
-that account. Processes running as another user, editors and tools that ignore
-the lock are outside its guarantee. Nested atomic writes on the same thread
-reuse the outer lock, and bounded writers verify that the opened workspace
-directory still matches the identity used to select the lock. The lock identity
-is independent of process-specific `HOME` and `XDG_CACHE_HOME` values. External
-tools may ignore that lock and race the final comparison. Workspace-bounded
-writes require directory-relative no-follow operations. Non-dry-run
-`lading bump` checks this capability at command entry and fails with
-`LadingError` before loading Cargo workspace metadata when it is unavailable.
-Windows currently lacks the required operations; dry runs remain available. The
-atomic writer repeats the check before replacement and never uses an unpinned
-path fallback. The module derives pre-bump crate versions from the snapshots,
-so string matching does not rely on a stale `WorkspaceGraph`.
-`lading.commands.bump_pipeline` owns the overall pipeline order. Rewrite
-duration sums the planning and application intervals, including recovery on
-failure and excluding intervening stages. `BumpOptions.clock` supplies the
-monotonic clock; tests inject deterministic values.
+`lading.commands.bump_manifest_rewrite_strings` compiles configured templates,
+protects SemVer prerelease and build-metadata text, detects conflicting
+selectors, and applies one-pass selector snapshots. It uses
+`bump_toml.select_table` and `bump_toml.value_as_string` and retains each
+value's TOML style and trivia.
+`lading.commands.bump_manifest_rewrite_dependencies` matches dependency keys
+and their `package` aliases in direct, workspace, and target-specific sections.
+It replaces the first comparator and keeps later comma-separated comparators
+verbatim; `bump_toml` supplies the shared table and dependency vocabulary.
+`lading.commands.bump_manifest_rewrite_model` owns the planner's records and
+errors.
 
-`lading.utils.file_lock` provides the platform-specific non-blocking exclusive
-file-lock primitives used by `staging_lock` and `bump_workspace_write_lock`.
-Callers own lock-file placement, lifetime, and failure policy; the utility only
-selects the OS locking operation.
+`lading.commands.bump_prepare_manifest_rewrites.prepare_manifest_rewrites` is
+the pipeline adapter. It reads and plans configured sources, confines each
+planned destination, and proposes the complete new text on the bump plan as
+`WriteCategory.FIXTURE_MANIFEST`. `bump_plan` orders that category after the
+workspace and member manifests and before documentation, README, and lockfile
+work; fixture-only changes satisfy the manifest-change gate for lockfile
+regeneration and are reported in the manifest category. Preparation writes
+nothing. `commit_plan` performs the only writes, and a failure part-way leaves
+earlier writes in place; the workflow deliberately provides no rollback because
+every target and every replacement is validated before the first write.
 
-`lading.commands.bump_requirement_bounds.excluding_rewritten_first_bound`
-reports a strict first comparator after the bump substitutes the target version.
-`excluding_retained_bounds` reports understood later comparators that remain
-verbatim. `requirement_bound_warning` returns structured comparator details;
-each warning record groups all understood comparators that exclude the target
-for one requirement, and command layers log it once per affected dependency
-entry. `bump_toml_dependency_warnings.collect_dependency_section_warnings`
-gathers that data for TOML sections without mutation or logging. The manifest,
-documentation, and non-member rewrite command layers use
-`bump_toml_dependency_updates` to log those warnings before applying updates.
-The TOML helpers preserve the requirement's operators and later bounds.
-`bump.lockfile_manifests` remains a separate setting that adds
-lockfile-regeneration targets.
+`lading.commands.bump_manifest_rewrite_metrics` records bounded planning and
+commit outcome counters and durations. Rewrite failures surface as
+`ManifestRewriteError`; the CLI reports them as
+`Manifest rewrite error: <message>`.
 
-`lading.commands.bump_manifest_rewrite_dependencies` owns traversal of direct,
-target-specific, and workspace dependency sections. When a dependency entry sets
-`package`, that package name determines the crate; otherwise its table key
-does. The rewrite module leaves `[patch]` and `[replace]` tables to explicit
-string-value selectors.
+A live run holds `bump_workspace_write_lock.workspace_write_lock` from planning
+through commit and lockfile regeneration; dry runs take no lock. The lock is a
+per-workspace advisory lock in a stable per-user state directory derived from
+the account's passwd entry rather than `HOME`. A POSIX host must provide a
+passwd entry and a writable home for that account, or provision the derived
+private account-owned directory. Processes running as another user, editors and
+tools that ignore the lock are outside its guarantee. The lock is re-entrant on
+the thread that holds it.
 
 ### Lockfile regeneration modules
 
@@ -1291,10 +1279,19 @@ and re-exports the public lockfile helpers from three cohesive modules:
   and de-duplicates resolved paths. `resolve_lockfile_paths` projects that
   execution-ordered manifest tuple to the corresponding `Cargo.lock` paths
   without invoking Cargo.
-- `lading.commands.bump_lockfile_regeneration` owns `regenerate_lockfiles` and
-  its Cargo-execution helpers. `regenerate_lockfiles` uses the same validated,
-  root-first manifest order, attempts every Cargo update, returns successful
-  lockfile paths in execution order, and aggregates multi-manifest failures.
+- `lading.commands.bump_lockfile_planning` owns `LockfilePlan` and
+  `plan_lockfiles`. It validates configured and discovered manifests as
+  confined existing targets, asks Cargo with `--no-deps --manifest-path` for
+  each manifest's effective workspace root, and deduplicates the resulting
+  `Cargo.lock` destinations. It also rejects a non-empty
+  `CARGO_RESOLVER_LOCKFILE_PATH`.
+- `lading.commands.bump_lockfile_regeneration` owns `regenerate_lockfiles`,
+  `regenerate_planned`, and their Cargo-execution helpers.
+  `regenerate_lockfiles` uses the same validated, root-first manifest order,
+  attempts every Cargo update, returns successful lockfile paths in execution
+  order, and aggregates multi-manifest failures. `regenerate_planned` performs
+  the same attempt-all behaviour over a validated `LockfilePlan` without
+  rediscovery.
 
 For screen readers: the following flowchart traces `regenerate_lockfiles`. It
 resolves the manifest list, then initializes empty `lockfiles` and `failures`
@@ -1347,14 +1344,12 @@ introduced by issue #82: the bump domain never holds a raw command runner. When
 the field is `None`, bump uses `bump_lockfiles.CargoLockfileRepository`, the
 cargo- and git-backed adapter bound to the default subprocess runner; the CLI
 binds the adapter to its selected runner. The adapter merges configured
-manifests with manifests discovered from tracked lockfiles before either
-projecting dry-run paths or regenerating live lockfiles. In a non-Git
-workspace, discovery emits a warning and the adapter falls back to the
-configured manifests. Dry-run projection suppresses successful-discovery
-metrics and informational logging while retaining that warning and all
-discovery errors. Tests inject a repository (or bind the adapter to a recording
-runner) so lockfile commands can be observed without invoking real processes.
-The port's scope is bump-side lockfile projection and regeneration;
+manifests with manifests discovered from tracked lockfiles, then resolves each
+manifest's effective workspace root through Cargo before planning destinations.
+In a non-Git workspace, discovery emits a warning and the adapter falls back to
+the configured manifests. Tests inject a repository (or bind the adapter to a
+recording runner) so lockfile commands can be observed without invoking real
+processes. The port's scope is bump-side lockfile planning and regeneration;
 publish-side discovery and validation go through the sibling
 `lockfile_repository.LockfileInspectionRepository` port (see the Lockfile
 helpers section below), so neither the bump nor the publish lockfile domain
@@ -1362,8 +1357,8 @@ holds a raw `CommandRunner` (issue #82).
 
 Bump-time crate-set derivation is centralized in the bump context: the
 `excluded` and `updated_crate_names` sets are computed exactly once in
-`bump._initialize_bump_context` and threaded to downstream helpers such as
-`_update_crate_manifest`. Helpers must consume the context sets rather than
+`bump._initialize_bump_context` and threaded to preparation through
+`bump_prepare`. Preparation must consume the context sets rather than
 re-deriving them per crate, which would make manifest processing quadratic in
 workspace size.
 
@@ -1376,8 +1371,8 @@ coalescing.)
 
 Bump-time crate-set derivation is centralized in the bump context: the
 `excluded` and `updated_crate_names` sets are computed exactly once in
-`bump._initialize_bump_context` and threaded to downstream helpers such as
-`_update_crate_manifest`. Helpers must consume the context sets rather than
+`bump._initialize_bump_context` and threaded to preparation through
+`bump_prepare`. Preparation must consume the context sets rather than
 re-deriving them per crate, which would make manifest processing quadratic in
 workspace size.
 
@@ -1386,10 +1381,10 @@ workspace size.
 updates. The output formatter labels these paths as `(lockfile)` so operators
 can see which generated files need review and commit.
 
-`lading.commands.bump_toml_dependencies.DEPENDENCY_SECTIONS` is the canonical
-vocabulary of Cargo dependency-section names (`dependencies`,
-`dev-dependencies`, and `build-dependencies`). Modules that iterate dependency
-sections (`bump_docs.update_toml_snippet_dependencies`,
+`lading.commands.bump_toml.DEPENDENCY_SECTIONS` is the canonical vocabulary of
+Cargo dependency-section names (`dependencies`, `dev-dependencies`, and
+`build-dependencies`). Modules that iterate dependency sections
+(`bump_docs.update_toml_snippet_dependencies`,
 `bump._workspace_dependency_sections`) or map dependency kinds to sections
 (`bump._DEPENDENCY_SECTION_BY_KIND`) must derive from this constant rather than
 re-declaring the literals, so a change to the recognized section set is made in
@@ -1619,8 +1614,8 @@ _run_with_context(
 data. It resolves configuration once: it first tries
 `config.current_configuration()`, the already-installed context-var
 configuration that `main()` sets up. If that raises
-`lading.exceptions.ConfigurationNotLoadedError` — for example, when a command
-is invoked programmatically via `cli.app` without a preloaded scope — it loads
+`config.ConfigurationNotLoadedError` — for example, when a command is invoked
+programmatically via `cli.app` without a preloaded scope — it loads
 configuration from disk with `config.load_configuration(workspace_root)` and
 installs it under a fresh `config.use_configuration(...)` scope. When
 configuration is already active, a `nullcontext()` stands in for that scope, so
@@ -1645,20 +1640,18 @@ Every root domain exception should inherit from `LadingError`. More specific
 exceptions should continue to inherit from the local root for their feature
 area so existing handling remains precise:
 
-| Root exception              | Module                                        | Notes                                                                                                                                                                             |
-| --------------------------- | --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ConfigurationError`        | `lading.exceptions`                           | Base for configuration loading and validation failures.                                                                                                                           |
-| `WorkspaceModelError`       | `lading.workspace.models`                     | Base for workspace graph/model validation failures.                                                                                                                               |
-| `CargoMetadataError`        | `lading.workspace.metadata`                   | Base for cargo metadata execution and parsing failures.                                                                                                                           |
-| `CommandSpawnError`         | `lading.runtime.subprocess_runner`            | Raised when the subprocess runner cannot spawn an external command.                                                                                                               |
-| `LockfileDiscoveryError`    | `lading.commands.lockfile`                    | Raised when git cannot list tracked lockfiles.                                                                                                                                    |
-| `LockfileRegenerationError` | `lading.commands.bump_lockfiles`              | Raised when configured bump lockfile manifests are invalid or `cargo update --workspace` fails.                                                                                   |
-| `ManifestRewriteError`      | `lading.commands.bump_manifest_rewrite_model` | Raised when a configured non-member manifest cannot be selected, read, parsed, or applied.                                                                                        |
-| `ManifestRewriteWriteError` | `lading.commands.bump_manifest_rewrite_model` | Raised when an atomic write fails; it carries the failed path and write progress, including a workspace rollback failure and a replacement that persisted before a later failure. |
-| `PublishPlanError`          | `lading.commands.publish_plan`                | Raised when a publish plan cannot be constructed.                                                                                                                                 |
-| `ReadmeTranspositionError`  | `lading.commands.bump_readme`                 | Raised when the workspace README cannot be transposed into a crate during `lading bump`.                                                                                          |
-| `PublishPreparationError`   | `lading.commands.publish_manifest`            | Raised when staged publish manifests or workspace assets cannot be prepared.                                                                                                      |
-| `PublishPreflightError`     | `lading.commands.publish_errors`              | Raised for local publish validation and pre-flight failures.                                                                                                                      |
+| Root exception              | Module                             | Notes                                                                                           |
+| --------------------------- | ---------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `ConfigurationError`        | `lading.config`                    | Base for configuration loading and validation failures.                                         |
+| `WorkspaceModelError`       | `lading.workspace.models`          | Base for workspace graph/model validation failures.                                             |
+| `CargoMetadataError`        | `lading.workspace.metadata`        | Base for cargo metadata execution and parsing failures.                                         |
+| `CommandSpawnError`         | `lading.runtime.subprocess_runner` | Raised when the subprocess runner cannot spawn an external command.                             |
+| `LockfileDiscoveryError`    | `lading.commands.lockfile`         | Raised when git cannot list tracked lockfiles.                                                  |
+| `LockfileRegenerationError` | `lading.commands.bump_lockfiles`   | Raised when configured bump lockfile manifests are invalid or `cargo update --workspace` fails. |
+| `PublishPlanError`          | `lading.commands.publish_plan`     | Raised when a publish plan cannot be constructed.                                               |
+| `ReadmeTranspositionError`  | `lading.commands.bump_readme`      | Raised when the workspace README cannot be transposed into a crate during `lading bump`.        |
+| `PublishPreparationError`   | `lading.commands.publish_manifest` | Raised when staged publish manifests or workspace assets cannot be prepared.                    |
+| `PublishPreflightError`     | `lading.commands.publish_errors`   | Raised for local publish validation and pre-flight failures.                                    |
 
 Domain ownership: README transposition failures during `lading bump` are owned
 by the bump domain (`ReadmeTranspositionError`); publish staging failures are
@@ -1732,18 +1725,18 @@ canonical replacement callers and tests now use directly:
 _Table 1: Compatibility shims removed by the issue `#163` sweep and their
 canonical replacements._
 
-| Removed shim                                                                                                                                                                                                                                                                                                                                                          | Location                            | Canonical replacement                                                                                                                                                                                                                         |
-| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Eleven `publish_preflight` private aliases (`_preflight_argument_sets`, `_CargoPreflightOptions`, `_apply_compiletest_externs`, `_build_preflight_environment`, `_build_test_arguments`, `_compose_preflight_arguments`, `_normalize_test_excludes`, `_run_aux_build_commands`, `_run_cargo_preflight`, `_validate_lockfile_freshness`, `_verify_clean_working_tree`) | `publish.py`                        | `lading.commands.publish_preflight` (patch/call the defining module directly)                                                                                                                                                                 |
-| `_validate_lockfile_freshness` re-export                                                                                                                                                                                                                                                                                                                              | `publish.py`                        | `lading.commands.publish_lockfile_preflight` (patch/call the defining module directly)                                                                                                                                                        |
-| `_run_preflight_checks` thin wrapper                                                                                                                                                                                                                                                                                                                                  | `publish.py`                        | `publish_preflight._run_preflight_checks` (called directly by `run()`)                                                                                                                                                                        |
-| Re-exports `_append_section`, `_format_plan`                                                                                                                                                                                                                                                                                                                          | `publish.py`                        | `publish_plan.append_section`, `publish_plan.format_plan`                                                                                                                                                                                     |
-| Re-export `metadata_module`                                                                                                                                                                                                                                                                                                                                           | `publish.py`                        | `lading.workspace.metadata`                                                                                                                                                                                                                   |
-| Re-export `StripPatchesSetting`                                                                                                                                                                                                                                                                                                                                       | `publish.py`                        | `lading.config.StripPatchesSetting`                                                                                                                                                                                                           |
-| Six `bump_toml` re-exports (`_parse_manifest`, `_select_table`, `_assign_version`, `_value_matches`, `_update_dependency_sections`, `_update_dependency_table`)                                                                                                                                                                                                       | `bump.py`, then `bump_manifests.py` | `lading.commands.bump_toml` (`select_table`, `assign_version`, `value_matches`), `lading.commands.bump_toml_files` (`parse_manifest`), and `lading.commands.bump_toml_dependencies` (`update_dependency_sections`, `update_dependency_table`) |
-| `_log = LOGGER` alias                                                                                                                                                                                                                                                                                                                                                 | `bump.py`                           | the module-level `LOGGER`                                                                                                                                                                                                                     |
-| Private `_append_section` / `_format_plan`                                                                                                                                                                                                                                                                                                                            | `publish_plan.py`                   | renamed to public `append_section` / `format_plan`                                                                                                                                                                                            |
-| `split_command` / `_split_command` wrapper                                                                                                                                                                                                                                                                                                                            | `publish_execution.py`              | `lading.runtime.subprocess_runner.split_command`                                                                                                                                                                                              |
+| Removed shim                                                                                                                                                                                                                                                                                                                                                          | Location                            | Canonical replacement                                                                                                                                      |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Eleven `publish_preflight` private aliases (`_preflight_argument_sets`, `_CargoPreflightOptions`, `_apply_compiletest_externs`, `_build_preflight_environment`, `_build_test_arguments`, `_compose_preflight_arguments`, `_normalize_test_excludes`, `_run_aux_build_commands`, `_run_cargo_preflight`, `_validate_lockfile_freshness`, `_verify_clean_working_tree`) | `publish.py`                        | `lading.commands.publish_preflight` (patch/call the defining module directly)                                                                              |
+| `_validate_lockfile_freshness` re-export                                                                                                                                                                                                                                                                                                                              | `publish.py`                        | `lading.commands.publish_lockfile_preflight` (patch/call the defining module directly)                                                                     |
+| `_run_preflight_checks` thin wrapper                                                                                                                                                                                                                                                                                                                                  | `publish.py`                        | `publish_preflight._run_preflight_checks` (called directly by `run()`)                                                                                     |
+| Re-exports `_append_section`, `_format_plan`                                                                                                                                                                                                                                                                                                                          | `publish.py`                        | `publish_plan.append_section`, `publish_plan.format_plan`                                                                                                  |
+| Re-export `metadata_module`                                                                                                                                                                                                                                                                                                                                           | `publish.py`                        | `lading.workspace.metadata`                                                                                                                                |
+| Re-export `StripPatchesSetting`                                                                                                                                                                                                                                                                                                                                       | `publish.py`                        | `lading.config.StripPatchesSetting`                                                                                                                        |
+| Six `bump_toml` re-exports (`_parse_manifest`, `_select_table`, `_assign_version`, `_value_matches`, `_update_dependency_sections`, `_update_dependency_table`)                                                                                                                                                                                                       | `bump.py`, then `bump_manifests.py` | `lading.commands.bump_toml` (`parse_manifest`, `select_table`, `assign_version`, `value_matches`, `update_dependency_sections`, `update_dependency_table`) |
+| `_log = LOGGER` alias                                                                                                                                                                                                                                                                                                                                                 | `bump.py`                           | the module-level `LOGGER`                                                                                                                                  |
+| Private `_append_section` / `_format_plan`                                                                                                                                                                                                                                                                                                                            | `publish_plan.py`                   | renamed to public `append_section` / `format_plan`                                                                                                         |
+| `split_command` / `_split_command` wrapper                                                                                                                                                                                                                                                                                                                            | `publish_execution.py`              | `lading.runtime.subprocess_runner.split_command`                                                                                                           |
 
 #### Retained boundaries
 
@@ -2091,7 +2084,7 @@ publish phases and makes snapshot testing straightforward.
 mapping coercion helpers shared by `lading.config` and
 `lading.workspace.models`. Each helper takes an `error` keyword naming the
 `LadingError` subclass to raise, and both consumers bind their domain error
-type once with `functools.partial` (`ConfigurationError` in `lading.exceptions`,
+type once with `functools.partial` (`ConfigurationError` in `config`,
 `WorkspaceModelError` in `models`); neither module re-declares a coercer. The
 canonical error-message shape is
 `{field} must be {expected}; received {type(value).__name__}.` and is pinned by
@@ -2102,27 +2095,17 @@ property and snapshot tests in `tests/unit/test_toml_coerce.py`.
 To keep source files within the 400-line guideline, the following
 responsibilities live in dedicated modules, imported by their original homes:
 
-- `lading.commands.bump_toml_dependencies` — dependency-entry traversal and
-  updates for manifests; it uses TOML value and table helpers from `bump_toml`.
-- `lading.commands.bump_toml_dependency_warnings` — read-only collection of
-  comparator warnings for selected dependency entries and sections.
-- `lading.commands.bump_toml_dependency_updates` — shared command-layer
-  orchestration that logs collected warnings before applying updates for
-  workspace manifests, documentation snippets, and configured fixtures.
-- `lading.commands.bump_docs_toml` — package and dependency version rewrites in
-  parsed TOML snippets; `bump_docs` owns Markdown fence processing and
-  re-exports these transformation functions.
 - `lading.commands.bump_manifests` — per-manifest version and
   dependency-section rewriting plus the `_BumpContext` construction contract
   (imported by `bump`).
 - `lading.commands.bump_pipeline` — bump run-sequence orchestration across
   manifests, documentation, readmes, and lockfiles (imported by `bump`).
-- `lading.commands.bump_pipeline_manifest_rewrites` — planning, application,
-  and workspace-manifest recovery for configured non-member rewrites.
-- `lading.commands.bump_pipeline_manifest_recovery` — callback registration,
-  member-manifest revalidation, and rollback orchestration for those rewrites.
-- `lading.commands.bump_pipeline_pending_reconciliation` — decides whether a
-  prepared replacement reached disk before its completion callback.
+- `lading.commands.bump_manifest_rewrite_filesystem` — confined resolution,
+  member filtering, and UTF-8 reads for configured rewrite manifests.
+- `lading.commands.bump_manifest_rewrites` — dependency and string-value
+  rewrite planning without filesystem access.
+- `lading.commands.bump_prepare_manifest_rewrites` — prepares confined fixture
+  rewrites as `FIXTURE_MANIFEST` proposals on the bump plan.
 - `lading.commands.publish_pipeline` — per-crate package and publish execution,
   result handling, and live/dry-run dispatch (imported by `publish`).
 - `lading.commands.publish_staging` — workspace copy preparation, cleanup, and
@@ -2134,6 +2117,13 @@ responsibilities live in dedicated modules, imported by their original homes:
   validation, and public compatibility aliases for CLI annotations (re-exported
   by `cli`). Runtime CLI signatures keep their `Annotated` metadata inline
   because Cyclopts does not unwrap PEP 695 aliases while constructing options.
+- `lading.cli_app` — the shared `cyclopts.App` instance, imported by both the
+  command adapters in `cli` and the process entry point.
+- `lading.cli_helpers` — workspace-override parsing, tri-state flag labelling,
+  dispatch-token recording, and logging setup (re-exported by `cli`).
+- `lading.cli_entrypoint` — process startup, configuration loading, dispatch,
+  and translation of preflight and workspace failures into exit codes (imported
+  by `cli`).
 
 ### In-process metrics (`lading.utils.metrics`)
 
@@ -2151,19 +2141,17 @@ rather than bucketed.
 
 Defined metrics:
 
-| Metric                           | Labels                                          | Incremented when                                                                                                                                                                                                                                 |
-| -------------------------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `publish.index_lookup_downgrade` | `subcommand`, `missing_crate`                   | `_handle_index_missing_version` downgrades a crates.io index-lookup failure to a warning (in-plan, override enabled).                                                                                                                            |
-| `lockfile.discovered`            | (none)                                          | Incremented by tracked-lockfile count when discovery observability is enabled; dry-run bump projection suppresses it.                                                                                                                            |
-| `lockfile.discovery.failed`      | `reason`                                        | Incremented once per failed tracked-lockfile discovery; `reason` is `not_git` or `git_error`. Failure counting ignores the discovery observability switch, which suppresses success telemetry only.                                              |
-| `lockfile.regenerate`            | `outcome`, `cause`                              | Incremented per successful or failed lockfile regeneration; `cause` is `none`, `validation`, `command_spawn`, `runner_value`, or `cargo_exit`.                                                                                                   |
-| `lockfile.regenerate.duration`   | (none)                                          | Total duration observation around each lockfile-regeneration run.                                                                                                                                                                                |
-| `lockfile.validate`              | `outcome`                                       | One increment per `validate_lockfile_freshness` call; `outcome` is `fresh`, `stale`, or `failed`.                                                                                                                                                |
-| `lockfile.validate.duration`     | (none)                                          | Duration observation around each `cargo metadata --locked` probe.                                                                                                                                                                                |
-| `bump.manifest_rewrite.run`      | `phase`, `outcome`, `dry_run`, `error_category` | One increment for each planning or application outcome; labels use finite values documented in the users' guide.                                                                                                                                 |
-| `bump.manifest_rewrite.duration` | `outcome`, `dry_run`, `error_category`          | Planning time on planning failures; planning plus application when that stage runs, including application failures. No duration if a member or workspace write fails between stages.                                                             |
-| `publish.cargo.duration`         | `subcommand`, `crate`                           | One duration observation per `cargo package` or `cargo publish` invocation in the publish pipeline, successful or not (issue #251).                                                                                                              |
-| `publish.sccache.query`          | `outcome`                                       | One increment per sccache statistics query while instrumentation is on (`--sccache-stats`, or a `--sccache-stats-json` path, which implies it); `outcome` is `success` or `failure` (issue [#252](https://github.com/leynos/lading/issues/252)). |
+| Metric                           | Labels                        | Incremented when                                                                                                                                                                                                                                 |
+| -------------------------------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `publish.index_lookup_downgrade` | `subcommand`, `missing_crate` | `_handle_index_missing_version` downgrades a crates.io index-lookup failure to a warning (in-plan, override enabled).                                                                                                                            |
+| `lockfile.discovered`            | (none)                        | Incremented by tracked-lockfile count when discovery observability is enabled; dry-run bump projection suppresses it.                                                                                                                            |
+| `lockfile.discovery.failed`      | `reason`                      | Incremented once per failed tracked-lockfile discovery; `reason` is `not_git` or `git_error`. Failure counting ignores the discovery observability switch, which suppresses success telemetry only.                                              |
+| `lockfile.regenerate`            | `outcome`, `cause`            | Incremented per successful or failed lockfile regeneration; `cause` is `none`, `validation`, `command_spawn`, `runner_value`, or `cargo_exit`.                                                                                                   |
+| `lockfile.regenerate.duration`   | (none)                        | Total duration observation around each lockfile-regeneration run.                                                                                                                                                                                |
+| `lockfile.validate`              | `outcome`                     | One increment per `validate_lockfile_freshness` call; `outcome` is `fresh`, `stale`, or `failed`.                                                                                                                                                |
+| `lockfile.validate.duration`     | (none)                        | Duration observation around each `cargo metadata --locked` probe.                                                                                                                                                                                |
+| `publish.cargo.duration`         | `subcommand`, `crate`         | One duration observation per `cargo package` or `cargo publish` invocation in the publish pipeline, successful or not (issue #251).                                                                                                              |
+| `publish.sccache.query`          | `outcome`                     | One increment per sccache statistics query while instrumentation is on (`--sccache-stats`, or a `--sccache-stats-json` path, which implies it); `outcome` is `success` or `failure` (issue [#252](https://github.com/leynos/lading/issues/252)). |
 
 Duration metrics aggregate a count and total seconds per label set via
 `observe_duration` / `duration_stats` and appear in the exit summary with

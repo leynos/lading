@@ -1,7 +1,5 @@
 """Pipeline coverage for fixture-only non-member manifest changes."""
 
-import collections.abc as cabc
-import pathlib
 import typing as typ
 from unittest import mock
 
@@ -9,20 +7,15 @@ import msgspec
 import pytest
 
 from lading import config as config_module
-from lading.commands import (
-    bump,
-    bump_manifest_rewrite_application,
-    bump_toml_files,
-)
+from lading.commands import bump, bump_pipeline
 from lading.config import ManifestRewriteConfig
 from tests.helpers.recording_lockfile_repository import RecordingLockfileRepository
 from tests.helpers.workspace_builders import _make_workspace
 
 if typ.TYPE_CHECKING:
-    from lading.commands.bump_manifest_rewrite_application import (
-        _ManifestRewriteWriteCallbacks,
-    )
-    from lading.commands.bump_manifest_rewrite_model import ManifestRewritePlan
+    import pathlib
+
+    from lading.commands.bump_plan import BumpPlan
 
 pytestmark = pytest.mark.usefixtures("reset_process_metrics")
 
@@ -31,8 +24,6 @@ def test_fixture_only_change_triggers_lockfile_regeneration(
     tmp_path: pathlib.Path,
 ) -> None:
     """A rewritten fixture alone opens the lockfile regeneration gate."""
-    if not bump_toml_files._supports_bounded_directory_operations():
-        pytest.skip("the bounded atomic writer is unavailable")
     workspace = _make_workspace(tmp_path)
     root_manifest = tmp_path / "Cargo.toml"
     member_manifests = tuple(
@@ -105,8 +96,6 @@ def test_report_keeps_planned_path_if_parent_becomes_symlink(
     tmp_path: pathlib.Path,
 ) -> None:
     """Reporting does not re-resolve a manifest after its write completes."""
-    if not bump_toml_files._supports_bounded_directory_operations():
-        pytest.skip("the bounded atomic writer is unavailable")
     workspace = _make_workspace(tmp_path)
     configured_directory = tmp_path / "tests/fixtures/configured"
     configured_directory.mkdir(parents=True)
@@ -121,30 +110,18 @@ def test_report_keeps_planned_path_if_parent_becomes_symlink(
             manifest_rewrites=(ManifestRewriteConfig(paths=(configured_path,)),)
         )
     )
-    apply_manifest_rewrites = bump_manifest_rewrite_application.apply_manifest_rewrites
+    original_commit = bump_pipeline.commit_plan
 
-    def rewrite_then_redirect(
-        plans: cabc.Sequence[ManifestRewritePlan],
-        *,
-        workspace_root: pathlib.Path,
-        dry_run: bool,
-        write_callbacks: _ManifestRewriteWriteCallbacks | None = None,
-    ) -> tuple[pathlib.Path, ...]:
-        """Write the plan, then redirect its parent before reporting."""
-        rewritten_paths = apply_manifest_rewrites(
-            plans,
-            workspace_root=workspace_root,
-            dry_run=dry_run,
-            write_callbacks=write_callbacks,
-        )
+    def commit_then_redirect(plan: BumpPlan) -> None:
+        """Commit the plan, then redirect its parent before reporting."""
+        original_commit(plan)
         configured_directory.rename(archived_directory)
         configured_directory.symlink_to(redirected_directory, target_is_directory=True)
-        return rewritten_paths
 
     with mock.patch.object(
-        bump_manifest_rewrite_application,
-        "apply_manifest_rewrites",
-        side_effect=rewrite_then_redirect,
+        bump_pipeline,
+        "commit_plan",
+        side_effect=commit_then_redirect,
     ) as patched_apply:
         message = bump.run(
             tmp_path,

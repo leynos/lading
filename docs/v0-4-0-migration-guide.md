@@ -1,200 +1,13 @@
-# Lading 0.4.0 migration guide
+# Migration guide: v0.3.1 to v0.4.0
 
 Lading 0.4.0 raises the interpreter floor from CPython 3.13 to CPython 3.14. It
 also makes the command-line boundary explicit: diagnostics that an earlier
 dependency rendered on stdout are now written to stderr, and command summaries
-are printed once, unwrapped and without colour. The release adds the opt-in
-`bump.manifest_rewrites` setting for updating configured non-member manifests
-during `lading bump`. It defaults to `[]`; configured non-member manifests are
-rewritten only when this setting is enabled. See the
-[bump configuration reference](users-guide.md#bump) for its fields and
-behaviour.
-
-The command-line flags and existing `lading.toml` key syntax remain compatible
-with 0.3.x; this release adds the opt-in `bump.manifest_rewrites` key described
-above. Compound dependency requirement rewriting changes for workspace-member
-manifests and for non-member manifests selected by `bump.manifest_rewrites`.
-The Python API adds `DocumentationTargets` and changes the documentation
-helpers to carry workspace-bound paths; callers of those helpers must adapt.
-`BumpConfig.manifest_rewrites` is new, and `lading.config_manifest_rewrites` and
-`lading.config_validation` support its configuration. `BumpOptions.clock` adds
-an injectable rewrite timer, and
-`lading.commands.manifest_paths.resolve_manifest_candidate` is available to
-manifest-path consumers. `lading.commands.bump_manifest_rewrites` exports
-`ManifestRewriteError`, `ManifestRewritePlan` and `ManifestRewriteVersions`.
-The internal `parse_manifest` and `write_atomic_text` helpers moved from
-`lading.commands.bump_toml` to `lading.commands.bump_toml_files`. The
-`DEPENDENCY_SECTIONS`, `assign_dependency_version_field`,
-`update_dependency_entry`, `update_dependency_sections`,
-`update_dependency_table` and `update_section` helpers moved to
-`lading.commands.bump_toml_dependencies`. Update imports if your tooling uses
-them.
-
-## Impact at a glance
-
-| Change                       | Obligation         | Action                                                               |
-| ---------------------------- | ------------------ | -------------------------------------------------------------------- |
-| Python interpreter floor     | Required           | Use Python 3.14 or later to install 0.4.0.                           |
-| Moved helper imports         | Required if called | Update imports if your code uses the moved helpers.                  |
-| Diagnostic output stream     | Required if called | Read stderr if scripts expect diagnostics on stdout.                 |
-| Compound requirements        | Recommended        | Review and resolve warnings when bounds exclude the target.          |
-| `bump.manifest_rewrites`     | Optional           | Enable it for configured non-member manifests.                       |
-| Bounded `lading bump` writes | Required when used | Use a platform supporting directory-relative no-follow operations.   |
-| Documentation helpers        | Required if called | Iterate `targets.paths`; pass `DocumentationTargets` to the updater. |
-
-_Table 1: Migration actions by change._
-
-## 1. Upgrading
-
-Upgrade the interpreter first, then the package, so that the installer's
-constraint is satisfied at the moment it is checked.
-
-<!-- tested-example: v0-4-0-upgrade-uv -->
-
-```bash
-# Substitute the tool that manages your interpreter.
-uv python install 3.14
-uv python pin 3.14
-
-# In the existing [project] table in pyproject.toml, set:
-# requires-python = ">=3.14"
-
-# Then move the package itself.
-uv add lading==0.4.0
-```
-
-A project using `pip` and a virtual environment follows the same order:
-
-<!-- tested-example: v0-4-0-upgrade-venv -->
-
-```bash
-python3.14 -m venv .venv
-.venv/bin/python -m pip install lading==0.4.0
-```
-
-If the interpreter cannot be moved yet, pin Lading below the floor and defer
-the upgrade. Workspaces affected by versioned non-member path dependencies can
-also benefit from 0.4.0's configured manifest rewrite workflow once the
-affected manifests are listed in `bump.manifest_rewrites`:
-
-<!-- tested-example: v0-4-0-pin-before-floor -->
-
-```bash
-uv add 'lading<0.4.0'
-```
-
-## 2. Import migration
-
-### File helpers
-
-#### Before: file helpers
-
-Before 0.4.0, import these helpers from `lading.commands.bump_toml`. This
-historical import is expected to raise `ImportError` on 0.4.0.
-
-<!-- tested-example: v0-4-0-helper-import-before -->
-
-```python
-from lading.commands.bump_toml import parse_manifest, write_atomic_text
-```
-
-#### After: file helpers
-
-<!-- tested-example: v0-4-0-helper-import-after -->
-
-```python
-from lading.commands.bump_toml_files import parse_manifest, write_atomic_text
-```
-
-### Dependency helpers
-
-#### Before: dependency helpers
-
-Before 0.4.0, import these dependency helpers from `lading.commands.bump_toml`.
-This historical import is expected to raise `ImportError` on 0.4.0.
-
-<!-- tested-example: v0-4-0-dependency-import-before -->
-
-```python
-from lading.commands.bump_toml import (
-    DEPENDENCY_SECTIONS,
-    assign_dependency_version_field,
-    update_dependency_entry,
-    update_dependency_sections,
-    update_dependency_table,
-    update_section,
-)
-```
-
-#### After: dependency helpers
-
-<!-- tested-example: v0-4-0-dependency-import-after -->
-
-```python
-from lading.commands.bump_toml_dependencies import (
-    DEPENDENCY_SECTIONS,
-    assign_dependency_version_field,
-    update_dependency_entry,
-    update_dependency_sections,
-    update_dependency_table,
-    update_section,
-)
-```
-
-### Documentation target migration
-
-`resolve_documentation_targets` now returns a `DocumentationTargets` record
-that carries the workspace root with the selected paths. Iterate through
-`targets.paths`. Direct callers that assemble path lists must construct the
-record before calling `update_documentation_files`; this lets the updater
-enforce the workspace boundary for both configured and direct targets. Each
-entry is a final file path, not a workspace-relative path. Relative entries are
-resolved from the current working directory before the containment check, so
-build direct entries as `workspace_root / "README.md"`; the updater does not
-prefix the workspace root a second time.
-
-#### Before: tuple-based documentation targets
-
-<!-- tested-example: v0-4-0-doc-targets-before -->
-
-```python
-targets = resolve_documentation_targets(workspace_root, documentation)
-for path in targets:
-    print(path)
-update_documentation_files(
-    targets, target_version, updated_crates, dry_run=False
-)
-```
-
-#### After: workspace-bound documentation targets
-
-<!-- tested-example: v0-4-0-doc-targets-after -->
-
-```python
-from lading.commands.bump_docs import (
-    DocumentationTargets,
-    resolve_documentation_targets,
-    update_documentation_files,
-)
-
-targets = resolve_documentation_targets(workspace_root, documentation)
-for path in targets.paths:
-    print(path)
-
-paths = (workspace_root / "README.md",)
-direct_targets = DocumentationTargets(workspace_root, paths)
-update_documentation_files(
-    direct_targets, target_version, updated_crates, dry_run=False
-)
-```
-
-`ConfigurationError` and `ConfigurationNotLoadedError` now live in
-`lading.exceptions` and remain importable from `lading.config`. An environment
-already running 3.14 needs no interpreter-floor adaptation. When using
-`lading bump`, run it on a platform that supports directory-relative file
-operations and no-follow opens for bounded manifest writes. A non-dry-run bump
-checks this at command entry and fails with a clear error if those operations
-are unavailable; Windows currently lacks them. Dry runs remain available.
+are printed once, unwrapped and without colour. Existing flags and
+`lading.toml` keys keep their meaning; the release adds the opt-in
+`[[bump.manifest_rewrites]]` allowlist and additive Python modules. An
+environment already running 3.14 that only reads successful output needs no
+action beyond the version bump itself.
 
 When 0.4.0 is released, its tagged build will also be published to PyPI as a
 source distribution and pure-Python wheel. GitHub Releases will retain both
@@ -208,10 +21,23 @@ fallback and disablement decisions without including child-process output. This
 adds no configuration or invocation change; see
 [Observability](users-guide.md#observability) for the event contract.
 
+Lading 0.4.0 adds an optional `[[bump.manifest_rewrites]]` allowlist for
+selected non-member Cargo manifests. When configured, `lading bump` updates
+matching dependency requirements and version-bearing TOML strings before
+lockfile regeneration. The setting is empty by default, and a configuration
+that does not use it keeps its previous bump behaviour. Configuration errors
+for these records are reported as `ConfigurationError` and remain importable
+from `lading.config`; the records and validation helpers are also available
+from the new `lading.config_manifest_rewrites` module. See
+[Rewriting configured non-member manifests](users-guide.md#rewriting-configured-non-member-manifests).
+
 The number is derived rather than announced: 0.3.1 is the most recent release,
 and a breaking change under pre-1.0 semantic versioning advances the minor
-component, so the next tag from this tree is 0.4.0. If the floor change is
-scheduled into a later release, the content below applies to that release
+component, so the next final tag from this tree is 0.4.0. The documented
+release procedure defers a final 0.x release until cuprum 0.2.0 final is
+available, so the bump confinement change ships first in the `0.4.0b1`
+pre-release; the migration content below applies to both. If the floor change
+is scheduled into a later release, the content below applies to that release
 unchanged.
 
 The release is the first whose wheel is built under 3.14, and the first whose
@@ -220,50 +46,120 @@ decision, recorded below.
 
 ## Who is affected
 
-| Your environment        | Action required                                    |
-| ----------------------- | -------------------------------------------------- |
-| CPython 3.14 or later   | None; upgrade as usual.                            |
-| CPython 3.13            | Upgrade the interpreter, or remain on 0.3.1.       |
-| CPython 3.12 or earlier | Upgrade the interpreter; 0.3.1 also required 3.13. |
+| Your environment                                                       | Action required                                             |
+| ---------------------------------------------------------------------- | ----------------------------------------------------------- |
+| CPython 3.14 or later, confined workspace                              | None; upgrade as usual.                                     |
+| CPython 3.14 or later, script reads diagnostics from stdout            | Required: read diagnostics from stderr instead.             |
+| CPython 3.14 or later, symlinked member or escaping documentation glob | Required: make the member or glob real, or remain on 0.3.1. |
+| CPython 3.14 or later, unreadable documentation file                   | Required: make the file readable and decodable.             |
+| CPython 3.14 or later, symlinked or non-regular README target          | Required: replace it with a regular file.                   |
+| CPython 3.14 or later, hard-linked write target                        | Required: replace it with an independent copy of the file.  |
+| CPython 3.14 or later, invalid configured lockfile manifest            | Required: make it an existing, confined `Cargo.toml`.       |
+| CPython 3.14 or later, invalid implicit member manifest                | Required: make the path dependency real and regular.        |
+| CPython 3.14 or later, Cargo lockfile-path override                    | Required, with regeneration enabled: unset the variable.    |
+| CPython 3.13                                                           | Required: upgrade the interpreter, or remain on 0.3.1.      |
+| CPython 3.12 or earlier                                                | Required: upgrade the interpreter; 0.3.1 required 3.13.     |
 
-_Table 2: Required action by interpreter version._
+_Table 1: Required action by interpreter version and workspace shape._
 
-Only the interpreter-floor change requires an environment migration. The
-command-line stream change described below needs no environment work, though a
-script that reads diagnostics from stdout must read stderr instead. A project
-pinned to a Lading version through a lockfile keeps that version until the
-lockfile is regenerated, so the floor bites when the pin is moved rather than
-when this release is published.
+Three changes require action. The interpreter floor requires an environment
+migration. A workspace that relies on a symlinked member or an escaping
+documentation glob must be corrected, as described under
+[Bump confinement preflight](#1-make-bump-write-targets-confined-and-regular);
+such a workspace fails the same way on any interpreter. A script that reads
+diagnostics from stdout should read stderr instead, because diagnostics moved
+there. A project pinned to a Lading version through a lockfile keeps that
+version until the lockfile is regenerated, so the floor bites when the pin is
+moved rather than when this release is published.
 
-## What changed
+## 1. Make bump write targets confined and regular
 
-The requirement in the package metadata moved:
+`lading bump` now validates the complete write plan before changing anything. A
+workspace that relied on any of the following now fails with exit status 1 and a
+`Preflight error:` diagnostic:
 
-<!-- tested-example: v0-4-0-requires-python -->
+- A member reachable only through a symlinked directory below the workspace
+  root. Make the member path real, or move the member into the workspace.
+- A documentation glob that escapes the workspace, such as
+  `../outside/README.md`. Narrow the glob to the workspace.
+- A selected documentation file that cannot be read or decoded. Previously it
+  was skipped with a warning.
+- A workspace README or adopted crate README that is a symlink or a
+  non-regular file.
+- A manifest, documentation file, README, or lockfile target that is a hard
+  link (a file with more than one directory entry), even when every link stays
+  inside the workspace. A write through one name would leave the others stale,
+  so replace the target with an independent copy of the file.
+- A path dependency inside the workspace whose `Cargo.toml` is a symlink,
+  missing, or not a regular file. Cargo treats such a dependency as an implicit
+  workspace member; make the path real and give it a regular `Cargo.toml`.
+- A configured `bump.lockfile_manifests` entry that is absolute, traverses
+  upwards, is missing, is a symlink, or is not named `Cargo.toml`. This
+  validation applies when lockfile regeneration is enabled; a run with
+  `--no-rebuild-lockfiles` ignores configured entries.
+- A non-empty `CARGO_RESOLVER_LOCKFILE_PATH` in the environment, or a
+  `resolver.lockfile-path` in a Cargo configuration file, including a file
+  pulled in through that configuration's `include` entries. This applies when
+  lockfile regeneration is enabled; `--no-rebuild-lockfiles` checks neither
+  route. Unset the variable and remove the setting from every configuration
+  file Cargo would read.
 
-```text
-# 0.3.1
-Requires-Python: >=3.13
+The guarantee is validation before mutation. A failure during an actual write
+or Cargo invocation is not rolled back, and a concurrent process that changes a
+path after validation is not defended against.
 
-# 0.4.0
-Requires-Python: >=3.14
+## 2. Fix lockfile manifests and Cargo overrides
+
+Configured lockfile manifests are resolved to the effective workspace root
+Cargo reports. A manifest that belongs to the outer workspace now reports the
+outer `Cargo.lock` instead of an adjacent file; only a standalone nested
+workspace keeps its own adjacent lockfile. A dry run still writes nothing, and
+discovery now runs `cargo metadata --no-deps`, which leaves a missing or stale
+lockfile untouched.
+
+A same-version rerun makes no manifest changes and therefore skips lockfile
+regeneration, but an enabled rebuild still validates every configured lockfile
+manifest and destination before any file is written. Repair a single failed
+manifest with `cargo update --workspace --manifest-path <manifest>`; a
+multi-manifest failure also prints that repair command for each listed
+manifest. Run the command from the workspace root, or pass an absolute manifest
+path, because a relative path resolves against the shell's current directory.
+
+## 3. Implement the lockfile repository port
+
+A custom `LockfileRepository` supplied through
+`BumpOptions.lockfile_repository` must implement `plan_lockfiles` and
+`regenerate_planned`. The older `resolve_lockfile_paths` and
+`regenerate_lockfiles` methods remain available for callers that supply a
+manifest tuple directly, but they alone no longer satisfy the port. Call
+`plan_lockfiles` whenever regeneration is enabled, because bump validates
+configured destinations before writing, and call `regenerate_planned` only when
+a manifest changed.
+
+### Before
+
+<!-- tested-example: migration-lockfile-port-before -->
+```python
+class Repository(Protocol):
+    def resolve_lockfile_paths(self, manifests): ...
+    def regenerate_lockfiles(self, manifests): ...
 ```
 
-Because `Requires-Python` is enforced by the installer, an attempt to install
-the 0.4.0 wheel under 3.13 fails before any file is written:
+### After
 
-<!-- tested-example: v0-4-0-python313-wheel-rejection -->
+<!-- tested-example: migration-lockfile-port-after -->
+```python
+class Repository(Protocol):
+    def plan_lockfiles(
+        self,
+        workspace_root: Path,
+        lockfile_manifests: cabc.Sequence[str],
+    ) -> LockfilePlan: ...
 
-```console
-$ python3.13 -m pip install lading-0.4.0-py3-none-any.whl
-ERROR: Package 'lading' requires a different Python: 3.13.x not in '>=3.14'
+    def regenerate_planned(self, plan: LockfilePlan) -> tuple[Path, ...]: ...
 ```
 
-That refusal is the intended behaviour rather than a packaging accident. It
-replaces the alternative — installing successfully and then failing at import
-or during a run — with a message that names the constraint.
-
-## 3. Command-line output streams
+## 4. Read diagnostics from stderr
 
 Lading constructs its command-line application with an explicit result action,
 so its own dispatcher owns printing and exit codes instead of delegating them
@@ -282,16 +178,85 @@ contract, including the exit-status table, is in
 the decision is recorded in
 [ADR-011](adrs/adr-0011-cyclopts-4-cli-result-and-diagnostic-boundary.md).
 
-## 4. Review compound dependency requirements
+## 5. Upgrade to CPython 3.14
 
-The release changes how `lading bump` rewrites compound dependency requirements
-in workspace-member manifests and explicitly configured non-member manifests:
-the first comparator takes the target version, and later comparators remain
-verbatim. It warns when the rewritten first comparator is strict (`<` or `>`)
-or a later recognized comparison bound (`<`, `<=`, `=`, `>=` or `>`) excludes
-the target. Retained caret and tilde clauses, and unsupported forms, are not
-evaluated by this warning. Review the warnings and resolve any bounds that
-exclude the target. See the [bump configuration reference](users-guide.md#bump).
+Upgrade the interpreter first, then the package, so that the installer's
+constraint is satisfied at the moment it is checked.
+
+The first release carrying the bump confinement change is the `0.4.0b1`
+pre-release. Install it explicitly, because a plain version specifier does not
+select a pre-release:
+
+<!-- tested-example: migration-upgrade-uv-prerelease -->
+```bash
+# Substitute the tool that manages your interpreter.
+uv python install 3.14
+uv python pin 3.14
+
+# Then move the package itself, selecting the pre-release.
+uv add lading==0.4.0b1
+```
+
+A project using `pip` and a virtual environment follows the same order:
+
+<!-- tested-example: migration-upgrade-pip-prerelease -->
+```bash
+python3.14 -m venv .venv
+.venv/bin/python -m pip install lading==0.4.0b1
+```
+
+On Windows, create the environment with the launcher:
+
+<!-- tested-example: migration-create-venv-windows -->
+```text
+py -3.14 -m venv .venv
+```
+
+Then run the environment's interpreter, which is `.venv\Scripts\python`:
+`.venv\Scripts\python -m pip install lading==0.4.0b1`.
+
+Once the final `0.4.0` release is available, the same commands with
+`lading==0.4.0` move an installation to it; the final release carries the same
+bump confinement behaviour.
+
+If the interpreter cannot be moved yet, pin Lading below the floor and defer
+the upgrade. That defers the confinement fix too: on 0.3.1 a symlinked member,
+a symlinked manifest, or an escaping documentation glob can still make a bump
+write outside the workspace, and an invalid configured lockfile manifest can
+still fail after manifests were rewritten. There is no scheduled defect fix
+waiting in 0.4.0 beyond that safety boundary, but a workspace in one of those
+shapes should be corrected, or migrated, before the interpreter moves:
+
+<!-- tested-example: migration-defer-upgrade -->
+```bash
+uv add 'lading<0.4.0'
+```
+
+## What changed
+
+The requirement in the package metadata moved:
+
+<!-- tested-example: migration-requires-python-floor -->
+```text
+# 0.3.1
+Requires-Python: >=3.13
+
+# 0.4.0
+Requires-Python: >=3.14
+```
+
+Because `Requires-Python` is enforced by the installer, an attempt to install
+the 0.4.0 wheel under 3.13 fails before any file is written:
+
+<!-- tested-example: migration-old-interpreter-error -->
+```console
+$ python3.13 -m pip install lading-0.4.0-py3-none-any.whl
+ERROR: Package 'lading' requires a different Python: 3.13.x not in '>=3.14'
+```
+
+That refusal is the intended behaviour rather than a packaging accident. It
+replaces the alternative — installing successfully and then failing at import
+or during a run — with a message that names the constraint.
 
 ## Why the floor moved
 
@@ -318,39 +283,28 @@ environment, and migrate when the interpreter moves.
 
 ## What does not need to change
 
-Existing command-line flags and `lading.toml` keys retain their 0.3.x meanings.
-Workspace member manifests remain under the normal `lading bump` flow.
-Non-member manifests are not rewritten unless `bump.manifest_rewrites` is
-configured.
+A workspace whose members are real directories, whose write targets are regular
+independent files, and which sets no lockfile override needs no change. A
+workspace that does not configure `bump.manifest_rewrites` keeps its previous
+bump behaviour. Command summaries still go to stdout, and a script that
+captured both streams together sees no change in meaning.
 
 ## Migration checklist
 
-- [ ] Install Lading 0.4.0 with CPython 3.14 or later.
-- [ ] If tooling imports moved helpers, update those imports.
-- [ ] If tooling uses documentation helpers, iterate `targets.paths` and pass
-  `DocumentationTargets` to the updater.
-- [ ] If scripts consume diagnostics, read them from stderr; summaries remain
-  on stdout.
-- [ ] Run `lading bump` on a platform supporting directory-relative file
-  operations and no-follow opens; bounded writes fail closed otherwise.
-- [ ] Review compound requirement warnings and resolve bounds that exclude the
-  target version.
+- [ ] Upgrade to CPython 3.14 or later.
+- [ ] Read command diagnostics from stderr instead of stdout.
+- [ ] Make any member reachable only through a symlinked directory a real path.
+- [ ] Narrow escaping documentation globs to the workspace.
+- [ ] Make selected documentation files readable and decodable.
+- [ ] Replace symlinked, non-regular, or hard-linked write targets with
+      independent regular files.
+- [ ] Make in-workspace path dependencies real directories with a regular
+      `Cargo.toml`.
+- [ ] Fix or remove configured `bump.lockfile_manifests` entries.
+- [ ] Unset `CARGO_RESOLVER_LOCKFILE_PATH` and remove any
+      `resolver.lockfile-path` setting Cargo would read.
+- [ ] Implement `plan_lockfiles` and `regenerate_planned` on any custom
+      lockfile repository.
+- [ ] Run `lading bump --dry-run` on the migrated workspace before bumping.
 
-### Optional adoption
-
-- [ ] If a bump should update standalone manifests, configure
-  `bump.manifest_rewrites`; it is disabled by default.
-
-## Common errors and fixes
-
-Python appends the installed module's file path in parentheses to each
-`ImportError`; that path varies by environment.
-
-- **Error:**
-  `ImportError: cannot import name 'parse_manifest' from 'lading.commands.bump_toml'`
-  - **Fix:** import `parse_manifest` and `write_atomic_text` from
-    `lading.commands.bump_toml_files`.
-- **Error:**
-  `ImportError: cannot import name 'DEPENDENCY_SECTIONS' from 'lading.commands.bump_toml'`
-  - **Fix:** import the dependency helpers from
-    `lading.commands.bump_toml_dependencies`.
+The affected-reader table above lists the same work by workspace shape.

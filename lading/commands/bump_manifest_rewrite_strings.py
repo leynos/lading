@@ -1,22 +1,32 @@
 r"""Compile selected TOML string rewrites for configured manifests."""
 
-import collections.abc as cabc
 import dataclasses as dc
 import re
 import typing as typ
-from pathlib import Path
+from contextlib import suppress
 
-from lading.commands import bump_manifest_rewrite_semver, bump_toml, bump_toml_strings
+from tomlkit import parse as parse_toml
+from tomlkit import string
+from tomlkit.container import OutOfOrderTableProxy
+from tomlkit.exceptions import InvalidStringError
+from tomlkit.items import InlineTable, Item, String, Table
+
+from lading.commands import bump_manifest_rewrite_semver, bump_toml
 from lading.commands.bump_manifest_rewrite_model import (
     ManifestRewriteError,
     ManifestRewriteVersions,
 )
 
 if typ.TYPE_CHECKING:
+    import collections.abc as cabc
+    from pathlib import Path
+
     from tomlkit.toml_document import TOMLDocument
 
-    from lading.commands.bump_toml_types import _TableLike
     from lading.config import StringValueRewriteConfig
+
+type _TableLike = Table | InlineTable | OutOfOrderTableProxy
+_TABLE_TYPES: typ.Final[tuple[type[Table], type[InlineTable]]] = (Table, InlineTable)
 
 _CRATE_NAME_CHARACTER: typ.Final[str] = r"A-Za-z0-9_-"
 _VERSION_PREFIX_CHARACTER: typ.Final[str] = r"A-Za-z0-9."
@@ -98,7 +108,7 @@ def _rewrite_one_string_rule(
     replacement = _compile_string_rewrite(rule, versions, manifest_path)
     if replacement is None:
         return False
-    return bump_toml_strings.update_string_values(table, replacement, field=rule.field)
+    return _update_string_values(table, replacement, field=rule.field)
 
 
 def _collect_replacements_for_rule(
@@ -113,9 +123,7 @@ def _collect_replacements_for_rule(
         container,
         key,
         value,
-    ) in bump_toml_strings._selected_string_value_targets(
-        table, rule.field, table_path=rule.table
-    ):
+    ) in _selected_string_value_targets(table, rule.field, table_path=rule.table):
         current = bump_toml.value_as_string(value)
         if current is None:
             continue
@@ -143,9 +151,7 @@ def _apply_snapshot_replacements(
             )
             raise ManifestRewriteError(message, failed_path=manifest_path)
         replacement_text = next(iter(replacements))
-        if bump_toml_strings._replace_selected_string_value(
-            container, key, value, replacement_text
-        ):
+        if _replace_selected_string_value(container, key, value, replacement_text):
             changed = True
     return changed
 
@@ -362,3 +368,171 @@ def _template_boundary(
         if matches_edge(template, placeholder):
             return boundary_expression
     return ""
+
+
+def _prepare_string_value_replacement(
+    value: object,
+    replacement_text: str,
+) -> Item | None:
+    """Return string content with its TOML style and trivia preserved.
+
+    Parameters
+    ----------
+    value : object
+        The current TOML value, either a tomlkit :class:`~tomlkit.items.Item`
+        or a raw Python value.
+    replacement_text : str
+        The complete string value to store.
+
+    Returns
+    -------
+    Item | None
+        The replacement item, or ``None`` when ``value`` is not a string or
+        already contains ``replacement_text``.
+
+    Raises
+    ------
+    InvalidStringError
+        If the replacement cannot be represented as a TOML basic string.
+
+    Examples
+    --------
+    >>> from tomlkit import parse
+    >>> document = parse("path = 'old' # keep")
+    >>> document["path"] = _prepare_string_value_replacement(
+    ...     document["path"], "new"
+    ... )
+    >>> document.as_string()
+    "path = 'new' # keep"
+    >>> _prepare_string_value_replacement(42, "new") is None
+    True
+    """
+    current = bump_toml.value_as_string(value)
+    if current is None or current == replacement_text:
+        return None
+    literal, multiline = _string_format_flags(value)
+    if "\r" in replacement_text:
+        # Multiline strings accept bare carriage returns in some supported
+        # tomlkit versions, but TOML treats CR as a line ending only in CRLF.
+        # A basic string escapes it consistently across the supported range.
+        literal, multiline = False, False
+    try:
+        replacement = string(
+            replacement_text,
+            literal=literal,
+            multiline=multiline,
+        )
+    except InvalidStringError:
+        if not literal:
+            raise
+        multiline = False
+        replacement = string(replacement_text)
+    if multiline:
+        replacement = _preserve_multiline_leading_newline(replacement, replacement_text)
+    _copy_string_trivia(replacement, value)
+    return replacement
+
+
+def _copy_string_trivia(replacement: Item, original: object) -> None:
+    """Preserve comments and whitespace from an original TOML item."""
+    match original:
+        case Item() as original_item:
+            with suppress(AttributeError):
+                replacement._trivia = original_item._trivia
+
+
+def _string_format_flags(value: object) -> tuple[bool, bool]:
+    """Return whether a TOML string uses literal and multiline delimiters."""
+    match value:
+        case String() as styled_string:
+            original_text = styled_string.as_string()
+            return original_text.startswith("'"), original_text.startswith((
+                "'''",
+                '"""',
+            ))
+        case _:
+            return False, False
+
+
+def _preserve_multiline_leading_newline(
+    replacement: Item,
+    replacement_text: str,
+) -> Item:
+    """Work around tomlkit normalizing a leading multiline string newline."""
+    if not replacement_text.startswith(("\n", "\r\n")):
+        return replacement
+    rendered = replacement.as_string()
+    reparsed = parse_toml(f"value = {rendered}")["value"]
+    if str(reparsed) == replacement_text:
+        return replacement
+    repaired = f"{rendered[:3]}\n{rendered[3:]}"
+    return parse_toml(f"value = {repaired}")["value"]
+
+
+def _selected_string_value_targets(
+    table: _TableLike,
+    field: str | None,
+    *,
+    table_path: tuple[str, ...],
+) -> cabc.Generator[tuple[tuple[str, ...], _TableLike, str, object]]:
+    """Yield each selected value with its container and location."""
+    if field is None:
+        yield from _direct_string_targets(table, table_path)
+        return
+    yield from _field_string_targets(table, field, table_path)
+
+
+def _direct_string_targets(
+    table: _TableLike,
+    table_path: tuple[str, ...],
+) -> cabc.Generator[tuple[tuple[str, ...], _TableLike, str, object]]:
+    """Yield direct table values as rewrite targets."""
+    for key, value in tuple(table.items()):
+        yield (*table_path, key), table, key, value
+
+
+def _field_string_targets(
+    table: _TableLike,
+    field: str,
+    table_path: tuple[str, ...],
+) -> cabc.Generator[tuple[tuple[str, ...], _TableLike, str, object]]:
+    """Yield one field from each sub-table as a rewrite target."""
+    for key, entry in tuple(table.items()):
+        if isinstance(entry, _TABLE_TYPES) and field in entry:
+            yield (*table_path, key, field), entry, field, entry[field]
+
+
+def _update_string_values(
+    table: _TableLike,
+    replacement: cabc.Callable[[str], str],
+    *,
+    field: str | None = None,
+) -> bool:
+    """Apply one replacement callable to the selected string values."""
+    changed = False
+    for _location, container, key, value in _selected_string_value_targets(
+        table, field, table_path=()
+    ):
+        current = bump_toml.value_as_string(value)
+        if current is None:
+            continue
+        replacement_text = replacement(current)
+        if replacement_text == current:
+            continue
+        if _replace_selected_string_value(container, key, value, replacement_text):
+            changed = True
+    return changed
+
+
+def _replace_selected_string_value(
+    container: _TableLike,
+    key: str,
+    value: object,
+    replacement_text: str,
+) -> bool:
+    """Replace one selected string while retaining its TOML style and trivia."""
+    replacement_item = _prepare_string_value_replacement(value, replacement_text)
+    if replacement_item is None:
+        return False
+    container[key] = replacement_item  # type: ignore[index]  # Table proxies support item assignment
+    return True

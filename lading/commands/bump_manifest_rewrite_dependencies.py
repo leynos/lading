@@ -1,20 +1,26 @@
 """Match workspace crates in dependency sections of Cargo TOML.
 
-This module owns traversal of direct, workspace, and target dependency tables.
-Both the configured manifest planner and documentation snippet updater use
-:func:`rewrite_dependency_requirements` to keep supported sections aligned.
+The planner rewrites direct, workspace, and target-specific dependency
+requirements whose package name matches a bumped workspace crate. Each
+requirement keeps its first comparator and any later bounds.
 """
 
 import collections.abc as cabc
 import typing as typ
 
-from lading.commands import bump_toml, bump_toml_dependencies
-from lading.commands.bump_toml_dependency_updates import (
-    update_matching_dependency_section,
-)
+from tomlkit.container import OutOfOrderTableProxy
+from tomlkit.items import InlineTable, Table
+
+from lading.commands import bump_toml
 
 if typ.TYPE_CHECKING:
     from tomlkit.toml_document import TOMLDocument
+
+type _TableLike = Table | InlineTable | OutOfOrderTableProxy
+
+_TABLE_TYPES: typ.Final[
+    tuple[type[Table] | type[InlineTable] | type[OutOfOrderTableProxy], ...]
+] = (Table, InlineTable, OutOfOrderTableProxy)
 
 
 def rewrite_dependency_requirements(
@@ -47,53 +53,108 @@ def rewrite_dependency_requirements(
     >>> document.as_string()
     '[dependencies]\nalpha = "^2.0.0"'
     """
+    names = frozenset(updated_crate_names)
+    sections: list[tuple[str, ...]] = []
+    for section in bump_toml.DEPENDENCY_SECTIONS:
+        sections.append((section,))
+        sections.append(("workspace", section))
+    target_table = bump_toml.select_table(document, ("target",))
+    if target_table is not None:
+        for selector in tuple(target_table):
+            sections.extend(
+                ("target", selector, section)
+                for section in bump_toml.DEPENDENCY_SECTIONS
+            )
     changed = False
-    for section in bump_toml_dependencies.DEPENDENCY_SECTIONS:
-        changed |= update_matching_dependency_section(
-            document, (section,), updated_crate_names, target_version
-        )
-        changed |= update_matching_dependency_section(
-            document,
-            ("workspace", section),
-            updated_crate_names,
-            target_version,
-        )
-    changed |= _rewrite_target_dependencies(
-        document, updated_crate_names, target_version
-    )
+    for path in sections:
+        changed |= _rewrite_dependency_section(document, path, names, target_version)
     return changed
 
 
-def _rewrite_target_dependencies(
+def _rewrite_dependency_section(
     document: TOMLDocument,
-    updated_crate_names: cabc.Collection[str],
+    path: tuple[str, ...],
+    names: frozenset[str],
     target_version: str,
 ) -> bool:
-    """Rewrite matching dependency sections under each target selector."""
-    target_table = bump_toml.select_table(document, ("target",))
-    if target_table is None:
+    """Rewrite the selected entries of one dependency table."""
+    table = bump_toml.select_table(document, path)
+    if table is None:
         return False
     changed = False
-    for selector in tuple(target_table):
-        changed |= _rewrite_target_selector(
-            document, selector, updated_crate_names, target_version
-        )
+    for key, entry in tuple(table.items()):
+        if _dependency_package_name(key, entry) not in names:
+            continue
+        if _rewrite_dependency_entry(table, key, entry, target_version):
+            changed = True
     return changed
 
 
-def _rewrite_target_selector(
-    document: TOMLDocument,
-    selector: str,
-    updated_crate_names: cabc.Collection[str],
+def _dependency_package_name(key: str, entry: object) -> str:
+    """Return the package name a dependency key or entry refers to."""
+    if isinstance(entry, _TABLE_TYPES):
+        declared = bump_toml.value_as_string(entry.get("package"))
+        if declared is not None:
+            return declared
+    return key
+
+
+def _rewrite_dependency_entry(
+    table: _TableLike,
+    key: str,
+    entry: object,
     target_version: str,
 ) -> bool:
-    """Rewrite each supported dependency section under one target selector."""
-    changed = False
-    for section in bump_toml_dependencies.DEPENDENCY_SECTIONS:
-        changed |= update_matching_dependency_section(
-            document,
-            ("target", selector, section),
-            updated_crate_names,
+    """Rewrite one dependency entry, preserving its requirement bounds."""
+    if isinstance(entry, _TABLE_TYPES):
+        if entry.get("workspace") is True:
+            return False
+        replacement = bump_toml.prepare_version_replacement(
+            entry.get("version"),
             target_version,
+            compose=compose_requirement,
         )
-    return changed
+        if replacement is None:
+            return False
+        entry["version"] = replacement
+        return True
+    replacement = bump_toml.prepare_version_replacement(
+        entry, target_version, compose=compose_requirement
+    )
+    if replacement is None:
+        return False
+    table[key] = replacement  # type: ignore[index]  # table-like values support assignment
+    return True
+
+
+def compose_requirement(existing: str, target_version: str) -> str:
+    """Replace the first requirement version and retain later constraints.
+
+    Parameters
+    ----------
+    existing : str
+        The current requirement string, possibly carrying an operator prefix
+        such as ``^`` or ``~`` and comma-separated additional constraints.
+    target_version : str
+        The bare target version to apply.
+
+    Returns
+    -------
+    str
+        ``target_version`` carrying the first requirement's operator, followed
+        by any additional constraints from ``existing``.
+
+    Examples
+    --------
+    >>> compose_requirement("^1.0.0", "2.0.0")
+    '^2.0.0'
+    >>> compose_requirement("1.0.0", "2.0.0")
+    '2.0.0'
+    >>> compose_requirement(">=0.6.0-beta4, <0.7", "0.6.0")
+    '>=0.6.0, <0.7'
+    """
+    first_constraint, separator, remaining_constraints = existing.partition(",")
+    trimmed_constraint = first_constraint.rstrip()
+    trailing_whitespace = first_constraint[len(trimmed_constraint) :]
+    replacement = bump_toml.compose_requirement(trimmed_constraint, target_version)
+    return f"{replacement}{trailing_whitespace}{separator}{remaining_constraints}"

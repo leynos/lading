@@ -9,22 +9,22 @@ module owns the ordered update sequence.
 import collections.abc as cabc
 import dataclasses as dc
 import logging
-import time
 import types
 import typing as typ
 from pathlib import Path
 
 from lading import config as config_module
-from lading.commands import (
-    bump_lockfiles,
-    bump_manifests,
-    bump_pipeline,
-    bump_toml_files,
-)
+from lading.commands import bump_lockfiles, bump_manifests, bump_pipeline
 from lading.commands.bump_output import _format_result_message
-from lading.utils import normalize_workspace_root
+from lading.utils.confinement import (
+    BumpPreflightError,
+    UnsafeBumpTargetError,
+    confine_relative_path,
+    establish_workspace_root,
+)
+from lading.workspace.graph_paths import graph_relative_manifest
 
-if typ.TYPE_CHECKING:
+if typ.TYPE_CHECKING:  # pragma: no cover - import-time typing aids only
     from lading.commands.bump_manifests import _BumpContext
     from lading.config import LadingConfig
     from lading.workspace import WorkspaceGraph
@@ -58,9 +58,6 @@ class BumpOptions:
         Explicit dependency sections to rewrite by crate name.
     include_workspace_sections : bool, default False
         Whether workspace dependency tables should be rewritten as well.
-    clock : Callable[[], float], default time.perf_counter
-        Monotonic clock used to measure configured manifest rewrite phases.
-        Inject a deterministic clock when testing timing behaviour.
 
     Notes
     -----
@@ -77,7 +74,6 @@ class BumpOptions:
         default_factory=lambda: types.MappingProxyType({})
     )
     include_workspace_sections: bool = False
-    clock: cabc.Callable[[], float] = time.perf_counter
 
 
 def run(
@@ -121,10 +117,7 @@ def run(
     ... )
     'Dry run; would update version to 1.2.0 in ...'
     """
-    resolved_options = BumpOptions() if options is None else options
-    if not resolved_options.dry_run:
-        bump_toml_files.require_workspace_bounded_write_support()
-    context = _initialize_bump_context(workspace_root, resolved_options)
+    context = _initialize_bump_context(workspace_root, options)
     LOGGER.debug(
         "Bump context initialised: %d excluded crate(s), %d to update",
         len(context.excluded),
@@ -145,15 +138,17 @@ def _initialize_bump_context(
 ) -> _BumpContext:
     """Return initialised bump context for ``workspace_root``."""
     resolved_options = BumpOptions() if options is None else options
-    root_path = normalize_workspace_root(workspace_root)
+    root_path = establish_workspace_root(workspace_root)
     configuration = resolved_options.configuration
     if configuration is None:
         configuration = config_module.current_configuration()
     workspace = resolved_options.workspace
     if workspace is None:
-        from lading.workspace import load_workspace
+        from lading.workspace import load_bump_workspace
 
-        workspace = load_workspace(root_path)
+        workspace = load_bump_workspace(root_path)
+    else:
+        _validate_injected_workspace(root_path, workspace)
     rebuild_lockfiles = (
         configuration.bump.rebuild_lockfiles
         if resolved_options.rebuild_lockfiles is None
@@ -167,7 +162,6 @@ def _initialize_bump_context(
     )
     base_options = BumpOptions(
         dry_run=resolved_options.dry_run,
-        clock=resolved_options.clock,
         rebuild_lockfiles=rebuild_lockfiles,
         configuration=configuration,
         workspace=workspace,
@@ -184,7 +178,61 @@ def _initialize_bump_context(
         configuration=configuration,
         workspace=workspace,
         base_options=base_options,
-        workspace_manifest=(root_path / "Cargo.toml").resolve(),
+        workspace_manifest=root_path / "Cargo.toml",
         excluded=excluded,
         updated_crate_names=updated_crate_names,
     )
+
+
+def _validate_injected_workspace(root_path: Path, workspace: WorkspaceGraph) -> None:
+    """Validate an injected graph's root and every crate manifest path.
+
+    A programmatic caller may construct the graph itself. Its manifest paths
+    become write targets, so they must satisfy the same confinement contract as
+    a graph loaded from Cargo before any manifest is read or written.
+
+    Parameters
+    ----------
+    root_path : Path
+        Canonical workspace root established from the requested path.
+    workspace : WorkspaceGraph
+        Graph supplied through :class:`BumpOptions`.
+
+    Raises
+    ------
+    BumpPreflightError
+        If the graph root differs from ``root_path`` or a crate manifest escapes
+        the workspace, is not named ``Cargo.toml``, or is not a confined regular
+        file.
+    UnsafeBumpTargetError
+        If a crate manifest path is not confined beneath the workspace root.
+    """
+    graph_root = establish_workspace_root(workspace.workspace_root)
+    if graph_root != root_path:
+        message = (
+            f"Injected workspace graph root {graph_root} does not match the "
+            f"requested workspace root {root_path}"
+        )
+        raise BumpPreflightError(message)
+    graph_spelling = workspace.workspace_root
+    for crate in workspace.crates:
+        key = f"workspace member {crate.name!r} manifest"
+        relative = graph_relative_manifest(
+            root_path, graph_spelling, crate.manifest_path, key=key
+        )
+        if relative.name != "Cargo.toml":
+            message = f"{key} must be named Cargo.toml: {crate.manifest_path}"
+            raise UnsafeBumpTargetError(message)
+        confine_relative_path(root_path, relative.as_posix(), key=key)
+        crate_root = graph_relative_manifest(
+            root_path,
+            graph_spelling,
+            crate.root_path,
+            key=f"workspace member {crate.name!r} root",
+        )
+        if crate_root != relative.parent:
+            message = (
+                f"workspace member {crate.name!r} root {crate.root_path} does "
+                f"not contain its manifest {crate.manifest_path}"
+            )
+            raise BumpPreflightError(message)

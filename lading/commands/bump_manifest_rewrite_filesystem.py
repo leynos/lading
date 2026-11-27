@@ -1,25 +1,35 @@
 """Resolve and read allowlisted manifests for the rewrite planner.
 
-This adapter owns path expansion, containment checks, member filtering and
-UTF-8 reads. It returns source records so rewrite policy can run without
-filesystem access.
+This adapter owns path confinement, glob expansion, member filtering and UTF-8
+reads. It returns source records so rewrite policy can run without filesystem
+access.
 """
 
-import collections.abc as cabc
 import dataclasses as dc
 import glob
 import logging
 import typing as typ
 from itertools import starmap
-from pathlib import Path
 
-from lading.commands import manifest_paths
 from lading.commands.bump_manifest_rewrite_model import (
     ManifestRewriteError,
     ManifestRewriteSource,
 )
+from lading.utils.confinement import (
+    ConfinedPath,
+    GlobOptions,
+    MatchExpectation,
+    UnmatchedPolicy,
+    confine_relative_path,
+    establish_workspace_root,
+    expand_confined_glob,
+)
+from lading.utils.confinement.errors import BumpPreflightError, MissingBumpTargetError
 
 if typ.TYPE_CHECKING:
+    import collections.abc as cabc
+    from pathlib import Path
+
     from lading.config import ManifestRewriteConfig, StringValueRewriteConfig
 
 _log = logging.getLogger(__name__)
@@ -71,14 +81,10 @@ def read_manifest_rewrite_sources(
     """
     if not rewrite_groups:
         return ()
-    root = workspace_root.resolve()
-    context = _RewriteSelectionContext(
-        root,
-        {
-            (root / "Cargo.toml").resolve(),
-            *((root / path).resolve() for path in member_manifest_paths),
-        },
-    )
+    root = establish_workspace_root(workspace_root)
+    skipped_manifests = {(root / "Cargo.toml").resolve()}
+    skipped_manifests.update(path.resolve() for path in member_manifest_paths)
+    context = _RewriteSelectionContext(root, skipped_manifests)
     for group in rewrite_groups:
         _select_rewrite_group(context, group)
     return tuple(starmap(_read_source, context.selections.items()))
@@ -108,40 +114,32 @@ def _merge_rewrite_candidate(
     context: _RewriteSelectionContext,
     group: ManifestRewriteConfig,
     configured_path: str,
-    candidate: Path,
+    candidate: ConfinedPath,
 ) -> None:
     """Validate one candidate and merge its dependency and string rules."""
-    manifest_path = manifest_paths.resolve_manifest_candidate(
-        context.workspace_root,
-        candidate,
-        error_type=ManifestRewriteError,
-        label="Manifest rewrite",
-    )
-    if manifest_path in context.skipped_manifests:
+    manifest_path = candidate.path
+    if manifest_path.resolve() in context.skipped_manifests:
         _log.debug(
-            "Skipping configured manifest rewrite %s because it resolves to a "
+            "Skipping configured manifest rewrite %s because it is a "
             "workspace-owned manifest at %s",
             configured_path,
             manifest_path,
         )
         return
-    if not manifest_path.is_file():
-        message = (
-            f"Manifest rewrite path must point to a regular file: {configured_path}"
-        )
-        raise ManifestRewriteError(message)
     selection = context.selections.setdefault(manifest_path, _RewriteSelection())
     selection.dependencies |= group.dependencies
     selection.string_values.extend(group.string_values)
 
 
-def _expand_path(workspace_root: Path, configured_path: str) -> tuple[Path, ...]:
+def _expand_path(
+    workspace_root: Path, configured_path: str
+) -> tuple[ConfinedPath, ...]:
     """Expand a glob or return its single literal candidate."""
     if not glob.has_magic(configured_path):
-        return (Path(configured_path),)
+        return (_confine_manifest_path(workspace_root, configured_path),)
     literal_candidate = workspace_root / configured_path
     if _is_existing_literal_candidate(literal_candidate, configured_path):
-        return (literal_candidate,)
+        return (_confine_manifest_path(workspace_root, configured_path),)
     return _expand_manifest_rewrite_glob(workspace_root, configured_path)
 
 
@@ -168,22 +166,55 @@ def _is_existing_literal_candidate(candidate: Path, configured_path: str) -> boo
 def _expand_manifest_rewrite_glob(
     workspace_root: Path,
     configured_path: str,
-) -> tuple[Path, ...]:
+) -> tuple[ConfinedPath, ...]:
     """Expand a configured glob and reject an empty result."""
     try:
-        matches = manifest_paths.expand_manifest_glob_candidates(
+        matches = expand_confined_glob(
             workspace_root,
             configured_path,
-            error_type=ManifestRewriteError,
-            label="Manifest rewrite",
+            key="manifest rewrite",
+            options=GlobOptions(
+                expect=MatchExpectation.REGULAR_FILE,
+                unmatched=UnmatchedPolicy.ERROR,
+            ),
         )
-    except (OSError, ValueError) as exc:
+    except MissingBumpTargetError as exc:
+        message = f"Manifest rewrite glob matched no files: {configured_path}"
+        raise ManifestRewriteError(message) from exc
+    except BumpPreflightError as exc:
         message = f"Could not expand manifest rewrite glob {configured_path!r}: {exc}"
         raise ManifestRewriteError(message) from exc
-    if not matches:
-        message = f"Manifest rewrite glob matched no files: {configured_path}"
-        raise ManifestRewriteError(message)
+    for match in matches:
+        _require_cargo_manifest(match, configured_path)
     return matches
+
+
+def _confine_manifest_path(
+    workspace_root: Path,
+    configured_path: str,
+) -> ConfinedPath:
+    """Confine one literal manifest path and require a Cargo manifest name."""
+    try:
+        candidate = confine_relative_path(
+            workspace_root, configured_path, key="manifest rewrite"
+        )
+    except BumpPreflightError as exc:
+        message = (
+            "Manifest rewrite path must name a regular Cargo.toml file inside "
+            f"the workspace: {configured_path}: {exc}"
+        )
+        raise ManifestRewriteError(message) from exc
+    _require_cargo_manifest(candidate, configured_path)
+    return candidate
+
+
+def _require_cargo_manifest(candidate: ConfinedPath, configured_path: str) -> None:
+    """Reject a configured selection that is not named ``Cargo.toml``."""
+    if candidate.path.name != "Cargo.toml":
+        message = (
+            f"Manifest rewrite path must point to a Cargo.toml file: {configured_path}"
+        )
+        raise ManifestRewriteError(message)
 
 
 def _read_source(path: Path, selection: _RewriteSelection) -> ManifestRewriteSource:

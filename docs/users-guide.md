@@ -299,9 +299,12 @@ validated against.
 
 Wheels from releases tagged before this change declare the older
 `cuprum>=0.1.0` range instead; `v0.3.1` is the most recent of those. No further
-release is tagged while the pin names a pre-release, so no newly tagged wheel
-carries the beta. That release gate is a procedure rather than an automated
-check, as recorded in
+final release is tagged while the pin names a pre-release, so no final wheel
+carries the beta. A pre-release tag, such as the `0.4.0b1` tag that first
+carries the bump confinement change, does pin the beta: installing a
+pre-release is how a consumer adopts that change before cuprum 0.2.0 final
+exists. That release gate is a procedure rather than an automated check, as
+recorded in
 [ADR-006](adrs/adr-0006-align-cuprum-selection-across-dependency-paths.md). See
 [Changing the cuprum version](developers-guide.md#changing-the-cuprum-version)
 for the maintainer procedure.
@@ -369,6 +372,71 @@ If `bump.documentation.globs` is configured, `lading` also searches those
 Markdown files for TOML code fences and updates version values that refer to
 workspace crates. Dependency requirements are updated in top-level,
 `[workspace.<section>]`, and `[target.<selector>.<section>]` tables.
+
+#### Confinement preflight
+
+Before writing anything, `lading bump` builds and validates the complete write
+plan: the workspace manifest, every member manifest, configured documentation,
+and adopted README destinations. When lockfile regeneration is enabled, the
+plan also validates lockfile manifests and destinations, even when no manifest
+changes and regeneration will therefore be skipped; `--no-rebuild-lockfiles`
+leaves configured lockfile entries unvalidated because the run will not touch
+them. Discovery runs `cargo metadata --no-deps`, which reports workspace
+members without resolving dependencies; a missing or stale `Cargo.lock` is left
+untouched.
+
+The member and exclusion patterns in the root manifest are validated lexically.
+Absolute, rooted, drive-qualified, UNC, and parent-traversing patterns are
+rejected under both POSIX and Windows spellings. Member patterns are then
+expanded without following symlinks. A literal member that does not exist, a
+glob that matches nothing, or a matched directory without a regular
+`Cargo.toml` fails the run and names the pattern. A documentation glob that
+matches nothing is a no-op, and a directory matched by a documentation glob is
+ignored. An exclusion is a literal path prefix, not a glob: Cargo does not
+expand wildcards in `[workspace].exclude`, so an exclusion that names no
+directory simply filters nothing.
+
+Within the workspace, every path component below the canonical root is
+inspected with `lstat` before anything is resolved. Symlinked ancestors, final
+symlinks, dangling links, in-workspace symlink aliases, junctions, and
+non-regular targets are rejected. Existing regular-file targets with more than
+one hard link are rejected even when every link is inside the workspace,
+because a write through one name would leave the other names stale. An intended
+new file, such as an adopted crate README, is accepted only when every parent
+directory is a real directory. Canonical containment is proved as an
+independent second check. A workspace reached through a symlink in the root's
+own ancestry remains valid.
+
+A selected documentation file that cannot be read or decoded is a preflight
+error rather than a warning-skip.
+
+When a rejected write plan is detected, the command exits with status 1, writes
+`Preflight error: <detail>` to stderr naming the rejected input, and leaves
+every intended target and any external file unchanged. A missing workspace
+README for crates that adopt it is a rejected plan too, so it produces the same
+`Preflight error:` diagnostic rather than a separate message. Validation
+completes before the first write. Each file Lading writes is replaced
+atomically, but the command does not roll back writes after an actual execution
+failure, and it does not defend against a concurrent process changing paths
+between validation and writing. This atomicity covers Lading's own writes only:
+Cargo truncates `Cargo.lock` before writing new contents, so a failure during
+`cargo update` can leave that file empty or partial. When lockfile regeneration
+is enabled, `CARGO_RESOLVER_LOCKFILE_PATH` must be unset, and no Cargo
+configuration file Cargo would read may set `resolver.lockfile-path`, including
+through that configuration's `include` entries; either route is rejected
+because Cargo would write a lockfile the plan did not validate. Unset the
+variable, or remove the setting from the reported configuration file, before
+bumping. `--no-rebuild-lockfiles` neither plans lockfiles nor checks either
+route.
+
+Configured lockfile manifests are resolved to the effective workspace root that
+Cargo reports. A member manifest therefore contributes the outer workspace
+`Cargo.lock`, while a nested standalone workspace contributes its own adjacent
+lockfile. Duplicate destinations are reported once. A same-version rerun makes
+no manifest changes and therefore does not regenerate lockfiles; repair a stale
+lockfile with `cargo update --workspace --manifest-path <manifest>` instead.
+Run that command from the workspace root, or pass an absolute manifest path,
+because a relative path resolves against the shell's current directory.
 
 ### 3. Publish in dry-run mode
 
@@ -770,12 +838,15 @@ stderr_tail_lines = 40
 - `exclude`: array of strings, default `[]`. Crate names to exclude from
   manifest updates.
 - `lockfile_manifests`: array of strings, default `[]`. Additional
-  `Cargo.toml` manifests whose adjacent `Cargo.lock` files should be
+  `Cargo.toml` manifests whose effective workspace `Cargo.lock` files should be
   regenerated after `lading bump`. Git-tracked lockfiles are discovered and
   regenerated automatically. Configured manifests are needed for lockfiles that
   git does not track (for example, generated fixtures listed in `.gitignore`),
   and for all nested lockfiles when the workspace is outside a Git repository,
-  where tracked-lockfile discovery cannot run at all. The workspace root
+  where tracked-lockfile discovery cannot run at all. Each manifest is
+  validated as a confined regular file and resolved through Cargo to the
+  workspace root that owns it; a member manifest reports the outer lockfile,
+  while a standalone nested workspace reports its own. The workspace root
   `Cargo.toml` is always included and should not be listed.
 - `rebuild_lockfiles`: boolean, default `true`. Controls whether `lading bump`
   regenerates the workspace lockfile, discovered tracked lockfiles, and
@@ -789,17 +860,12 @@ stderr_tail_lines = 40
   `string_values` selectors. The rewrite stage does not add lockfile targets;
   use `lockfile_manifests` for an untracked fixture lockfile.
 
-When a bump updates a dependency requirement, it replaces the version in the
-first comparator and keeps later comma-separated comparators verbatim. For
-recognized comparison bounds (`<`, `<=`, `=`, `>=` and `>`), `lading bump`
-warns when the rewritten first comparator or a later comparator excludes the
-target. A strict first operator (`<` or `>`) remains unchanged, so its
-rewritten version necessarily excludes the target; the warning does not change
-the requirement or stop the bump. For example, `>=0.6.0-beta4, <0.7` becomes
-`>=0.6.0, <0.7`; targeting `0.7.0` instead warns because the retained upper
-bound excludes the target. Retained caret (`^`) and tilde (`~`) clauses are not
-evaluated by this warning. Cargo lockfile regeneration remains the final check
-when enabled; otherwise, resolve the warning before committing.
+For workspace and member manifests, a bump applies the target version with the
+requirement's operator prefix and replaces the complete requirement. Configured
+non-member rewrites instead replace the first comparator and keep later
+comma-separated comparators verbatim, so `>=0.6.0-beta4, <0.7` becomes
+`>=0.6.0, <0.7` in a selected fixture. Cargo lockfile regeneration remains the
+final check when enabled.
 
 Lockfile regeneration runs
 `cargo update --workspace --manifest-path <manifest>` for the workspace root,
@@ -827,10 +893,15 @@ repaired:
 ```
 
 When one manifest was attempted, its lone failure surfaces the plain Cargo
-error instead. To recover, fix the underlying Cargo error and rerun
-`lading bump`, run the printed repair command for each listed manifest, or use
+error instead, naming the manifest and exit code without a repair command. To
+recover, fix the underlying Cargo error and run
+`cargo update --workspace --manifest-path <manifest>` for that manifest, or use
 `--no-rebuild-lockfiles` and regenerate the lockfiles manually before
-committing the bump.
+committing the bump. A same-version rerun is not a repair: it finds no manifest
+changes and therefore skips lockfile regeneration, even when an earlier
+regeneration failed after the manifests were already written. Run the repair
+command from the workspace root, or pass an absolute manifest path, because a
+relative path resolves against the shell's current directory.
 
 #### Rewriting configured non-member manifests
 
@@ -864,12 +935,10 @@ The default template is `"{crate}-{version}"`. It may use only `{crate}` and
 `{version}` field is rejected because one occurrence can fall inside protected
 SemVer text, and leaving that occurrence unchanged would otherwise suppress a
 sibling rewrite. Format specifications, conversions, positional fields, and
-unknown placeholders are configuration errors. Before rewriting, lading
-snapshots the root and member manifests. It reads old versions from literal
-member `[package].version` entries or resolves `version.workspace = true`
-through `[workspace.package].version`. The workspace graph version is a
-fallback only when a member has no literal or inherited version. The new
-version is the requested bump version. A template starting with `{crate}`
+unknown placeholders are configuration errors. Before rewriting, lading reads
+pre-bump versions from the workspace graph discovered at command entry,
+resolving `version.workspace = true` through `[workspace.package].version`. The
+new version is the requested bump version. A template starting with `{crate}`
 requires a crate-name boundary before the match; one starting with `{version}`
 requires a boundary before the version that rejects letters, digits, and
 periods while allowing plus signs and hyphens. A plus sign that starts SemVer
@@ -903,51 +972,29 @@ configured glob selects them. Repeated groups selecting the same non-member
 manifest enable dependency rewrites if any group enables them and combine all
 string selectors. Invalid selectors, groups with `dependencies = false` and no
 `string_values`, empty globs, missing manifests, paths outside the workspace,
-and malformed TOML stop the bump. Planning completes before any manifest is
-written; configured rewrites are applied after member manifests and before
-lockfile regeneration. During a dry run, the result lists each changed fixture
-manifest while its contents remain unchanged; configured lockfile projection
-still runs without invoking Cargo.
+and malformed TOML stop the bump. Every selected target and its complete new
+text are validated before any file is written. Configured rewrites commit with
+the manifest writes, after member manifests and before documentation, README
+transposition and lockfile regeneration. During a dry run, the result lists
+each changed fixture manifest while its contents remain unchanged; configured
+lockfile projection still runs without invoking Cargo.
 
-Each configured manifest write is atomic, but the batch is not. If a later
-write fails, or a manifest changes after planning, earlier fixture rewrites may
-remain and lockfile regeneration is skipped. Before reporting the failure,
-`lading bump` restores a workspace or member manifest only when its current
-filesystem identity and contents still match the latest output written by this
-bump. Workspace-bounded writes use a per-workspace advisory lock shared by
-Lading writers and compare the expected text and file identity immediately
-before replacement. A live run holds that lock from rewrite planning until its
-last stage finishes, including any rollback, so a second Lading bump or write
-for the same workspace fails before changing a manifest instead of planning
-from, or rolling back, another run's accepted versions. Locks for the same
-operating-system user live in a stable state directory derived from that user's
-passwd entry, independent of each process's `HOME` and `XDG_CACHE_HOME`. A
-POSIX host must therefore provide a passwd entry for the account that runs
+Each write is atomic, but the commit is not. If a later write fails, earlier
+writes remain in place and lockfile regeneration is skipped. Because every
+target and every replacement is validated before the first write, `lading bump`
+deliberately does not roll back a partially committed plan; fix the reported
+failure and rerun the bump.
+
+A live run holds a per-workspace advisory lock from planning through commit and
+lockfile regeneration, so a second Lading bump for the same workspace fails
+before changing a file instead of interleaving with the first. The lock lives
+in a stable per-user state directory derived from the account's passwd entry,
+independent of each process's `HOME` and `XDG_CACHE_HOME`. A POSIX host must
+therefore provide a passwd entry and a writable home for the account that runs
 `lading bump`; a container invoked with a numeric UID and no account entry must
-add one before bumping. If another Lading write holds the lock, the bump fails
-before replacing a file. If another writer changed a manifest, rollback leaves
-the changed file in place and reports the path, including when a later write
-has identical contents. Editors and tools that ignore advisory locks can still
-race after the final comparison, so this protection covers cooperating Lading
-processes and edits visible at that check. Other matching manifests are
-restored to the exact text this bump parsed before updating each one. The
-source crate versions used for fixture plans are checked again before the first
-write, including versions inherited from `[workspace.package]`; unrelated
-manifest edits remain allowed. If rollback reports a manifest it left in place
-or could not restore, inspect and repair that named file before retrying. If a
-fixture batch fails after earlier fixture rewrites completed and those files
-remain changed after recovery, the error also names those manifests. Inspect
-and repair them before retrying because their version references may remain at
-the requested target while workspace manifests have been restored to their
-pre-bump versions.
-
-Workspace-bounded atomic writes require operating-system support for
-directory-relative no-follow file operations. On platforms without that
-support, non-dry-run `lading bump` reports that the platform is unsupported at
-command entry, before loading Cargo workspace metadata or changing files.
-Windows currently lacks the required operations. Dry runs remain available. The
-writer also checks this capability at each bounded replacement and never uses
-an unpinned path fallback.
+add one, and an account whose home is read-only must provision the derived lock
+directory as a private, account-owned directory. Editors and tools that ignore
+advisory locks can still race the run after validation.
 
 For example, the `rstest-bdd` published GPUI fixture can opt into rewriting its
 dependency requirements and staged package patch paths:

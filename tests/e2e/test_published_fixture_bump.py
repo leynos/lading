@@ -11,7 +11,7 @@ from tomlkit import dumps
 from tomlkit import parse as parse_toml
 
 from lading import config as config_module
-from lading.commands import bump, bump_toml_files
+from lading.commands import bump
 from lading.config import ManifestRewriteConfig, StringValueRewriteConfig
 from tests.e2e.helpers.git_helpers import git_add_all, git_init
 from tests.helpers.workspace_builders import (
@@ -255,8 +255,6 @@ def test_bump_rewrites_and_regenerates_tracked_published_fixture_lockfile(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Cargo accepts the full rewritten fixture and its regenerated lockfile."""
-    if not bump_toml_files._supports_bounded_directory_operations():
-        pytest.skip("workspace-bounded atomic writes are unavailable")
     monkeypatch.setenv("CARGO_NET_OFFLINE", "true")
     cargo_home = tmp_path / "cargo-home"
     cargo_home.mkdir()

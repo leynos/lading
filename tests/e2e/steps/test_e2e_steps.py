@@ -461,24 +461,35 @@ def then_readme_adopted_for_all_crates(e2e_state: dict[str, typ.Any]) -> None:
         assert crate_readme.read_text(encoding="utf-8") == expected_text, crate_readme
 
 
-@given("the workspace rebuilds the app crate lockfile during bump")
-def given_workspace_rebuilds_app_lockfile(
+@given("the workspace rebuilds a nested standalone lockfile during bump")
+def given_workspace_rebuilds_nested_lockfile(
     cmd_mox: CmdMox,
     e2e_state: dict[str, typ.Any],
 ) -> None:
-    """Configure a nested lockfile manifest and a lockfile-writing cargo stub."""
+    """Configure a nested standalone workspace and a lockfile-writing cargo stub.
+
+    The nested package is deliberately not a member of the outer workspace.
+    Cargo then reports the nested directory as its own workspace root, so the
+    bump plan must name the nested ``Cargo.lock`` rather than the outer one.
+    """
     workspace: workspace_builder.NonTrivialWorkspace = e2e_state["workspace"]
+    nested_root = workspace.root / "fixtures" / "nested"
+    nested_root.mkdir(parents=True)
+    (nested_root / "Cargo.toml").write_text(
+        '[package]\nname = "nested"\nversion = "0.1.0"\n\n[workspace]\n',
+        encoding="utf-8",
+    )
     config_path = workspace.root / config_module.CONFIG_FILENAME
     document = toml_utils.load_or_create_document(config_path)
     bump_table = toml_utils.ensure_table(document, "bump")
     manifests = toml_utils.ensure_array_field(bump_table, "lockfile_manifests")
-    toml_utils.append_if_absent(manifests, "crates/app/Cargo.toml")
+    toml_utils.append_if_absent(manifests, "fixtures/nested/Cargo.toml")
     config_path.write_text(document.as_string(), encoding="utf-8")
 
     stale_marker = "# stale lockfile\n"
     (workspace.root / "Cargo.lock").write_text(stale_marker, encoding="utf-8")
-    app_lockfile = workspace.root / "crates" / "app" / "Cargo.lock"
-    app_lockfile.write_text(stale_marker, encoding="utf-8")
+    nested_lockfile = nested_root / "Cargo.lock"
+    nested_lockfile.write_text(stale_marker, encoding="utf-8")
 
     def regenerate(invocation: Invocation) -> tuple[str, str, int]:
         """Mimic cargo update by rewriting the targeted Cargo.lock."""
@@ -500,7 +511,7 @@ def then_cli_lists_regenerated_lockfiles(cli_run: _CliRunResult) -> None:
     """Assert the bump output reports the root and nested lockfiles."""
     stdout_lines = [line.strip() for line in cli_run["stdout"].splitlines()]
     assert "- Cargo.lock (lockfile)" in stdout_lines, stdout_lines
-    assert "- crates/app/Cargo.lock (lockfile)" in stdout_lines, stdout_lines
+    assert "- fixtures/nested/Cargo.lock (lockfile)" in stdout_lines, stdout_lines
 
 
 @then("the workspace Cargo.lock files are updated")
@@ -512,6 +523,6 @@ def then_workspace_lockfiles_updated(
     marker = e2e_state["regenerated_marker"]
     for lockfile in (
         workspace.root / "Cargo.lock",
-        workspace.root / "crates" / "app" / "Cargo.lock",
+        workspace.root / "fixtures" / "nested" / "Cargo.lock",
     ):
         assert lockfile.read_text(encoding="utf-8") == marker, lockfile
