@@ -11,21 +11,16 @@ The policy these tests pin is: replace an existing string version only when
 inherited or non-string value alone.
 """
 
-import collections.abc as cabc
 import typing as typ
 
-import hypothesis.strategies as st
 import pytest
-from hypothesis import given, settings
 from tomlkit import parse as parse_toml
 
 from lading.commands import bump_docs_fences, bump_toml
+from tests.unit.bump_docs_policy_support import TARGET_VERSION, TARGETS, rewrite
 
 if typ.TYPE_CHECKING:
     from syrupy.assertion import SnapshotAssertion
-
-_TARGET_VERSION = "2.0.0"
-_TARGETS = frozenset({"alpha"})
 
 _METADATA_ONLY = """\
 [package.metadata.mytool]
@@ -105,19 +100,10 @@ _UNCHANGED_SNIPPETS = (
 )
 
 
-def _rewrite(
-    snippet: str, targets: cabc.Collection[str] = _TARGETS
-) -> tuple[str, bool]:
-    """Return ``snippet`` after the documentation pass for ``targets``."""
-    return bump_docs_fences.update_toml_snippet_versions(
-        snippet, targets, _TARGET_VERSION
-    )
-
-
 @pytest.mark.parametrize("snippet", _UNCHANGED_SNIPPETS)
 def test_ineligible_snippets_are_returned_verbatim(snippet: str) -> None:
     """Ineligible package tables stay byte-for-byte identical and unchanged."""
-    updated, changed = _rewrite(snippet)
+    updated, changed = rewrite(snippet)
 
     assert not changed, "an ineligible snippet must report no change"
     assert updated == snippet, (
@@ -127,7 +113,7 @@ def test_ineligible_snippets_are_returned_verbatim(snippet: str) -> None:
 
 def test_metadata_only_snippet_gains_no_package_table() -> None:
     """A ``[package.metadata.*]`` snippet must not gain an implicit version."""
-    updated, changed = _rewrite(_METADATA_ONLY)
+    updated, changed = rewrite(_METADATA_ONLY)
 
     assert not changed, "a metadata-only snippet has no version to replace"
     assert "[package]\nversion" not in updated, (
@@ -137,7 +123,7 @@ def test_metadata_only_snippet_gains_no_package_table() -> None:
 
 def test_unrelated_package_is_not_reversioned() -> None:
     """A downstream application manifest keeps its own version."""
-    updated, changed = _rewrite(_UNRELATED_APP)
+    updated, changed = rewrite(_UNRELATED_APP)
 
     assert not changed, "an unrelated package name must not be rewritten"
     assert 'version = "0.1.0"' in updated, (
@@ -148,7 +134,7 @@ def test_unrelated_package_is_not_reversioned() -> None:
 def test_inherited_versions_are_left_alone() -> None:
     """Dotted and inline workspace inheritance keep their non-string values."""
     for snippet in (_INHERITED_DOTTED, _INHERITED_INLINE):
-        updated, changed = _rewrite(snippet)
+        updated, changed = rewrite(snippet)
 
         assert not changed, f"inheritance must not be replaced in {snippet!r}"
         assert updated == snippet, (
@@ -158,37 +144,37 @@ def test_inherited_versions_are_left_alone() -> None:
 
 def test_matching_package_version_is_replaced() -> None:
     """A bumped crate's own string version is replaced."""
-    updated, changed = _rewrite(_MATCHING_PACKAGE)
+    updated, changed = rewrite(_MATCHING_PACKAGE)
 
     assert changed, "the bumped crate's documented version must be rewritten"
-    assert updated == _MATCHING_PACKAGE.replace("0.1.0", _TARGET_VERSION), (
+    assert updated == _MATCHING_PACKAGE.replace("0.1.0", TARGET_VERSION), (
         f"only the version value should change; got {updated!r}"
     )
 
 
 def test_matching_package_keeps_its_inline_comment() -> None:
     """Replacing the value preserves the trailing comment and spacing."""
-    updated, changed = _rewrite(_COMPENTED_VERSION)
+    updated, changed = rewrite(_COMPENTED_VERSION)
 
     assert changed, "the differing version must be replaced"
-    assert updated == _COMPENTED_VERSION.replace("0.1.0", _TARGET_VERSION), (
+    assert updated == _COMPENTED_VERSION.replace("0.1.0", TARGET_VERSION), (
         f"inline trivia must survive the replacement; got {updated!r}"
     )
 
 
 def test_matching_workspace_table_is_rewritten_alongside_package() -> None:
     """``[workspace.package]`` follows the package-name gate in the same fence."""
-    updated, changed = _rewrite(_MATCHING_WITH_WORKSPACE)
+    updated, changed = rewrite(_MATCHING_WITH_WORKSPACE)
 
     assert changed, "both eligible tables must be rewritten"
-    assert updated.count(f'version = "{_TARGET_VERSION}"') == 2, (
+    assert updated.count(f'version = "{TARGET_VERSION}"') == 2, (
         f"the package and workspace versions must both change; got {updated!r}"
     )
 
 
 def test_virtual_root_workspace_table_is_not_rewritten() -> None:
     """A fence with no package name is not evidence of this workspace's root."""
-    updated, changed = _rewrite(_VIRTUAL_ROOT)
+    updated, changed = rewrite(_VIRTUAL_ROOT)
 
     assert not changed, "a virtual-root fence has no package name to gate on"
     assert updated == _VIRTUAL_ROOT, (
@@ -198,7 +184,7 @@ def test_virtual_root_workspace_table_is_not_rewritten() -> None:
 
 def test_already_matching_version_reports_no_change() -> None:
     """A fence already at the target version is not reported as changed."""
-    updated, changed = _rewrite(_ALREADY_TARGET)
+    updated, changed = rewrite(_ALREADY_TARGET)
 
     assert not changed, "an equal version must not be reported as a change"
     assert updated == _ALREADY_TARGET, "an equal version must round-trip"
@@ -206,7 +192,7 @@ def test_already_matching_version_reports_no_change() -> None:
 
 def test_empty_target_set_disables_the_version_gate() -> None:
     """An empty bumped set leaves even a matching package untouched."""
-    updated, changed = _rewrite(_MATCHING_PACKAGE, targets=frozenset())
+    updated, changed = rewrite(_MATCHING_PACKAGE, targets=frozenset())
 
     assert not changed, "no crate is being bumped, so nothing may be rewritten"
     assert updated == _MATCHING_PACKAGE, (
@@ -222,7 +208,7 @@ def test_out_of_order_package_table_is_gated_and_rewritten() -> None:
         "[package.metadata.docs.rs]\nall-features = true\n"
     )
 
-    updated, changed = _rewrite(snippet)
+    updated, changed = rewrite(snippet)
 
     assert changed, "the out-of-order package version must be rewritten"
     assert 'version = "2.0.0"' in updated, (
@@ -239,7 +225,7 @@ def test_out_of_order_unrelated_package_is_not_rewritten() -> None:
         "[package.metadata.docs.rs]\nall-features = true\n"
     )
 
-    updated, changed = _rewrite(snippet)
+    updated, changed = rewrite(snippet)
 
     assert not changed, "the gate must read the name from the proxy table"
     assert updated == snippet, "an unrelated out-of-order package must not change"
@@ -249,73 +235,16 @@ def test_eligible_dependency_fence_still_rewrites_its_dependency() -> None:
     """Dependency-reference rewriting is independent of the package gate."""
     snippet = '[dependencies]\nalpha = "0.1.0"\n'
 
-    updated, changed = _rewrite(snippet)
+    updated, changed = rewrite(snippet)
 
     assert changed, "a bumped crate's dependency requirement must be rewritten"
-    assert updated == f'[dependencies]\nalpha = "{_TARGET_VERSION}"\n', (
+    assert updated == f'[dependencies]\nalpha = "{TARGET_VERSION}"\n', (
         f"the dependency requirement must change; got {updated!r}"
     )
 
 
 # The alphabet keeps a generated name valid inside a TOML basic string, so the
 # fixture cannot produce text that parses back as a different package name.
-_NON_MATCHING_NAME = st.text(
-    alphabet=st.characters(
-        whitelist_categories=("Ll", "Lu", "Nd"), whitelist_characters="-_"
-    ),
-    min_size=1,
-    max_size=20,
-).filter(lambda name: name != "alpha")
-_VERSION_SHAPES = st.sampled_from([
-    'version = "0.1.0"',
-    "version.workspace = true",
-    "version = { workspace = true }",
-    "",
-])
-
-
-@settings(max_examples=50)
-@given(name=_NON_MATCHING_NAME, version_line=_VERSION_SHAPES)
-def test_unrelated_package_names_are_never_rewritten(
-    name: str, version_line: str
-) -> None:
-    """No unrelated package name and version shape is ever rewritten."""
-    snippet = f'[package]\nname = "{name}"\n' + (
-        f"{version_line}\n" if version_line else ""
-    )
-
-    updated, changed = _rewrite(snippet)
-
-    assert not changed, f"an unrelated package {name!r} must not be rewritten"
-    assert updated == snippet, (
-        f"the snippet for {name!r} must survive unchanged; got {updated!r}"
-    )
-
-
-@settings(max_examples=50)
-@given(version_line=_VERSION_SHAPES)
-def test_a_matching_package_only_rewrites_a_string_version(
-    version_line: str,
-) -> None:
-    """A matching package rewrites only the plain string version shape."""
-    snippet = '[package]\nname = "alpha"\n' + (
-        f"{version_line}\n" if version_line else ""
-    )
-
-    updated, changed = _rewrite(snippet)
-
-    if version_line == 'version = "0.1.0"':
-        assert changed, "the differing string version must be rewritten"
-        assert updated == (
-            f'[package]\nname = "alpha"\nversion = "{_TARGET_VERSION}"\n'
-        ), f"only the version value should change; got {updated!r}"
-        return
-    assert not changed, (
-        f"a matching package with {version_line!r} must not be rewritten"
-    )
-    assert updated == snippet, "non-string and absent versions must round-trip"
-
-
 _MIXED_DOCUMENT = f"""\
 # Guide
 
@@ -348,7 +277,7 @@ def test_mixed_document_rewrites_only_the_dependency_fence(
 ) -> None:
     """A mixed document changes only the eligible dependency fence."""
     updated, changed = bump_docs_fences.rewrite_markdown_toml_fences(
-        _MIXED_DOCUMENT, _TARGETS, _TARGET_VERSION
+        _MIXED_DOCUMENT, TARGETS, TARGET_VERSION
     )
 
     assert changed, "the dependency fence is eligible and must change"
@@ -369,7 +298,7 @@ def test_mixed_document_without_an_eligible_fence_is_unchanged() -> None:
     )
 
     updated, changed = bump_docs_fences.rewrite_markdown_toml_fences(
-        document, _TARGETS, _TARGET_VERSION
+        document, TARGETS, TARGET_VERSION
     )
 
     assert not changed, "no fence references a bumped crate"
@@ -394,7 +323,7 @@ def test_inline_package_tables_are_left_alone() -> None:
         '[workspace.package]\nversion = "0.1.0"\n'
     )
 
-    updated, changed = _rewrite(snippet)
+    updated, changed = rewrite(snippet)
 
     assert not changed, (
         "inline shapes are outside the documentation pass, as select_table documents"

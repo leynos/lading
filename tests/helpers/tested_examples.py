@@ -103,12 +103,19 @@ class _LoadState:
     require_markers: bool
     examples: dict[str, MarkedExample]
     list_levels: dict[int, list[int]] = dc.field(default_factory=dict)
+    container_depth: int = 0
 
 
 def _load_line(state: _LoadState, index: int) -> int:
     """Load one line, returning the next index to inspect."""
     raw = state.lines[index]
     depth = quote_depth(raw)
+    if depth < state.container_depth:
+        # Leaving a block quote discards the list levels scoped to it, so a
+        # later quote at the same depth cannot inherit them.
+        for stale in [key for key in state.list_levels if key > depth]:
+            del state.list_levels[stale]
+    state.container_depth = depth
     levels = state.list_levels.setdefault(depth, [])
     list_indent = list_context(raw, levels)
     marker = _marker_at(raw, state.path, index, list_indent)
