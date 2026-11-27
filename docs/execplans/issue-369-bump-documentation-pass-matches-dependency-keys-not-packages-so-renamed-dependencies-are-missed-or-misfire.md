@@ -207,9 +207,12 @@ Stop and escalate if a threshold is reached.
   Lint needed three fixes: a `Returns` section on the private helper, a
   seven-argument test collapsed into an `_AliasScenario` dataclass, and three
   inline-literal assertions replaced with membership checks.
-- [ ] EP-M3: Update the user guide and design notes, add the plan to the
-  contents index, run the Markdown gates and the full commit gates, and record
-  the results.
+- [x] (2026-11-27) EP-M3: Documented the identity rule and section scope in
+  `docs/users-guide.md` and `docs/lading-design.md`, and added this plan to
+  `docs/contents.md`. `make fmt`, `make markdownlint` (including the spelling
+  gate), and `make nixie` pass. The focused suite passed 114 tests, and the
+  full gates pass: `make check-fmt`, `make lint`, `make typecheck`, and
+  `make test` (1755 passed, 31 skipped, 108 snapshots).
 - [ ] Push the branch and open a draft pull request that closes #369.
 
 ## Surprises & discoveries
@@ -332,7 +335,7 @@ Lemmas:
   entries whose identity must be tested.
 
 Axioms: tomlkit 0.15.1's documented mapping behaviour for `Table`,
-`InlineTable`, and `OutOfOrderTableProxy`; MarkdownIt's fence tokenisation
+`InlineTable`, and `OutOfOrderTableProxy`; MarkdownIt's fence tokenization
 (unchanged by this plan).
 
 Methods and evidence:
@@ -363,8 +366,46 @@ that is intended.
 
 ## Outcomes & retrospective
 
-Not yet complete. To be recorded after EP-M3.
+The documentation pass now identifies a fence dependency by its `package` field
+when present and non-empty, and by its key otherwise. The issue's reproducer
+behaves as specified: `alias = { package = "alpha" }` is bumped and
+`alpha = { package = "unrelated" }` is not. The fix also made dotted dependency
+keys reachable for the first time, because `OutOfOrderTableProxy` entries now
+mutate through their `version` field rather than being treated as scalar
+requirements.
+
+Evidence:
+
+```plaintext
+focused: 114 passed in 78.60s
+make check-fmt: 649 files already formatted; 40 Markdown files unchanged
+make markdownlint: 0 issues in 0 files (spelling gate clean)
+make nixie: All diagrams validated successfully
+make lint: 10.00/10 (Ruff, Interrogate, Skylos, duplication, Pylint)
+make typecheck: All checks passed
+make test: 1755 passed, 31 skipped, 108 snapshots
+```
+
+Lessons:
+
+- A shared mutation helper can hide an entry shape. The existing dispatch
+  listed two table-like types even though the module defined a third as a
+  table-like alias; probing tomlkit's real output exposed the gap before the
+  tests did.
+- The repository's lint stack rejects boolean positional parameters and
+  inline-literal assertions in tests. Grouping scenario data into a frozen
+  dataclass and using membership assertions keeps tests inside the house rules
+  without weakening the contract.
+- The spelling gate caught `tokenisation`; en-GB-oxendict spelling applies to
+  ExecPlans as well as user documentation.
+
+Residual gap: documentation identity is not resolved through `cargo metadata`,
+so a documented alias of a non-member package is unaffected. That matches the
+issue's expected behaviour and the section scope.
 
 ## Revision note
 
 - 2026-11-27: Initial draft, created before the failing tests were written.
+- 2026-11-27: Recorded the red baseline, the implementation, the lint-driven
+  test restructuring, the documentation gates, and the final gate results.
+  Status remains `IN PROGRESS` until the draft pull request exists.

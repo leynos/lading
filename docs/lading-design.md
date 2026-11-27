@@ -402,9 +402,8 @@ lading bump <new_version> [--dry-run]
   `include_inline`, so an inline `workspace = { ... }` version table is left
   alone.
 - Dependency-table location in documentation is owned by
-  `lading.commands.bump_docs_dependencies`. It calls the shared
-  `bump_toml_dependencies.update_dependency_sections` once on the document with
-  workspace sections enabled and once for each immediate `target` selector, so
+  `lading.commands.bump_docs_dependencies`. It visits the top-level and
+  `[workspace.*]` dependency sections and each immediate `target` selector, so
   fence rewriting reaches `[workspace.dependencies]` and
   `[target.<spec>.dependencies]` alongside their dev and build variants. The
   manifest pass keeps to the unconditional sections: a target-specific
@@ -412,17 +411,20 @@ lading bump <new_version> [--dry-run]
   only to the matching target. Where the same dependency is also declared
   unconditionally, the bump rewrites that entry; a dependency declared only for
   a target keeps its version until it is edited by hand.
-- Keys are matched as written in both passes. The manifest pass first maps each
-  bumped crate name to its manifest key using the workspace graph, so it
-  follows aliases; the documentation pass has no Cargo metadata and receives
-  crate names directly, so `alpha-core = { package = "alpha" }` is not
-  rewritten and an entry keyed `alpha` is. That asymmetry predates the target
-  traversal and is recorded as a documentation-pass limit.
+- A fence dependency is identified by its `package` field when that field is
+  present, and by its key when the field is absent, matching the manifest pass,
+  which resolves aliases through `dependency.manifest_name` from
+  `cargo metadata`. A present but empty or non-string `package` field yields no
+  identity, so the entry is skipped rather than matched on its key. Identity
+  selection lives in `bump_docs_dependencies.py`;
+  `bump_toml_dependencies.update_dependency_table` remains an exact-key helper
+  for manifest callers. Dotted keys (`alias.package` and `alias.version`) parse
+  as an `OutOfOrderTableProxy`, which the shared entry dispatch mutates through
+  its `version` field.
 - Shapes the documentation traversal cannot reach are skipped silently, in
   keeping with the manifest pass: a `target` value given as an inline table or
   a scalar, a selector whose value is an inline table, a dependency table below
-  one selector level, and a dependency entry that `tomlkit` parses as an
-  `OutOfOrderTableProxy`.
+  one selector level, and a dependency section written as an inline table.
 - The publish workflow stages a clean workspace copy in a temporary directory
   before packaging. The staging directory must live outside the source tree to
   avoid recursive copies. Crates that opt into `readme.workspace = true` must

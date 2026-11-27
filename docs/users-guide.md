@@ -454,6 +454,30 @@ name = "my-app"
 version = "0.1.0"
 ```
 
+A documented dependency is identified by its `package` field when that field is
+present and non-empty, and by its key otherwise. This matches how the manifest
+pass resolves a dependency, so a renamed dependency is bumped under either
+spelling:
+
+```toml
+[dependencies]
+config_layer = { package = "ortho_config", version = "0.9.0" }  # bumped
+ortho_config = "0.9.0"                                          # bumped
+```
+
+A `package` field that is present but empty, or that is not a string, makes the
+entry unidentifiable: `lading` leaves it untouched rather than falling back to
+the key. A key that merely shares a workspace crate's name while renaming
+another package is therefore never rewritten.
+
+The identity rule applies at every location the pass visits: the top-level
+tables, their `[workspace.*]` counterparts, and the `[target.<spec>.*]` tables.
+
+The identity rule arrived after 0.4.0. When upgrading, re-run `lading bump` with
+`--dry-run` and review the documentation entries it reports: TOML fences that
+previously kept a stale alias now change, and fences whose key happened to
+match a bumped crate but renamed a different package no longer do.
+
 #### Confinement preflight
 
 Before writing anything, `lading bump` builds and validates the complete write
