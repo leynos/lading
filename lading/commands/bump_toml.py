@@ -25,6 +25,9 @@ _TABLE_LIKE_TYPES: typ.Final[
     InlineTable,
     OutOfOrderTableProxy,
 )
+_BLOCK_TABLE_TYPES: typ.Final[
+    tuple[type[Table] | type[InlineTable] | type[OutOfOrderTableProxy], ...]
+] = (Table, OutOfOrderTableProxy)
 
 NON_DIGIT_PREFIX: typ.Final[re.Pattern[str]] = re.compile(r"^([^\d]*)")
 
@@ -264,7 +267,7 @@ def update_dependency_table(
 
 
 def update_section(
-    document: TOMLDocument,
+    document: TOMLDocument | _TableLike,
     path: tuple[str, ...],
     names: cabc.Collection[str],
     target_version: str,
@@ -273,8 +276,8 @@ def update_section(
 
     Parameters
     ----------
-    document : TOMLDocument
-        The parsed TOML manifest document.
+    document : TOMLDocument | _TableLike
+        The parsed TOML manifest document, or a table to descend from.
     path : tuple[str, ...]
         Tuple of keys identifying the table path (e.g., ``("workspace",
         "dependencies")``).
@@ -301,7 +304,7 @@ def update_section(
 
 
 def update_dependency_sections(
-    document: TOMLDocument,
+    document: TOMLDocument | _TableLike,
     dependency_sections: cabc.Mapping[str, cabc.Collection[str]],
     target_version: str,
     *,
@@ -311,8 +314,8 @@ def update_dependency_sections(
 
     Parameters
     ----------
-    document : TOMLDocument
-        The parsed TOML manifest document.
+    document : TOMLDocument | _TableLike
+        The parsed TOML manifest document, or a table to descend from.
     dependency_sections : cabc.Mapping[str, cabc.Collection[str]]
         Mapping of section names to crate names to update.
     target_version : str
@@ -342,7 +345,7 @@ def update_dependency_sections(
 
 
 def _update_named_sections(
-    document: TOMLDocument,
+    document: TOMLDocument | _TableLike,
     sections: cabc.Mapping[str, cabc.Collection[str]],
     target_version: str,
     prefix: tuple[str, ...] = (),
@@ -444,6 +447,8 @@ def _read_manifest_text(manifest_path: Path) -> str:
 def select_table(
     document: TOMLDocument | _TableLike,
     keys: tuple[str, ...],
+    *,
+    include_inline: bool = False,
 ) -> _TableLike | None:
     r"""Return the nested table located by ``keys`` if it exists.
 
@@ -454,6 +459,10 @@ def select_table(
     keys : tuple[str, ...]
         Ordered keys identifying the nested table path. An empty tuple returns
         ``document`` itself when it is table-like.
+    include_inline : bool, default False
+        Whether an inline table counts as a table to descend through. The
+        documentation and manifest passes leave inline shapes alone; a
+        configured non-member rewrite opts in.
 
     Returns
     -------
@@ -469,18 +478,21 @@ def select_table(
     >>> select_table(document, ("missing",)) is None
     True
     """
+    allowed: tuple[
+        type[Table] | type[InlineTable] | type[OutOfOrderTableProxy], ...
+    ] = _TABLE_LIKE_TYPES if include_inline else _BLOCK_TABLE_TYPES
     if not keys:
-        return document if isinstance(document, _TABLE_LIKE_TYPES) else None
+        return document if isinstance(document, allowed) else None
     current: object = document
     for key in keys:
         getter = getattr(current, "get", None)
         if getter is None:
             return None
         next_value = getter(key)
-        if not isinstance(next_value, _TABLE_LIKE_TYPES):
+        if not isinstance(next_value, allowed):
             return None
         current = next_value
-    return current if isinstance(current, _TABLE_LIKE_TYPES) else None
+    return current if isinstance(current, allowed) else None
 
 
 def assign_version(table: _TableLike | None, target_version: str) -> bool:

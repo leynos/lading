@@ -370,8 +370,67 @@ READMEs appear in the output with the `(readme)` suffix described above.
 
 If `bump.documentation.globs` is configured, `lading` also searches those
 Markdown files for TOML code fences and updates version values that refer to
-workspace crates. Dependency requirements are updated in top-level,
-`[workspace.<section>]`, and `[target.<selector>.<section>]` tables.
+workspace crates. A rewrite visits every location a reader is told to declare a
+dependency:
+
+- the top-level `[dependencies]`, `[dev-dependencies]`, and
+  `[build-dependencies]` tables;
+- their `[workspace.dependencies]`, `[workspace.dev-dependencies]`, and
+  `[workspace.build-dependencies]` counterparts;
+- every `[target.<spec>.dependencies]` table whose selector sits directly under
+  `target`, in each of the three section variants. The selector may be quoted
+  (`[target.'cfg(unix)'.dependencies]`), double-quoted
+  (`[target."cfg(windows)".dependencies]`), or a bare triple
+  (`[target.x86_64-unknown-linux-gnu.dependencies]`).
+
+The first two groups match what the manifest pass rewrites. For workspace and
+member manifests, target tables are documentation-only: the standard manifest
+pass leaves a target-specific table inside those `Cargo.toml` files unchanged.
+A configured non-member rewrite (`[[bump.manifest_rewrites]]`) does visit
+target-specific tables in the manifests it selects.
+
+Only the dependency keys named in the fence are rewritten, and only their
+`version` requirement; a requirement operator such as `^` or `~` is preserved.
+Keys that are not named are left untouched.
+
+Keys are matched as written. The documentation pass has no Cargo metadata, so
+it cannot resolve an alias: for a workspace crate `alpha`, a fence entry
+`alpha-core = { package = "alpha", version = "1.0.0" }` keeps its version.
+Conversely, an entry keyed `alpha` is rewritten even when it names a different
+package. The manifest pass resolves crate names to manifest keys from the
+workspace graph before applying the same rule, so it does follow aliases; that
+mapping is manifest-only.
+
+A fence can also show a location this pass cannot reach. That location is left
+unchanged and no error is reported, while any supported location in the same
+fence is still rewritten:
+
+- `target` given as an inline table (`target = { ... }`) or as a string;
+- `[target]` with an inline selector value, such as
+  `'cfg(unix)' = { dependencies = { ... } }`;
+- a dependency table nested below one selector level, such as
+  `[target.'cfg(unix)'.nested.dependencies]`;
+- a dependency *section* written as an inline table, such as
+  `[target.'cfg(unix)']` followed by `dependencies = { alpha = "1.0.0" }`. An
+  inline dependency *entry* such as `alpha = { version = "1.0.0" }` is
+  supported and rewritten;
+- a dependency entry whose sub-table is reopened after another header:
+  `[target.'cfg(unix)'.dependencies.alpha]`, then
+  `[target.'cfg(unix)'.dependencies]`, then
+  `[target.'cfg(unix)'.dependencies.alpha.package]`. `tomlkit` reads `alpha`
+  there as an out-of-order table, so it keeps its version while a plain sibling
+  entry such as `beta` in the same section is rewritten. Without the third
+  header `alpha` reads as an ordinary table and is rewritten normally.
+
+An out-of-order `target` header is not a limit: a `[target]` line written after
+its selectors is still traversed.
+
+Target-specific tables inside a workspace or member `Cargo.toml` are not
+rewritten by the standard manifest pass; only their documentation counterparts
+are. Where the same dependency is also declared in an unconditional section of
+that manifest, the bump rewrites that entry. A dependency declared only for a
+target keeps its version in the member manifest and must be edited by hand, or
+rewritten by a configured non-member rewrite that selects the manifest.
 
 #### Confinement preflight
 
@@ -1044,7 +1103,9 @@ manifest.
 ### `[bump.documentation]`
 
 - `globs`: array of strings, default `[]`. Glob patterns for Markdown files
-  whose TOML code fences should be updated.
+  whose TOML code fences should be updated. Every dependency table location a
+  bump recognizes is rewritten, including `[workspace.*]` and
+  `[target.<spec>.*]`; see the bump section above for the list and its limits.
 
 ### `[publish]`
 

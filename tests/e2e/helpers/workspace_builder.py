@@ -152,13 +152,25 @@ def _write_lading_config(workspace_root: Path) -> None:
     (workspace_root / "lading.toml").write_text(config_text, encoding="utf-8")
 
 
-def _write_workspace_readme(
-    workspace_root: Path,
-    crate_names: tuple[str, ...],
-    *,
-    version: str,
-) -> None:
-    """Write a README containing a TOML fence listing crate versions."""
+def workspace_readme(crate_names: tuple[str, ...], version: str) -> str:
+    """Return the README a fixture workspace starts with at ``version``.
+
+    The fences cover the top-level dependency table, the workspace dependency
+    table, and a target-specific dependency table, so an end-to-end bump proves
+    all three documented locations are rewritten.
+
+    Parameters
+    ----------
+    crate_names : tuple[str, ...]
+        Members listed in the top-level ``[dependencies]`` fence.
+    version : str
+        Version every fence records.
+
+    Returns
+    -------
+    str
+        The complete README text.
+    """
     lines = [
         "# Example workspace",
         "",
@@ -167,8 +179,29 @@ def _write_workspace_readme(
         *[f'{name} = "{version}"' for name in crate_names],
         "```",
         "",
+        "```toml",
+        "[workspace.dependencies]",
+        f'core = "{version}"',
+        "```",
+        "",
+        "```toml",
+        "[target.'cfg(unix)'.dependencies]",
+        f'core = "{version}"',
+        "```",
+        "",
     ]
-    (workspace_root / "README.md").write_text("\n".join(lines), encoding="utf-8")
+    return "\n".join(lines)
+
+
+def _write_workspace_readme(
+    workspace_root: Path,
+    crate_names: tuple[str, ...],
+    *,
+    version: str,
+) -> None:
+    """Write the fixture README for ``version`` to ``workspace_root``."""
+    content = workspace_readme(crate_names, version)
+    (workspace_root / "README.md").write_text(content, encoding="utf-8")
 
 
 def _create_crate(

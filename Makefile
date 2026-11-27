@@ -298,7 +298,7 @@ lint-docstrings: ## Enforce complete Python docstring coverage
 	    exit 1; \
 	  fi
 
-lint: build $(UV) interrogate skylos duplication ## Run linters
+lint: build $(UV) interrogate skylos duplication yamllint actionlint ## Run linters
 	$(RUFF) check $(RUFF_FORCE_EXCLUDE) $(RUFF_TARGETS)
 	$(MAKE) --no-print-directory lint-docstrings
 	$(PYLINT) $(PYLINT_TARGETS)
@@ -382,3 +382,18 @@ crosshair: build $(UV) ## Model-check bump_output pure-helper contracts (issue #
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?##' $(MAKEFILE_LIST) | \
 	awk 'BEGIN {FS=":"; printf "Available targets:\n"} {printf "  %-20s %s\n", $$1, $$2}'
+
+YAMLLINT ?= yamllint
+ACTIONLINT ?= actionlint
+
+.PHONY: yamllint actionlint
+
+# yamllint reads `.yamllint.yml`, which extends `.yamllint-estate.yml`, and
+# resolves that path against the current directory, so run it from the root.
+yamllint: SHELL := bash
+yamllint: .SHELLFLAGS := -eo pipefail -c
+yamllint: ## Lint every tracked YAML file strictly
+	git ls-files -z '*.yml' '*.yaml' | xargs -0 -r $(YAMLLINT) --strict --
+
+actionlint: ## Lint the GitHub Actions workflows, including their shell scripts
+	$(ACTIONLINT)

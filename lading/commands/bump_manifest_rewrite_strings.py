@@ -79,7 +79,7 @@ def _rewrite_string_values(
 
     targets: dict[tuple[str, ...], tuple[_TableLike, str, object, set[str]]] = {}
     for rule in rules:
-        table = bump_toml.select_table(document, rule.table)
+        table = bump_toml.select_table(document, rule.table, include_inline=True)
         if table is None:
             continue
         _raise_if_pre_bump_versions_are_missing(manifest_path, versions)
@@ -97,7 +97,7 @@ def _rewrite_one_string_rule(
     manifest_path: Path,
 ) -> bool:
     """Use the shared table updater when only one selector can run."""
-    table = bump_toml.select_table(document, rule.table)
+    table = bump_toml.select_table(document, rule.table, include_inline=True)
     if table is None:
         return False
     _raise_if_pre_bump_versions_are_missing(manifest_path, versions)

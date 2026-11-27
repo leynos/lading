@@ -55,6 +55,7 @@ pytest_plugins = (
     "tests.bdd.steps.metadata_fixtures",
     "tests.bdd.steps.test_bump_steps",
     "tests.bdd.steps.test_bump_lockfile_steps",
+    "tests.bdd.steps.test_documentation_steps",
     "tests.bdd.steps.test_publish_fixtures",
     "tests.bdd.steps.test_publish_given_steps",
     "tests.bdd.steps.test_publish_when_steps",
@@ -66,6 +67,7 @@ pytest_plugins = (
     "tests.bdd.steps.test_publish_staged_manifest_then_steps",
     "tests.bdd.steps.test_publish_skip_steps",
     "tests.e2e.steps.test_e2e_steps",
+    "tests.e2e.steps.test_e2e_publish_steps",
 )
 
 

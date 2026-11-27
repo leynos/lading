@@ -82,6 +82,24 @@ Feature: Lading CLI scaffolding
     Then the documentation file "README.md" contains "alpha = \"1.2.3\""
     And the CLI output lists documentation path "- README.md (documentation)"
 
+  Scenario: Bumping updates workspace and target documentation fences
+    Given a workspace directory with configuration
+    And cargo metadata describes a sample workspace
+    And the workspace README contains workspace and target dependency snippets for "alpha"
+    And bump.documentation.globs contains "README.md"
+    When I invoke lading bump 1.2.3 with that workspace
+    Then the workspace and target documentation fences record version "1.2.3"
+    And the CLI output lists documentation path "- README.md (documentation)"
+
+  Scenario: Dry running a bump leaves workspace and target fences unchanged
+    Given a workspace directory with configuration
+    And cargo metadata describes a sample workspace
+    And the workspace README contains workspace and target dependency snippets for "alpha"
+    And bump.documentation.globs contains "README.md"
+    When I invoke lading bump 1.2.3 with that workspace using --dry-run
+    Then the workspace and target documentation file is unchanged
+    And the CLI output lists documentation path "- README.md (documentation)"
+
   Scenario: Bumping transposes workspace README to crates
     Given a workspace directory with configuration
     And cargo metadata describes a sample workspace

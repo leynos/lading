@@ -61,7 +61,7 @@ def rewrite_dependency_requirements(
     for section in bump_toml.DEPENDENCY_SECTIONS:
         sections.append((section,))
         sections.append(("workspace", section))
-    target_table = bump_toml.select_table(document, ("target",))
+    target_table = bump_toml.select_table(document, ("target",), include_inline=True)
     if target_table is not None:
         for selector in tuple(target_table):
             sections.extend(
@@ -81,7 +81,7 @@ def _rewrite_dependency_section(
     target_version: str,
 ) -> bool:
     """Rewrite the selected entries of one dependency table."""
-    table = bump_toml.select_table(document, path)
+    table = bump_toml.select_table(document, path, include_inline=True)
     if table is None:
         return False
     changed = False
