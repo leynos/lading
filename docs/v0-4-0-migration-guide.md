@@ -320,6 +320,7 @@ because an upload cannot be undone.
 Projects that do not publish are unaffected. To keep the 0.3.x behaviour for a
 workspace that depends on Git-aware selection, set:
 
+<!-- tested-example: migration-staging-exclude-opt-out -->
 ```toml
 [publish]
 stage_exclude = []
