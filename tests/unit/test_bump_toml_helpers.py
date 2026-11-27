@@ -1,5 +1,6 @@
 """Unit tests for low-level bump TOML table and version helpers."""
 
+import collections.abc as cabc
 import dataclasses as dc
 import os
 from pathlib import Path
@@ -72,40 +73,24 @@ def test_value_matches_handles_toml_items() -> None:
     )
 
 
+# When [package.metadata.docs.rs] appears after other tables, tomlkit returns
+# an OutOfOrderTableProxy instead of a Table.
+_OUT_OF_ORDER_DOCUMENT = (
+    '[package]\nname = "x"\nversion = "0.1.0"\n'
+    "[dependencies]\n"
+    'foo = "1"\n'
+    "[package.metadata.docs.rs]\n"
+    "all-features = true\n"
+)
+
+
 def test_select_table_handles_out_of_order_package() -> None:
     """Out-of-order tables (OutOfOrderTableProxy) are accepted."""
-    # When [package.metadata.docs.rs] appears after other tables,
-    # tomlkit returns an OutOfOrderTableProxy instead of a Table
-    document = parse_toml(
-        '[package]\nname = "x"\nversion = "0.1.0"\n'
-        "[dependencies]\n"
-        'foo = "1"\n'
-        "[package.metadata.docs.rs]\n"
-        "all-features = true\n"
-    )
+    document = parse_toml(_OUT_OF_ORDER_DOCUMENT)
     table = bump_toml.select_table(document, ("package",))
     assert table is not None, "out-of-order [package] table should still be selectable"
     assert table.get("version") == "0.1.0", (
         "selected out-of-order table should expose its version"
-    )
-
-
-def test_assign_version_works_with_out_of_order_table() -> None:
-    """Version assignment works with OutOfOrderTableProxy."""
-    document = parse_toml(
-        '[package]\nname = "x"\nversion = "0.1.0"\n'
-        "[dependencies]\n"
-        'foo = "1"\n'
-        "[package.metadata.docs.rs]\n"
-        "all-features = true\n"
-    )
-    table = bump_toml.select_table(document, ("package",))
-    assert table is not None, "the package table must resolve for this document"
-    assert bump_toml.assign_version(table, "2.0.0") is True, (
-        "assigning to an out-of-order table should report a change"
-    )
-    assert table.get("version") == "2.0.0", (
-        "out-of-order table version should be rewritten"
     )
 
 
@@ -199,23 +184,24 @@ def test_replace_string_version_only_replaces_a_differing_string(
     )
 
 
-def test_replace_string_version_works_with_out_of_order_table() -> None:
-    """An ``OutOfOrderTableProxy`` is replaced through the same helper."""
-    document = parse_toml(
-        '[package]\nname = "x"\nversion = "0.1.0"\n'
-        "[dependencies]\n"
-        'foo = "1"\n'
-        "[package.metadata.docs.rs]\n"
-        "all-features = true\n"
-    )
+@pytest.mark.parametrize(
+    "replace",
+    [bump_toml.assign_version, bump_toml.replace_string_version],
+    ids=["assign-version", "replace-string-version"],
+)
+def test_version_helpers_work_with_out_of_order_table(
+    replace: cabc.Callable[[bump_toml.TableLike, str], bool],
+) -> None:
+    """Both version writers update an OutOfOrderTableProxy package table."""
+    document = parse_toml(_OUT_OF_ORDER_DOCUMENT)
     table = bump_toml.select_table(document, ("package",))
 
-    assert table is not None, "the package table must resolve"
-    assert bump_toml.replace_string_version(table, "2.0.0") is True, (
-        "replacing on an out-of-order table should report a change"
+    assert table is not None, "the package table must resolve for this document"
+    assert replace(table, "2.0.0") is True, (
+        "writing to an out-of-order table should report a change"
     )
     assert table.get("version") == "2.0.0", (
-        "out-of-order table version should be replaced"
+        "out-of-order table version should be rewritten"
     )
 
 
