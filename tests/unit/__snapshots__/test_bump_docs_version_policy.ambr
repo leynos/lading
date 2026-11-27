@@ -1,0 +1,37 @@
+# serializer version: 1
+# name: test_mixed_document_rewrites_only_the_dependency_fence
+  '''
+  # Guide
+  
+  The policy table this project reads:
+  
+  ```toml
+  [package.metadata.mytool]
+  mode = "warn"
+  ```
+  
+  A downstream application looks like:
+  
+  ```toml
+  [package]
+  name = "my-app"
+  version = "0.1.0"
+  ```
+  
+  Depend on the crate:
+  
+  ```toml
+  [dependencies]
+  alpha = "2.0.0"
+  ```
+  
+  A workspace member inherits the version:
+  
+  ```toml
+  [package]
+  name = "alpha"
+  version.workspace = true
+  ```
+  
+  '''
+# ---

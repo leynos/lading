@@ -4,6 +4,12 @@ The functions here find fenced TOML blocks, rewrite the version references they
 contain, and re-render the fence with its original info string and indentation.
 They are independent of filesystem discovery, which
 :mod:`lading.commands.bump_docs` owns.
+
+Snippet rewriting is narrower than manifest rewriting. A fence's
+``[package].version`` and ``[workspace.package].version`` are replaced only
+when the fence's ``[package].name`` names a bumped crate and the version is an
+existing string. The pass never inserts a version key, never re-versions an
+unrelated example manifest, and never replaces ``version.workspace = true``.
 """
 
 import collections.abc as cabc
@@ -328,15 +334,44 @@ def extract_fence_indent(line: str, fence_marker: str) -> str:
     return "" if position < 0 else line[:position]
 
 
-def _try_assign_version_at_path(
+def _names_bumped_crate(
     document: TOMLDocument,
-    path: tuple[str, ...],
+    dependency_targets: cabc.Collection[str],
+) -> bool:
+    """Return whether ``[package].name`` names one of ``dependency_targets``."""
+    package = bump_toml.select_table(document, ("package",))
+    if package is None:
+        return False
+    name = bump_toml.value_as_string(package.get("name"))
+    return name is not None and name in dependency_targets
+
+
+def _update_snippet_package_versions(
+    document: TOMLDocument,
+    dependency_targets: cabc.Collection[str],
     target_version: str,
 ) -> bool:
-    """Attempt to assign version at the specified table path."""
-    return bump_toml.assign_version(
-        bump_toml.select_table(document, path), target_version
+    """Apply the snippet-scoped package version policy.
+
+    A fence only describes a bumped workspace crate when its ``[package].name``
+    names one of the bumped crates. Only then are existing string versions
+    replaced; ``[workspace.package]`` follows the same gate because a fence
+    without a package name is not evidence of this workspace's root manifest.
+
+    Returns
+    -------
+    bool
+        ``True`` when a package or workspace-package version was replaced.
+    """
+    if not _names_bumped_crate(document, dependency_targets):
+        return False
+    changed = bump_toml.replace_string_version(
+        bump_toml.select_table(document, ("package",)), target_version
     )
+    changed |= bump_toml.replace_string_version(
+        bump_toml.select_table(document, ("workspace", "package")), target_version
+    )
+    return changed
 
 
 def update_toml_snippet_versions(
@@ -344,7 +379,14 @@ def update_toml_snippet_versions(
     dependency_targets: cabc.Collection[str],
     target_version: str,
 ) -> tuple[str, bool]:
-    """Return a TOML snippet with dependency versions rewritten.
+    r"""Return a TOML snippet with eligible versions rewritten.
+
+    The snippet-scoped policy is deliberately narrower than the manifest
+    update: a package or workspace-package version is replaced only when it is
+    an existing string and the snippet's ``[package].name`` names a bumped
+    crate. A fence that documents metadata, an unrelated application, or
+    ``version.workspace = true`` is returned unchanged. Dependency
+    requirements for the bumped crates are rewritten independently.
 
     Parameters
     ----------
@@ -361,17 +403,28 @@ def update_toml_snippet_versions(
         A tuple of (updated_snippet, changed) where changed indicates whether
         any modifications were made.
 
+    Examples
+    --------
+    >>> update_toml_snippet_versions(
+    ...     '[package]\nname = "demo"\nversion = "0.1.0"\n',
+    ...     {"demo"},
+    ...     "1.0.0",
+    ... )[1]
+    True
+    >>> update_toml_snippet_versions(
+    ...     '[package.metadata.tool]\nmode = "warn"\n', {"demo"}, "1.0.0"
+    ... )[1]
+    False
+
     """
     try:
         document = parse_toml(snippet)
     except TOMLKitError:
         return snippet, False
 
-    changed = False
-    if _try_assign_version_at_path(document, ("package",), target_version):
-        changed = True
-    if _try_assign_version_at_path(document, ("workspace", "package"), target_version):
-        changed = True
+    changed = _update_snippet_package_versions(
+        document, dependency_targets, target_version
+    )
     if update_toml_snippet_dependencies(document, dependency_targets, target_version):
         changed = True
 

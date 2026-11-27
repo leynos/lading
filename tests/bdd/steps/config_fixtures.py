@@ -378,3 +378,46 @@ def given_workspace_readme_snippet(workspace_directory: Path, crate_name: str) -
         """
     ).lstrip()
     readme_path.write_text(content, encoding="utf-8")
+
+
+_MIXED_DOCUMENTATION_SAMPLE = """\
+# Usage
+
+The metadata table this workspace's members read:
+
+```toml
+[package.metadata.mytool]
+mode = "warn"
+```
+
+A downstream application looks like this:
+
+```toml
+[package]
+name = "my-app"
+version = "0.1.0"
+```
+
+Depend on the workspace crate:
+
+```toml
+[dependencies]
+alpha = "0.1.0"
+```
+
+A member inherits the workspace version:
+
+```toml
+[package]
+name = "alpha"
+version.workspace = true
+```
+"""
+
+
+@given("the workspace README contains a mixed TOML documentation sample")
+def given_workspace_readme_mixed_sample(workspace_directory: Path) -> None:
+    """Write a README mixing eligible and ineligible TOML fences."""
+    (workspace_directory / "README.md").write_text(
+        _MIXED_DOCUMENTATION_SAMPLE, encoding="utf-8"
+    )

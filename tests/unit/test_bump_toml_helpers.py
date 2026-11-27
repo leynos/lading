@@ -116,3 +116,122 @@ def test_parse_manifest_rejects_a_fifo_before_reading(tmp_path: Path) -> None:
 
     with pytest.raises(OSError, match="not a regular file"):
         bump_toml.parse_manifest(manifest)
+
+
+def test_replace_string_version_handles_absent_table() -> None:
+    """The replace-only helper tolerates a missing table."""
+    assert bump_toml.replace_string_version(None, "1.0.0") is False, (
+        "replacing a version on a missing table should be a no-op"
+    )
+
+
+def test_replace_string_version_does_not_insert_a_missing_key() -> None:
+    """A table without a ``version`` key is never given one."""
+    table = parse_toml('[package]\nname = "demo"\n')["package"]
+
+    assert bump_toml.replace_string_version(table, "2.0.0") is False, (
+        "the documentation helper must not insert a missing version"
+    )
+    assert "version" not in table, (
+        "a missing version key must stay missing after the replace-only helper"
+    )
+
+
+def test_replace_string_version_replaces_a_differing_string() -> None:
+    """A differing string version is replaced."""
+    table = parse_toml('[package]\nversion = "0.1.0"\n')["package"]
+
+    assert bump_toml.replace_string_version(table, "2.0.0") is True, (
+        "a differing string version should report a change"
+    )
+    assert table["version"] == "2.0.0", "the differing version should be replaced"
+
+
+def test_replace_string_version_detects_an_equal_string() -> None:
+    """An equal string version reports no change and keeps its trivia."""
+    table = parse_toml('[package]\nversion = "2.0.0" # pinned\n')["package"]
+
+    assert bump_toml.replace_string_version(table, "2.0.0") is False, (
+        "a version already at the target should report no change"
+    )
+    assert "# pinned" in table.as_string(), (
+        "an untouched version must keep its inline comment"
+    )
+
+
+def test_replace_string_version_preserves_inline_trivia() -> None:
+    """Replacing a value keeps its trailing comment."""
+    table = parse_toml('[package]\nversion = "0.1.0" # keep\n')["package"]
+
+    assert bump_toml.replace_string_version(table, "2.0.0") is True, (
+        "the differing version should be replaced"
+    )
+    assert table.as_string() == 'version = "2.0.0" # keep\n', (
+        "the trailing comment and spacing must survive the replacement"
+    )
+
+
+def test_replace_string_version_leaves_inherited_dotted_tables_alone() -> None:
+    """``version.workspace = true`` is a table, not a string to replace."""
+    table = parse_toml("[package]\nversion.workspace = true\n")["package"]
+
+    assert bump_toml.replace_string_version(table, "2.0.0") is False, (
+        "a dotted inheritance table must not be replaced"
+    )
+    assert table.as_string() == "version.workspace = true\n", (
+        "dotted inheritance must survive unchanged"
+    )
+
+
+def test_replace_string_version_leaves_inline_tables_alone() -> None:
+    """An inline ``{ workspace = true }`` value is not a string to replace."""
+    table = parse_toml("[package]\nversion = { workspace = true }\n")["package"]
+
+    assert bump_toml.replace_string_version(table, "2.0.0") is False, (
+        "an inline inheritance table must not be replaced"
+    )
+    assert table.as_string() == "version = { workspace = true }\n", (
+        "inline inheritance must survive unchanged"
+    )
+
+
+def test_replace_string_version_leaves_booleans_alone() -> None:
+    """A boolean version value is not a string to replace."""
+    table = parse_toml("[package]\nversion = true\n")["package"]
+
+    assert bump_toml.replace_string_version(table, "2.0.0") is False, (
+        "a boolean version must not be replaced"
+    )
+    assert table["version"] is True, "a boolean version must keep its type"
+
+
+def test_replace_string_version_works_with_out_of_order_table() -> None:
+    """An ``OutOfOrderTableProxy`` is replaced through the same helper."""
+    document = parse_toml(
+        '[package]\nname = "x"\nversion = "0.1.0"\n'
+        "[dependencies]\n"
+        'foo = "1"\n'
+        "[package.metadata.docs.rs]\n"
+        "all-features = true\n"
+    )
+    table = bump_toml.select_table(document, ("package",))
+
+    assert table is not None, "the package table must resolve"
+    assert bump_toml.replace_string_version(table, "2.0.0") is True, (
+        "replacing on an out-of-order table should report a change"
+    )
+    assert table.get("version") == "2.0.0", (
+        "out-of-order table version should be replaced"
+    )
+
+
+def test_assign_version_still_inserts_a_missing_version() -> None:
+    """The manifest helper keeps its insert-or-replace behaviour."""
+    table = parse_toml('[package]\nname = "demo"\n')["package"]
+
+    assert bump_toml.assign_version(table, "2.0.0") is True, (
+        "manifest assignment must still insert a missing version"
+    )
+    assert table["version"] == "2.0.0", (
+        "manifest assignment must write the target version"
+    )

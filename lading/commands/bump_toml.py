@@ -495,13 +495,28 @@ def select_table(
     return current if isinstance(current, allowed) else None
 
 
+def _version_item(current: object, target_version: str) -> Item | str:
+    """Return ``target_version`` reusing ``current``'s formatting and comments."""
+    if not isinstance(current, Item):
+        return target_version
+    replacement = string(target_version)
+    with suppress(AttributeError):  # Preserve existing formatting and comments
+        replacement._trivia = current._trivia
+    return replacement
+
+
 def assign_version(table: _TableLike | None, target_version: str) -> bool:
-    r"""Update ``table['version']`` when ``table`` is present.
+    r"""Insert or replace ``table['version']`` when ``table`` is present.
+
+    This is the manifest helper: it writes ``target_version`` whether or not
+    the key already exists. Documentation snippets use
+    :func:`replace_string_version` instead, which never inserts a key.
 
     Parameters
     ----------
     table : _TableLike | None
-        The table whose ``version`` key is updated in place, or ``None``.
+        The table whose ``version`` key is inserted or updated in place, or
+        ``None``.
     target_version : str
         The target version to apply.
 
@@ -526,14 +541,49 @@ def assign_version(table: _TableLike | None, target_version: str) -> bool:
     current = table.get("version")
     if value_matches(current, target_version):
         return False
-    if isinstance(current, Item):
-        replacement = string(target_version)
-        with suppress(AttributeError):  # Preserve existing formatting and comments
-            replacement._trivia = current._trivia
-        table["version"] = replacement
-    else:
-        table["version"] = target_version
+    table["version"] = _version_item(current, target_version)
     return True
+
+
+def replace_string_version(table: _TableLike | None, target_version: str) -> bool:
+    r"""Replace ``table['version']`` only when it is an existing string.
+
+    Unlike :func:`assign_version`, this helper never inserts a missing key and
+    never replaces an inherited or non-string value. The documentation pass
+    uses it so a TOML fence that documents metadata, an unrelated package, or
+    ``version.workspace = true`` keeps its meaning.
+
+    Parameters
+    ----------
+    table : _TableLike | None
+        The table whose existing string ``version`` is replaced in place.
+    target_version : str
+        The target version to apply.
+
+    Returns
+    -------
+    bool
+        ``True`` when a differing string version was replaced.
+
+    Examples
+    --------
+    >>> from tomlkit import parse as parse_toml
+    >>> document = parse_toml('[package]\nversion = "1.0.0"\n')
+    >>> replace_string_version(document["package"], "2.0.0")
+    True
+    >>> document["package"]["version"]
+    '2.0.0'
+    >>> replace_string_version(document["package"], "2.0.0")
+    False
+    >>> missing = parse_toml('[package]\nname = "demo"\n')
+    >>> replace_string_version(missing["package"], "2.0.0")
+    False
+    >>> "version" in missing["package"]
+    False
+    """
+    if table is None or value_as_string(table.get("version")) is None:
+        return False
+    return assign_version(table, target_version)
 
 
 def value_matches(value: object, expected: str) -> bool:
