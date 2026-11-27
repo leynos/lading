@@ -15,7 +15,6 @@ performs the only workspace mutations in the bump workflow.
 import collections.abc as cabc
 import dataclasses as dc
 import enum
-import os
 import typing as typ
 from pathlib import Path, PurePosixPath
 
@@ -129,10 +128,10 @@ class PlanBuilder:
         spellings that name the same file compose even on a case-insensitive
         filesystem whose path comparison is case-preserving, such as macOS
         APFS. An absent target has no inode yet, so it is identified by its
-        parent's device and inode plus its normalized name. Distinct parents
-        therefore stay distinct even when Windows lowercases their paths for a
-        case-sensitive directory, and Windows still merges case-only spellings
-        of the same future file.
+        parent's device and inode plus its exact name. Distinct parents stay
+        distinct, and case-only spellings stay distinct when no filesystem
+        identity is available, because merging them could misdirect a write on
+        a case-sensitive Windows directory.
 
         Returns
         -------
@@ -159,13 +158,8 @@ class PlanBuilder:
         except OSError:
             return ("path", str(path.path))
         if parent.st_ino == 0:
-            return ("path", os.path.normcase(str(path.path)))
-        return (
-            "absent",
-            parent.st_dev,
-            parent.st_ino,
-            os.path.normcase(path.path.name),
-        )
+            return ("path", str(path.path))
+        return ("absent", parent.st_dev, parent.st_ino, path.path.name)
 
     def read(self, path: ConfinedPath) -> str | None:
         """Return the current content of ``path`` honouring earlier proposals.

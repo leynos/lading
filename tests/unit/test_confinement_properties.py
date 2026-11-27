@@ -123,17 +123,26 @@ def _add_link(root: Path, names: list[str], shape: str) -> None:
                 pytest.skip("hard links are unavailable here")
 
 
+@pytest.mark.parametrize("shape", ["regular", "symlink", "hardlink"])
 @filesystem_property_settings(
     max_examples=20,
     suppress_health_check=[HealthCheck.function_scoped_fixture],
 )
-@given(case=_glob_tree())
+@given(
+    names=st.lists(
+        st.text(alphabet="abc", min_size=1, max_size=3),
+        min_size=1,
+        max_size=4,
+        unique=True,
+    )
+)
 def test_expand_confined_glob_returns_contained_sorted_unique_matches(
     tmp_path: Path,
-    case: tuple[list[str], str],
+    names: list[str],
+    shape: str,
 ) -> None:
     """Matches stay contained and ordered, and every link shape is rejected."""
-    names, shape = case
+    names = [f"{name}.md" for name in names]
     root = tmp_path / "root"
     _reset(root)
     root.mkdir()

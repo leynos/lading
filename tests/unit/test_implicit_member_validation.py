@@ -332,7 +332,7 @@ def test_an_excluded_nested_workspace_is_not_read(tmp_path: Path) -> None:
     )
     # ``vendor`` is a symlink, so walking this dependency path would be
     # rejected as a symlinked component. The exclusion must skip it first.
-    (root / "vendor").symlink_to(outside, target_is_directory=True)
+    _symlink_or_skip(root / "vendor", outside)
     (outside / "tool" / "Cargo.toml").write_text(
         '[package]\nname = "tool"\nversion = "0.1.0"\n\n'
         'workspace = "."\n\n'

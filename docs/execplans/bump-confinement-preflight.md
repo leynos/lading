@@ -630,6 +630,12 @@ Scenario: Bumping rejects an escaping configured lockfile manifest
   and the migration guide is reorganized into numbered tasks with the checklist
   last. The property strategies cover restoration and skip unsupported symlink
   creation.
+- [x] 2026-11-27: Second reconciliation. Absent proposal keys use the exact
+  name, so case-only missing destinations stay distinct even under Windows case
+  folding; the identity helper is tested directly against a case-only sibling
+  and a resolving alias; the glob property is split by link shape so an
+  unavailable capability skips only that shape; and the new case-only and
+  symlink fixtures skip only when the filesystem lacks the capability.
 - [ ] EP-M5 release: tag and release `v0.4.0b1` after review convergence, then
   record the tag commit on issue #409.
 

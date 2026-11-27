@@ -15,6 +15,7 @@ from lading.utils.confinement import (
     relative_to_root,
 )
 from lading.utils.confinement import patterns as patterns_module
+from lading.utils.confinement.roots import _is_within_directory_identity
 from lading.utils.confinement.walk import display_relative
 
 
@@ -236,9 +237,41 @@ def test_relative_to_root_rejects_a_case_only_sibling(tmp_path: Path) -> None:
     root = tmp_path.resolve() / "workspace"
     root.mkdir()
     sibling = tmp_path.resolve() / "WORKSPACE"
-    sibling.mkdir()
+    try:
+        sibling.mkdir()
+    except OSError as exc:  # pragma: no cover - a case-insensitive filesystem
+        pytest.skip(f"case-only directories are unavailable here: {exc}")
+    if sibling.samefile(root):  # pragma: no cover - case-insensitive filesystem
+        pytest.skip("the filesystem treats case-only names as one directory")
     candidate = sibling / "Cargo.toml"
     candidate.write_text("", encoding="utf-8")
 
     with pytest.raises(UnsafeBumpTargetError):
         relative_to_root(root, candidate, key="manifest", label="manifest")
+
+
+def test_identity_check_distinguishes_a_case_only_sibling(tmp_path: Path) -> None:
+    """Directory identity rejects a case-only sibling and accepts an alias."""
+    root = tmp_path.resolve() / "workspace"
+    root.mkdir()
+    (root / "Cargo.toml").write_text("", encoding="utf-8")
+    sibling = tmp_path.resolve() / "WORKSPACE"
+    try:
+        sibling.mkdir()
+    except OSError as exc:  # pragma: no cover - a case-insensitive filesystem
+        pytest.skip(f"case-only directories are unavailable here: {exc}")
+    if sibling.samefile(root):  # pragma: no cover - case-insensitive filesystem
+        pytest.skip("the filesystem treats case-only names as one directory")
+    (sibling / "Cargo.toml").write_text("", encoding="utf-8")
+    alias = tmp_path.resolve() / "alias"
+    try:
+        alias.symlink_to(root, target_is_directory=True)
+    except (NotImplementedError, OSError) as exc:
+        pytest.skip(f"directory symlinks are unavailable here: {exc}")
+
+    assert not _is_within_directory_identity(sibling / "Cargo.toml", root), (
+        "a case-only sibling is not the same directory as the root"
+    )
+    assert _is_within_directory_identity(alias / "Cargo.toml", root), (
+        "an alias that resolves to the root is the same directory"
+    )

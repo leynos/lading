@@ -424,6 +424,25 @@ def _root_first_report(root: Path) -> list[str]:
     return [(root / name).as_posix() for name in names]
 
 
+def test_absent_case_only_targets_stay_distinct_under_windows_folding(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Case folding must not merge two missing names under one parent."""
+    root = tmp_path.resolve()
+    monkeypatch.setattr(os.path, "normcase", str.lower)
+    builder = PlanBuilder(root=root)
+
+    builder.propose(_confined(root, "README.md"), "upper\n", WriteCategory.README)
+    builder.propose(_confined(root, "readme.md"), "lower\n", WriteCategory.README)
+
+    plan = builder.build(target_version="1.2.3", lockfiles=None)
+
+    assert len(plan.proposals) == 2, (
+        "distinct missing names must not merge when case folding is applied"
+    )
+
+
 def test_lockfile_report_puts_the_root_first(tmp_path: Path) -> None:
     """The report leads with the root lockfile and sorts nested destinations."""
     root = tmp_path.resolve()
