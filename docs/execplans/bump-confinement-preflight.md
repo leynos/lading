@@ -154,6 +154,13 @@ guarantee.
   reintroducing an unconfined discovery path.
 - Stop and escalate before changing any file outside `lading/`, `tests/`, and
   `docs/` other than `pyproject.toml` for the release bump.
+- **Recorded exception (2026-11-27).** The `tomlkit` requirement floor raise
+  from `>=0.13` to `>=0.15` and the `uv.lock` recording it implies are accepted
+  as part of this change rather than escalated as a separate stop. `tomlkit`
+  was already a runtime dependency, the Cargo-configuration parser needs the
+  TOML 1.1 support present from 0.15, and the documented release flow updates
+  `uv.lock` with the package version. Together with the release version in
+  `pyproject.toml`, these are the only files outside the permitted paths.
 
 ## Milestones
 
@@ -775,7 +782,8 @@ Scenario: Bumping rejects an escaping configured lockfile manifest
   accepts TOML 1.1 syntax such as multiline inline tables, which `tomllib`
   rejects. The `pyproject.toml` requirement change and its `uv.lock` recording
   are the only files outside `lading/`, `tests/`, and `docs/` that this work
-  touches, besides the release version bump already authorized by the plan.
+  touches, besides the release version bump already authorized by the plan. The
+  Tolerances section records the explicit exception for them.
 
 ## Outcomes & retrospective
 
