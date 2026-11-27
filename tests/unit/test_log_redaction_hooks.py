@@ -1,5 +1,8 @@
 """Log hooks redact records at creation, and are restored when scopes end."""
 
+import collections.abc as cabc
+import contextlib
+import contextvars
 import logging
 from pathlib import Path
 
@@ -9,7 +12,12 @@ from lading import config as config_module
 from lading.commands import publish
 from lading.commands.publish_cargo_config import CargoEnvironment
 from lading.commands.publish_errors import ExpectedDigestsError
-from lading.utils.redaction import REDACTED, redact_text, use_secrets
+from lading.utils.redaction import (
+    REDACTED,
+    redact_active,
+    redact_text,
+    use_secrets,
+)
 from tests.helpers.publish_digests import PublishRig
 
 _LEAK = "exc-credential-44dd55ee66ff"
@@ -175,14 +183,45 @@ def test_log_hooks_are_restored_after_nested_and_overlapping_scopes() -> None:
     )
 
     # Overlapping: the first scope closes while the second is still open.
+    _run_overlapping_scopes(original_factory, original_make_record)
+
+
+def _run_overlapping_scopes(
+    original_factory: cabc.Callable[..., logging.LogRecord],
+    original_make_record: object,
+) -> None:
+    """Close the first of two scopes while the second is open, then check.
+
+    Each scope enters and exits in its own :class:`contextvars.Context`, as two
+    tasks or threads would, so each ``ContextVar.reset`` restores only what its
+    own scope changed and no secret stays active once both have ended.
+    """
+    before = redact_active(_LEAK)
     first, second = use_secrets((_LEAK,)), use_secrets(("another-secret-value",))
-    first.__enter__()
-    second.__enter__()
-    first.__exit__(None, None, None)
-    second.__exit__(None, None, None)
+    first_context, second_context = (
+        contextvars.copy_context(),
+        contextvars.copy_context(),
+    )
+    open_scopes: list[
+        tuple[contextvars.Context, contextlib.AbstractContextManager[None]]
+    ] = []
+    try:
+        for context, scope in ((first_context, first), (second_context, second)):
+            context.run(scope.__enter__)
+            open_scopes.append((context, scope))
+        while open_scopes:
+            context, scope = open_scopes.pop(0)
+            context.run(scope.__exit__, None, None, None)
+    finally:
+        for context, scope in open_scopes:
+            context.run(scope.__exit__, None, None, None)
+
     assert logging.getLogRecordFactory() is original_factory, (
         "overlapping: factory restored"
     )
     assert logging.Logger.makeRecord is original_make_record, (
         "overlapping: makeRecord restored"
+    )
+    assert redact_active(_LEAK) == before == _LEAK, (
+        "no secret may stay active once both scopes have ended"
     )
