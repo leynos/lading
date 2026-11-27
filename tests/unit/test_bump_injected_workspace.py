@@ -238,3 +238,37 @@ def test_injected_graph_rejects_a_renamed_crate(tmp_path: Path) -> None:
         ManifestRewriteError, match="package name differs from workspace discovery"
     ):
         _rewrite_versions(root, graph)
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        pytest.param(("[package\n", "Could not read manifest"), id="unparseable-toml"),
+        pytest.param(
+            ('name = "alpha"\n', r"has no \[package\] table"),
+            id="missing-package-table",
+        ),
+        pytest.param(
+            (
+                '[package]\nname = "alpha"\nversion.workspace = true\n',
+                "is unavailable",
+            ),
+            id="inherited-version-without-workspace-value",
+        ),
+        pytest.param(
+            ('[package]\nname = "alpha"\nversion = 1\n', "non-string package version"),
+            id="non-string-version",
+        ),
+    ],
+)
+def test_rewrite_versions_require_a_usable_manifest_version(
+    tmp_path: Path,
+    case: tuple[str, str],
+) -> None:
+    """A member manifest must supply one usable version for the graph check."""
+    content, expected_message = case
+    root, manifest = _workspace_with_member_manifest(tmp_path, content)
+    graph = WorkspaceGraph(workspace_root=root, crates=(_crate(manifest),))
+
+    with pytest.raises(ManifestRewriteError, match=expected_message):
+        _rewrite_versions(root, graph)

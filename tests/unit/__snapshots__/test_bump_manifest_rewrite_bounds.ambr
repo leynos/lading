@@ -1,0 +1,4 @@
+# serializer version: 1
+# name: test_format_requirement_bound_warning_names_target_and_bounds[requirement_bound_warning]
+  "Target version 2.0.0 does not satisfy Cargo comparator(s) <2, >3 in requirement '>=1.0.0, <2'; the rewritten requirement may not resolve"
+# ---
