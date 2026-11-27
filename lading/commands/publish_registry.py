@@ -171,8 +171,9 @@ def _declared_length(response: _Response) -> int | None:
 def _limit_socket_wait(response: _Response, seconds: float) -> None:
     """Make the next blocking read on ``response`` wait at most ``seconds``.
 
-    A buffered ``read(n)`` can loop over many ``recv`` calls, so the budget
-    left is applied to the socket before every read and reads use ``read1``.
+    A buffered ``read(n)`` can loop over many ``recv`` calls, so the request
+    timeout, capped at the budget left, is applied to the socket before every
+    read and reads use ``read1``.
     That bounds each underlying read, not the total: a ``read1`` on a chunked
     body can still make several reads while it consumes the trailers. The total
     is enforced by the deadline checks before any result is returned. The
@@ -198,7 +199,8 @@ def _read_chunk(response: _Response, deadline: _Deadline) -> bytes:
         If the read timed out while budget remained (a retryable stall).
     """
     deadline.check()
-    _limit_socket_wait(response, deadline.remaining())
+    # A stall costs one request timeout, leaving budget for a retry.
+    _limit_socket_wait(response, min(_REQUEST_TIMEOUT_SECONDS, deadline.remaining()))
     read = getattr(response, "read1", response.read)
     try:
         return read(_READ_CHUNK_BYTES)

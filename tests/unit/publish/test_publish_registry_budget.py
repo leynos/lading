@@ -250,3 +250,29 @@ def test_a_not_found_within_the_budget_is_still_unpublished(
     assert fetch_crates_io_digest("a", "1.0.0", transport=transport) is None, (
         "a timely 404 still means not published"
     )
+
+
+def test_a_stalled_body_is_cut_at_the_request_timeout_and_retried() -> None:
+    """A stall costs one request timeout, not the whole budget, and is retried."""
+    clock = Clock()
+    stalled_socket = SlowSocket(clock, delays=[1000.0])
+    stalled = SlowBody(stalled_socket)
+    healthy = SlowBody(SlowSocket(clock, delays=[1.0, 1.0]), [PLAIN_ARCHIVE, b""])
+    bodies = [stalled, healthy]
+
+    @contextlib.contextmanager
+    def opener(
+        request: urllib.request.Request, /, *, timeout: float
+    ) -> cabc.Generator[SlowBody]:
+        """Serve the stalled body first, then the healthy one."""
+        del request, timeout
+        yield bodies.pop(0)
+
+    transport = FetchTransport(opener=opener, sleep=lambda _s: None, clock=clock)
+
+    result = fetch_crates_io_digest("a", "1.0.0", transport=transport)
+
+    assert result == digest(PLAIN_ARCHIVE), "the retry within the budget succeeds"
+    assert stalled_socket.timeouts == [60.0], (
+        "a read may wait one request timeout, not the whole budget"
+    )

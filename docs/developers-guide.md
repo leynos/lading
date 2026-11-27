@@ -1952,23 +1952,24 @@ Every runner logs through `subprocess_runner.run_logged`, so the
 size cap, one 180 s time budget covering connecting, reads, closing and retry
 waits, a `Content-Length` check and bounded retries (a short or interrupted
 body, including `IncompleteRead`, is retried), and tests substitute a fake.
-Each underlying socket read is bounded by a socket timeout set from the budget
-left, reading with `read1`; that does not bound one `read1` call, since
-CPython's chunked reader can make several reads in one while it consumes the
-trailers, nor closing. The total is enforced by deadline checks once the body
-is read and the response closed, before a digest or a 404's `None` is returned,
-so expiry is never reported as either. The new errors (`ExpectedDigestsError`,
-`ArchiveMismatchError`, `UploadedArchiveMismatchError`,
-`PublishedArchiveConflictError`) live in `publish_errors`;
-`ArchiveUnavailableError` and `PublishedArchiveUnavailableError` sit beside the
-code that raises them. `tests/e2e/test_publish_expect_digests_cli.py` covers
-the option through the real `lading` process, with a stub `cargo`
-(`tests/e2e/helpers/stub_cargo.py`) on `PATH` and a loopback server standing in
-for the archive host (the process is started through a launcher that points the
-downloader at it, so nothing reaches crates.io).
-`tests/helpers/publish_digests.py` provides `FakeCargo`, `FakeRegistry`, and
-`PublishRig`, which drive `publish.run` in process without a subprocess or
-socket; the behavioural scenarios in
+Each underlying socket read is bounded by a socket timeout of the 60 s request
+timeout or the budget left, whichever is less, so a stalled body costs one
+request timeout and is retried while budget remains, reading with `read1`; that
+does not bound one `read1` call, since CPython's chunked reader can make
+several reads in one while it consumes the trailers, nor closing. The total is
+enforced by deadline checks once the body is read and the response closed,
+before a digest or a 404's `None` is returned, so expiry is never reported as
+either. The new errors (`ExpectedDigestsError`, `ArchiveMismatchError`,
+`UploadedArchiveMismatchError`, `PublishedArchiveConflictError`) live in
+`publish_errors`; `ArchiveUnavailableError` and
+`PublishedArchiveUnavailableError` sit beside the code that raises them.
+`tests/e2e/test_publish_expect_digests_cli.py` covers the option through the
+real `lading` process, with a stub `cargo` (`tests/e2e/helpers/stub_cargo.py`)
+on `PATH` and a loopback server standing in for the archive host (the process
+is started through a launcher that points the downloader at it, so nothing
+reaches crates.io). `tests/helpers/publish_digests.py` provides `FakeCargo`,
+`FakeRegistry`, and `PublishRig`, which drive `publish.run` in process without
+a subprocess or socket; the behavioural scenarios in
 `tests/bdd/features/publish_expect_digests.feature` use them because a download
 cannot be injected into the CLI subprocess the other publish scenarios run.
 
