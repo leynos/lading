@@ -21,6 +21,7 @@ from pathlib import Path, PurePosixPath
 from lading.commands import bump_toml
 from lading.commands.bump_output import BumpChanges
 from lading.utils.confinement import (
+    BumpPreflightError,
     BumpTargetExaminationError,
     ConfinedPath,
 )
@@ -120,6 +121,7 @@ class PlanBuilder:
     _paths: dict[_ProposalKey, ConfinedPath] = dc.field(default_factory=dict)
     _original: dict[_ProposalKey, str | None] = dc.field(default_factory=dict)
     _order: list[_ProposalKey] = dc.field(default_factory=list)
+    _casefold_keys: dict[_ProposalKey, _ProposalKey] = dc.field(default_factory=dict)
 
     def _key(self, path: ConfinedPath) -> _ProposalKey:
         """Return a filesystem-aware identity for ``path``.
@@ -129,9 +131,10 @@ class PlanBuilder:
         filesystem whose path comparison is case-preserving, such as macOS
         APFS. An absent target has no inode yet, so it is identified by its
         parent's device and inode plus its exact name. Distinct parents stay
-        distinct, and case-only spellings stay distinct when no filesystem
-        identity is available, because merging them could misdirect a write on
-        a case-sensitive Windows directory.
+        distinct. Without a filesystem identity, two spellings that differ only
+        in case cannot be told apart: they may name one future file on a
+        case-insensitive filesystem or two files on a case-sensitive one, so
+        the plan rejects the ambiguity instead of guessing.
 
         Returns
         -------
@@ -152,7 +155,16 @@ class PlanBuilder:
         return ("file", status.st_dev, status.st_ino)
 
     def _absent_key(self, path: ConfinedPath) -> _ProposalKey:
-        """Return the identity of a target that does not exist yet."""
+        """Return the exact-name identity of a target that does not exist yet.
+
+        A second spelling that differs only in case is rejected by
+        :meth:`_require_unambiguous_case` before any write.
+
+        Returns
+        -------
+        _ProposalKey
+            The parent identity plus the exact target name.
+        """
         try:
             parent = path.path.parent.stat()
         except OSError:
@@ -210,6 +222,7 @@ class PlanBuilder:
             The stage's role for reporting purposes.
         """
         key = self._key(path)
+        self._require_unambiguous_case(key, path)
         if key in self._contents:
             if content == self._contents[key]:
                 # A later stage adopted the pending text unchanged, so the
@@ -224,6 +237,7 @@ class PlanBuilder:
                 del self._paths[key]
                 self._original.pop(key, None)
                 self._order.remove(key)
+                self._casefold_keys.pop(self._casefold_key(key), None)
                 return
             self._contents[key] = content
             self._categories[key].add(category)
@@ -236,6 +250,56 @@ class PlanBuilder:
         self._categories[key] = {category}
         self._paths[key] = path
         self._order.append(key)
+
+    def _casefold_key(self, key: _ProposalKey) -> _ProposalKey:
+        """Return the case-folded identity used to detect ambiguous targets.
+
+        Existing targets have a real inode identity and are left unchanged. An
+        absent or identity-free target may name the same file as another
+        spelling on a case-insensitive filesystem, so its spelling is folded
+        only for the ambiguity check.
+
+        Returns
+        -------
+        _ProposalKey
+            The case-folded identity.
+        """
+        match key:
+            case ("absent", device, inode, name):
+                return ("absent", device, inode, name.casefold())
+            case ("path", spelling):
+                return ("path", spelling.casefold())
+            case _:
+                return key
+
+    def _require_unambiguous_case(
+        self,
+        key: _ProposalKey,
+        path: ConfinedPath,
+    ) -> None:
+        """Reject two planned targets that differ only in case.
+
+        Without a filesystem identity, the plan cannot tell whether the
+        spellings name one future file or two distinct files. Writing both
+        could overwrite the first target, so the ambiguity is rejected before
+        any mutation.
+
+        Raises
+        ------
+        BumpPreflightError
+            If a different spelling of the same case-folded target is already
+            planned.
+        """
+        folded = self._casefold_key(key)
+        existing = self._casefold_keys.get(folded)
+        if existing is not None and existing != key:
+            message = (
+                "two planned targets differ only in case and cannot be "
+                f"identified as one file: {self._paths[existing].display} and "
+                f"{path.display}"
+            )
+            raise BumpPreflightError(message)
+        self._casefold_keys[folded] = key
 
     def has_changes(self, category: WriteCategory) -> bool:
         """Return whether any proposed write carries ``category``.

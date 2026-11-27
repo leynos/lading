@@ -7,6 +7,7 @@ no-mutation-on-rejection promise.
 """
 
 import dataclasses as dc
+import errno
 import os
 import string
 from pathlib import Path
@@ -23,6 +24,7 @@ from lading.commands.bump_plan import (
     commit_plan,
 )
 from lading.utils.confinement import (
+    BumpPreflightError,
     ConfinedPath,
     ConfineOptions,
     UnsafeBumpTargetError,
@@ -375,12 +377,24 @@ def test_targets_without_an_inode_identity_stay_distinct(
     for path in (first, second):
         path.parent.mkdir(parents=True)
         path.write_text('version = "0.1.0"\n', encoding="utf-8")
+    upper = root / "Alpha.md"
+    lower = root / "alpha.md"
+    upper.write_text("original-upper\n", encoding="utf-8")
+    try:
+        lower.write_text("original-lower\n", encoding="utf-8")
+    except OSError as exc:  # pragma: no cover - a case-insensitive filesystem
+        if exc.errno != errno.EEXIST:
+            raise
+        pytest.skip("the filesystem cannot hold case-only sibling names")
+    if lower.samefile(upper):  # pragma: no cover - case-insensitive filesystem
+        pytest.skip("the filesystem treats case-only names as one file")
     zero = os.stat_result((0o100644, 0, 7, 1, 0, 0, 0, 0, 0, 0))
     real_stat = Path.stat
+    zero_identity = {first, second, upper, lower}
 
     def fake_stat(self: Path, *, follow_symlinks: bool = True) -> os.stat_result:
-        """Report a zero inode for the two distinct target files."""
-        if self in {first, second}:
+        """Report a zero inode for the target files."""
+        if self in zero_identity:
             return zero
         return real_stat(self, follow_symlinks=follow_symlinks)
 
@@ -400,22 +414,11 @@ def test_targets_without_an_inode_identity_stay_distinct(
         "a zero inode must fall back to the path, keeping both writes distinct"
     )
 
-    upper = root / "Alpha.md"
-    lower = root / "alpha.md"
-    upper.write_text("original-upper\n", encoding="utf-8")
-    try:
-        lower.write_text("original-lower\n", encoding="utf-8")
-    except OSError:  # pragma: no cover - a case-insensitive filesystem
-        pytest.skip("the filesystem cannot hold case-only sibling names")
     builder = PlanBuilder(root=root)
     builder.propose(_confined(root, "Alpha.md"), "upper\n", WriteCategory.MANIFEST)
-    builder.propose(_confined(root, "alpha.md"), "lower\n", WriteCategory.MANIFEST)
 
-    case_plan = builder.build(target_version="1.2.3", lockfiles=None)
-
-    assert len(case_plan.proposals) == 2, (
-        "case-only targets must not merge when no inode identity is available"
-    )
+    with pytest.raises(BumpPreflightError):
+        builder.propose(_confined(root, "alpha.md"), "lower\n", WriteCategory.MANIFEST)
 
 
 def _root_first_report(root: Path) -> list[str]:
@@ -424,23 +427,41 @@ def _root_first_report(root: Path) -> list[str]:
     return [(root / name).as_posix() for name in names]
 
 
-def test_absent_case_only_targets_stay_distinct_under_windows_folding(
+def test_absent_case_only_targets_are_rejected_as_ambiguous(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Case folding must not merge two missing names under one parent."""
+    """Two missing names that differ only in case cannot be told apart."""
     root = tmp_path.resolve()
     monkeypatch.setattr(os.path, "normcase", str.lower)
     builder = PlanBuilder(root=root)
-
     builder.propose(_confined(root, "README.md"), "upper\n", WriteCategory.README)
-    builder.propose(_confined(root, "readme.md"), "lower\n", WriteCategory.README)
 
-    plan = builder.build(target_version="1.2.3", lockfiles=None)
+    with pytest.raises(BumpPreflightError):
+        builder.propose(_confined(root, "readme.md"), "lower\n", WriteCategory.README)
 
-    assert len(plan.proposals) == 2, (
-        "distinct missing names must not merge when case folding is applied"
-    )
+
+def test_absent_case_only_targets_are_rejected_without_parent_identity(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The ambiguity check also covers a parent with no inode identity."""
+    root = tmp_path.resolve()
+    zero = os.stat_result((0o040755, 0, 0, 1, 0, 0, 0, 0, 0, 0))
+    real_stat = Path.stat
+
+    def fake_stat(self: Path, *, follow_symlinks: bool = True) -> os.stat_result:
+        """Report no inode for the workspace root directory."""
+        if self == root:
+            return zero
+        return real_stat(self, follow_symlinks=follow_symlinks)
+
+    monkeypatch.setattr(Path, "stat", fake_stat)
+    builder = PlanBuilder(root=root)
+    builder.propose(_confined(root, "README.md"), "upper\n", WriteCategory.README)
+
+    with pytest.raises(BumpPreflightError):
+        builder.propose(_confined(root, "readme.md"), "lower\n", WriteCategory.README)
 
 
 def test_lockfile_report_puts_the_root_first(tmp_path: Path) -> None:

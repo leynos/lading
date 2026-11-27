@@ -636,6 +636,11 @@ Scenario: Bumping rejects an escaping configured lockfile manifest
   and a resolving alias; the glob property is split by link shape so an
   unavailable capability skips only that shape; and the new case-only and
   symlink fixtures skip only when the filesystem lacks the capability.
+- [x] 2026-11-27: Third reconciliation. Without a filesystem identity, two
+  planned targets that differ only in case are rejected as ambiguous before any
+  write, whether they are absent or existing with a zero inode; the ambiguity
+  check also covers a parent with no inode. The case-only and symlink fixtures
+  skip only when the filesystem lacks the capability.
 - [ ] EP-M5 release: tag and release `v0.4.0b1` after review convergence, then
   record the tag commit on issue #409.
 

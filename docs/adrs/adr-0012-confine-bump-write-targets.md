@@ -321,16 +321,19 @@ accepted rather than added as rejection cases.
 ### 2026-11-27: Identity-free keys, resolved ancestry and excluded dependencies
 
 When no inode identity is available, a proposal key uses the exact path
-spelling rather than a case-folded one, so case-only targets on a
-case-sensitive Windows directory stay distinct. The lockfile report leads with
-the single shallowest destination and then sorts the remainder
-lexicographically, whatever its depth. `relative_to_root` resolves the nearest
-existing ancestor and proves the root is one of its ancestors by identity, so a
-lexically contained path through a symlink or a case-only sibling is rejected.
-A failed directory-scan iteration is an examination error rather than an absent
-directory. Implicit-member discovery applies literal exclusions to the
-normalized destination before walking or reading an excluded dependency, so an
-excluded nested workspace contributes neither manifests nor inherited names.
+spelling rather than a case-folded one. Two planned targets that differ only in
+case cannot be told apart without an identity, because they may name one file
+on a case-insensitive volume or two files on a case-sensitive one; the plan
+therefore rejects that ambiguity before any write rather than merging or
+double-writing the targets. The lockfile report leads with the single
+shallowest destination and then sorts the remainder lexicographically, whatever
+its depth. `relative_to_root` resolves the nearest existing ancestor and proves
+the root is one of its ancestors by identity, so a lexically contained path
+through a symlink or a case-only sibling is rejected. A failed directory-scan
+iteration is an examination error rather than an absent directory.
+Implicit-member discovery applies literal exclusions to the normalized
+destination before walking or reading an excluded dependency, so an excluded
+nested workspace contributes neither manifests nor inherited names.
 
 ## Alternatives considered
 

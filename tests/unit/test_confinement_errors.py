@@ -203,6 +203,32 @@ def test_validate_relative_pattern_rejects_a_windows_component_with_a_drive(
     )
 
 
+def _symlink_directory_or_skip(link: Path, target: Path) -> None:
+    """Create a directory symlink, skipping only an unsupported or denied host."""
+    try:
+        link.symlink_to(target, target_is_directory=True)
+    except NotImplementedError:
+        pytest.skip("directory symlinks are unavailable on this host")
+    except OSError as exc:
+        if exc.errno not in {errno.EPERM, errno.EACCES}:
+            raise
+        pytest.skip(f"symlink creation is unavailable here: {exc}")
+
+
+def _case_only_directory_or_skip(parent: Path, name: str, *, root: Path) -> Path:
+    """Create a case-only sibling, skipping a case-insensitive filesystem."""
+    sibling = parent / name
+    try:
+        sibling.mkdir()
+    except FileExistsError:  # pragma: no cover - case-insensitive filesystem
+        pytest.skip("the filesystem treats case-only names as one directory")
+    except OSError:  # pragma: no cover - unexpected filesystem failure
+        raise
+    if sibling.samefile(root):  # pragma: no cover - case-insensitive filesystem
+        pytest.skip("the filesystem treats case-only names as one directory")
+    return sibling
+
+
 def test_relative_to_root_accepts_an_alternative_spelling(
     tmp_path: Path,
 ) -> None:
@@ -224,7 +250,7 @@ def test_relative_to_root_rejects_a_symlinked_component(tmp_path: Path) -> None:
     root.mkdir()
     outside = tmp_path.resolve() / "outside"
     outside.mkdir()
-    (root / "link").symlink_to(outside, target_is_directory=True)
+    _symlink_directory_or_skip(root / "link", outside)
     candidate = root / "link" / "Cargo.toml"
     candidate.write_text("", encoding="utf-8")
 
@@ -236,13 +262,7 @@ def test_relative_to_root_rejects_a_case_only_sibling(tmp_path: Path) -> None:
     """A sibling that differs only in case is not beneath the root."""
     root = tmp_path.resolve() / "workspace"
     root.mkdir()
-    sibling = tmp_path.resolve() / "WORKSPACE"
-    try:
-        sibling.mkdir()
-    except OSError as exc:  # pragma: no cover - a case-insensitive filesystem
-        pytest.skip(f"case-only directories are unavailable here: {exc}")
-    if sibling.samefile(root):  # pragma: no cover - case-insensitive filesystem
-        pytest.skip("the filesystem treats case-only names as one directory")
+    sibling = _case_only_directory_or_skip(tmp_path.resolve(), "WORKSPACE", root=root)
     candidate = sibling / "Cargo.toml"
     candidate.write_text("", encoding="utf-8")
 
@@ -255,19 +275,10 @@ def test_identity_check_distinguishes_a_case_only_sibling(tmp_path: Path) -> Non
     root = tmp_path.resolve() / "workspace"
     root.mkdir()
     (root / "Cargo.toml").write_text("", encoding="utf-8")
-    sibling = tmp_path.resolve() / "WORKSPACE"
-    try:
-        sibling.mkdir()
-    except OSError as exc:  # pragma: no cover - a case-insensitive filesystem
-        pytest.skip(f"case-only directories are unavailable here: {exc}")
-    if sibling.samefile(root):  # pragma: no cover - case-insensitive filesystem
-        pytest.skip("the filesystem treats case-only names as one directory")
+    sibling = _case_only_directory_or_skip(tmp_path.resolve(), "WORKSPACE", root=root)
     (sibling / "Cargo.toml").write_text("", encoding="utf-8")
     alias = tmp_path.resolve() / "alias"
-    try:
-        alias.symlink_to(root, target_is_directory=True)
-    except (NotImplementedError, OSError) as exc:
-        pytest.skip(f"directory symlinks are unavailable here: {exc}")
+    _symlink_directory_or_skip(alias, root)
 
     assert not _is_within_directory_identity(sibling / "Cargo.toml", root), (
         "a case-only sibling is not the same directory as the root"
