@@ -77,6 +77,53 @@ STAGING_METRIC = "publish.staging"
 #: Observes staging duration, from exclusion validation to a finished copy.
 STAGING_DURATION_METRIC = "publish.staging.duration"
 
+
+class StageRecorder(typ.Protocol):
+    """Records one finished staging attempt.
+
+    Implementations receive the outcome and elapsed time after the copy
+    returns or raises. The staging boundary decides neither how an outcome is
+    stored nor where it is reported.
+    """
+
+    def record(self, *, outcome: str, duration_seconds: float) -> None:
+        """Record ``outcome`` and ``duration_seconds`` for one attempt."""
+        ...
+
+
+class _MetricsStageRecorder:
+    """Record staging attempts in the process metric summary."""
+
+    def record(self, *, outcome: str, duration_seconds: float) -> None:
+        """Record the staging outcome and duration in the metric registry."""
+        metrics.observe_duration(STAGING_DURATION_METRIC, duration_seconds)
+        metrics.increment_counter(STAGING_METRIC, outcome=outcome)
+
+
+#: Production recorder for :class:`StageRecorder` consumers.
+_DEFAULT_STAGE_RECORDER: typ.Final[StageRecorder] = _MetricsStageRecorder()
+
+
+@dc.dataclass(frozen=True, slots=True)
+class StagingTelemetry:
+    """The clock and recorder a staging attempt reports through.
+
+    Attributes
+    ----------
+    clock : cabc.Callable[[], float]
+        Monotonic time source. Defaults to :func:`time.perf_counter`.
+    recorder : StageRecorder
+        Receives each finished attempt. Defaults to the process metric
+        summary.
+    """
+
+    clock: cabc.Callable[[], float] = time.perf_counter
+    recorder: StageRecorder = dc.field(default=_DEFAULT_STAGE_RECORDER)
+
+
+#: Production telemetry for callers that do not inject their own.
+DEFAULT_STAGING_TELEMETRY: typ.Final[StagingTelemetry] = StagingTelemetry()
+
 #: Staged trees the process is responsible for removing. A signal handler
 #: installed by the command-line entry point reads this, because a terminated
 #: process never reaches an ``atexit`` hook or a ``finally`` block.
@@ -232,7 +279,9 @@ def _warn_if_live_publish_loses_git_selection(
         "Live publish staging excludes .git, so cargo will not apply "
         ".gitignore when selecting package files; a file Git ignores whose "
         "name does not start with a dot can be uploaded. A live upload cannot "
-        "be undone. Set publish.stage_exclude = [] to keep Git-aware selection."
+        "be undone. Set publish.stage_exclude = [] to keep Git-aware selection "
+        "when the workspace root contains .git; a nested workspace never "
+        "receives a parent repository's .git."
     )
 
 
@@ -336,9 +385,12 @@ def _stage(
     options: PublishOptions | None,
     *,
     stage_exclude: cabc.Sequence[str] = DEFAULT_STAGE_EXCLUDE,
-    clock: cabc.Callable[[], float] = time.perf_counter,
 ) -> tuple[PublishPreparation, Path, bool]:
-    """Copy the workspace and record the staging time and outcome.
+    """Validate the exclusions, copy the workspace, and return the result.
+
+    This function performs no telemetry. Callers that need the duration and
+    outcome recorded use :func:`_recorded_stage`, which classifies whatever
+    this function returns or raises.
 
     Parameters
     ----------
@@ -348,9 +400,60 @@ def _stage(
         Staging options, or :data:`None` for the defaults.
     stage_exclude : cabc.Sequence[str]
         Workspace-relative entries the copy leaves out.
-    clock : cabc.Callable[[], float]
-        Monotonic time source for the duration metric. Tests inject a
-        deterministic clock; production uses :func:`time.perf_counter`.
+
+    Returns
+    -------
+    tuple[PublishPreparation, Path, bool]
+        The staged workspace, the path whose removal cleans it up, and whether
+        cleanup was requested. An unusable exclusion, an unreadable workspace
+        or a failed copy raises :class:`PublishPreparationError`, which
+        :func:`_recorded_stage` classifies.
+    """
+    active_options = _active_stage_options(options)
+    stage_exclude = _validated_stage_exclude(plan, active_options, stage_exclude)
+    destination = _begin_staging(plan, active_options, stage_exclude)
+    staging_root = _copy_staged_workspace(
+        plan, active_options, destination, stage_exclude
+    )
+    LOGGER.info("Staged workspace created at %s", staging_root)
+    LOGGER.info("Workspace README staging skipped; handled by lading bump")
+    if not active_options.cleanup:
+        LOGGER.info(
+            "Retaining staged workspace at %s; remove it when you are done",
+            destination.cleanup_target,
+        )
+    return (
+        PublishPreparation(staging_root=staging_root),
+        destination.cleanup_target,
+        active_options.cleanup,
+    )
+
+
+def _recorded_stage(
+    plan: PublishPlan,
+    options: PublishOptions | None,
+    *,
+    stage_exclude: cabc.Sequence[str] = DEFAULT_STAGE_EXCLUDE,
+    telemetry: StagingTelemetry = DEFAULT_STAGING_TELEMETRY,
+) -> tuple[PublishPreparation, Path, bool]:
+    """Run :func:`_stage` and record its duration and classified outcome.
+
+    The classification lives here rather than in the copy itself: an
+    unreadable workspace is counted apart from a refused pattern, and both
+    apart from a copy that failed for another reason. The wrapped call's
+    failures propagate unchanged.
+
+    Parameters
+    ----------
+    plan : PublishPlan
+        The publication to stage.
+    options : PublishOptions | None
+        Staging options, or :data:`None` for the defaults.
+    stage_exclude : cabc.Sequence[str]
+        Workspace-relative entries the copy leaves out.
+    telemetry : StagingTelemetry
+        Clock and recorder for the attempt. Defaults to wall time and the
+        process metric summary.
 
     Returns
     -------
@@ -360,51 +463,34 @@ def _stage(
 
     Raises
     ------
-    PublishPreparationError
-        If an exclusion cannot be used or the workspace cannot be copied.
     StageExcludeInspectionError
-        If the workspace cannot be read while checking an exclusion. It is a
-        :class:`PublishPreparationError` subclass, counted separately from a
-        refused pattern.
+        If the workspace cannot be read while checking an exclusion; counted
+        as ``inspection_failed``.
+    PublishPreparationError
+        If an exclusion is refused or the copy fails; a refusal is counted as
+        ``rejected``.
     """
-    started_at = clock()
+    started_at = telemetry.clock()
     outcome = "failed"
     try:
-        active_options = _active_stage_options(options)
-        try:
-            stage_exclude = _validated_stage_exclude(
-                plan, active_options, stage_exclude
-            )
-        except StageExcludeInspectionError:
-            # The pattern may be sound and the workspace unreadable, so this
-            # is counted apart from a refused pattern and from a failed copy.
-            outcome = "inspection_failed"
-            raise
-        except PublishPreparationError:
-            # A refused exclusion is a configuration problem with its own
-            # remedy, so it is counted apart from a copy that failed.
-            outcome = "rejected"
-            raise
-        destination = _begin_staging(plan, active_options, stage_exclude)
-        staging_root = _copy_staged_workspace(
-            plan, active_options, destination, stage_exclude
-        )
-        LOGGER.info("Staged workspace created at %s", staging_root)
-        LOGGER.info("Workspace README staging skipped; handled by lading bump")
-        if not active_options.cleanup:
-            LOGGER.info(
-                "Retaining staged workspace at %s; remove it when you are done",
-                destination.cleanup_target,
-            )
+        result = _stage(plan, options, stage_exclude=stage_exclude)
+    except StageExcludeInspectionError:
+        # The pattern may be sound and the workspace unreadable, so this is
+        # counted apart from a refused pattern and from a failed copy.
+        outcome = "inspection_failed"
+        raise
+    except PublishPreparationError:
+        # A refused exclusion is a configuration problem with its own remedy,
+        # so it is counted apart from a copy that failed.
+        outcome = "rejected"
+        raise
+    else:
         outcome = "success"
-        return (
-            PublishPreparation(staging_root=staging_root),
-            destination.cleanup_target,
-            active_options.cleanup,
-        )
+        return result
     finally:
-        metrics.observe_duration(STAGING_DURATION_METRIC, clock() - started_at)
-        metrics.increment_counter(STAGING_METRIC, outcome=outcome)
+        telemetry.recorder.record(
+            outcome=outcome, duration_seconds=telemetry.clock() - started_at
+        )
 
 
 def _staging_root_for(workspace_root: Path, build_directory: Path) -> Path:
@@ -517,6 +603,7 @@ def staged_workspace(
     *,
     options: PublishOptions | None = None,
     stage_exclude: cabc.Sequence[str] = DEFAULT_STAGE_EXCLUDE,
+    telemetry: StagingTelemetry = DEFAULT_STAGING_TELEMETRY,
 ) -> cabc.Generator[StagedWorkspace]:
     """Stage a workspace copy and remove it when the block ends.
 
@@ -533,6 +620,9 @@ def staged_workspace(
     stage_exclude:
         Workspace-relative entries the copy leaves out. Defaults to
         :data:`~lading.config.DEFAULT_STAGE_EXCLUDE`.
+    telemetry:
+        Clock and recorder for the attempt. Defaults to wall time and the
+        process metric summary.
 
     Yields
     ------
@@ -542,8 +632,8 @@ def staged_workspace(
     """
     # `_stage` has already registered the target, from before it began
     # copying, so there is nothing to add here.
-    preparation, cleanup_target, cleanup = _stage(
-        plan, options, stage_exclude=stage_exclude
+    preparation, cleanup_target, cleanup = _recorded_stage(
+        plan, options, stage_exclude=stage_exclude, telemetry=telemetry
     )
     staged = StagedWorkspace(preparation=preparation)
     try:
@@ -568,6 +658,7 @@ def prepare_workspace(
     *,
     options: PublishOptions | None = None,
     stage_exclude: cabc.Sequence[str] = DEFAULT_STAGE_EXCLUDE,
+    telemetry: StagingTelemetry = DEFAULT_STAGING_TELEMETRY,
 ) -> PublishPreparation:
     """Stage a workspace copy for publishing, removing it at process exit.
 
@@ -585,6 +676,9 @@ def prepare_workspace(
     stage_exclude:
         Workspace-relative entries the copy leaves out. Defaults to
         :data:`~lading.config.DEFAULT_STAGE_EXCLUDE`.
+    telemetry:
+        Clock and recorder for the attempt. Defaults to wall time and the
+        process metric summary.
 
     Returns
     -------
@@ -592,8 +686,8 @@ def prepare_workspace(
         The staged workspace location.
     """
     # Registered by `_stage`; this form adds only the exit hook.
-    preparation, cleanup_target, cleanup = _stage(
-        plan, options, stage_exclude=stage_exclude
+    preparation, cleanup_target, cleanup = _recorded_stage(
+        plan, options, stage_exclude=stage_exclude, telemetry=telemetry
     )
     if cleanup:
         atexit.register(_remove_staged_tree_or_report, cleanup_target)

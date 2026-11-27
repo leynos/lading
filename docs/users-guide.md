@@ -123,10 +123,13 @@ Git-aware selection, check the file list on the staged tree: run
 `lading publish --keep-staging` in dry-run mode, which logs the retained path,
 and run `cargo package --list` in that staged crate. To keep the old Git-aware
 selection, including gitignore handling and VCS provenance, set
-`stage_exclude = []`. A live publish whose effective exclusions remove `.git`
-logs a warning before it copies, because an upload cannot be undone: a yanked
-version still holds the files it published. `--forbid-dirty` is unaffected
-either way: it inspects the source workspace's Git status before staging begins.
+`stage_exclude = []` when the workspace root contains `.git`. A workspace
+nested inside a parent repository never receives the parent's `.git`, so the
+opt-out does not restore Git-aware selection there. A live publish whose
+effective exclusions remove `.git` logs a warning before it copies, because an
+upload cannot be undone: a yanked version still holds the files it published.
+`--forbid-dirty` is unaffected either way: it inspects the source workspace's
+Git status before staging begins.
 
 ## Reclaiming space from earlier versions
 
@@ -215,8 +218,14 @@ terminated process never reaches, so prefer the context manager.
 Both functions take the keyword-only `stage_exclude`, which defaults to
 `(".git",)` and follows the pattern rules described in
 [Staging exclusions](#staging-exclusions). Pass `stage_exclude=()` to copy
-`.git` again and keep Git-aware file selection, or pass other patterns to trim
-more of the workspace.
+`.git` again and keep Git-aware file selection when the workspace root holds
+it, or pass other patterns to trim more of the workspace.
+
+Both also take the keyword-only `clock` and `recorder`. `clock` supplies the
+duration, defaulting to `time.perf_counter`; `recorder` is a `StageRecorder`
+whose `record(*, outcome, duration_seconds)` method receives the finished
+attempt, defaulting to the process metric summary. Inject a recorder to observe
+staging without reading the global registry.
 
 The `workspace` argument accepted by older releases is no longer part of the
 contract; the plan supplies the workspace root. When no

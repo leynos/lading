@@ -1701,9 +1701,23 @@ temporary directory exists, translating it into `PublishPreparationError` and
 logging the normalized tuple. `match_stage_exclude` therefore only ever sees
 relative, normalized paths.
 
-`_stage` takes a keyword-only `clock` defaulting to `time.perf_counter`, the
-same seam the other publish timings use, so a test can supply a deterministic
-duration for `publish.staging.duration` instead of measuring wall time.
+`_stage` copies the workspace and returns the result; it records no telemetry.
+`_recorded_stage` wraps it, classifies the attempt (`success`, `rejected` for
+an unusable exclusion, `inspection_failed` for an unreadable workspace,
+`failed` for any other error), and hands the outcome and elapsed time to a
+`StageRecorder`. `staged_workspace` and `prepare_workspace` take keyword-only
+`clock` and `recorder` parameters, defaulting to `time.perf_counter` and the
+process metric summary, so a caller can supply a deterministic duration or
+observe staging without reading the global registry. The wrapper is the only
+place that decides an outcome, so the copy and the metrics cannot disagree
+about what happened.
+
+The symbolic-link walk stays in `publish_stage_exclude.py` beside the copy
+callback and the pre-copy check rather than moving to its own module. It has
+one consumer, and its output is only meaningful to the manifest invariant that
+module owns; extracting it would create a one-caller adapter and separate the
+walk from the check that interprets it. A second consumer would be the point to
+split it.
 
 `_stage` also calls `_warn_if_live_publish_loses_git_selection` before copying.
 It logs a `WARNING` when `PublishOptions.live` is set and the effective
@@ -2303,8 +2317,8 @@ Defined metrics:
 | `lockfile.validate.duration`     | (none)                        | Duration observation around each `cargo metadata --locked` probe.                                                                                                                                                                                |
 | `publish.cargo.duration`         | `subcommand`, `crate`         | One duration observation per `cargo package` or `cargo publish` invocation in the publish pipeline, successful or not (issue #251).                                                                                                              |
 | `publish.sccache.query`          | `outcome`                     | One increment per sccache statistics query while instrumentation is on (`--sccache-stats`, or a `--sccache-stats-json` path, which implies it); `outcome` is `success` or `failure` (issue [#252](https://github.com/leynos/lading/issues/252)). |
-| `publish.staging`                | `outcome`                     | One increment per `_stage` attempt; `outcome` is `success`, `rejected` when the exclusions cannot be used, `inspection_failed` when the workspace cannot be read to check them, or `failed` for any other error.                                 |
-| `publish.staging.duration`       | (none)                        | Duration observation around each `_stage` attempt, from exclusion validation to a finished copy, successful or not.                                                                                                                              |
+| `publish.staging`                | `outcome`                     | One increment per `_recorded_stage` attempt; `outcome` is `success`, `rejected` when the exclusions cannot be used, `inspection_failed` when the workspace cannot be read to check them, or `failed` for any other error.                        |
+| `publish.staging.duration`       | (none)                        | Duration observation around each `_recorded_stage` attempt, from exclusion validation to a finished copy, successful or not.                                                                                                                     |
 
 Duration metrics aggregate a count and total seconds per label set via
 `observe_duration` / `duration_stats` and appear in the exit summary with

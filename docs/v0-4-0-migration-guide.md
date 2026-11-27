@@ -318,7 +318,7 @@ A live publish that stages without `.git` logs a warning before copying,
 because an upload cannot be undone.
 
 Projects that do not publish are unaffected. To keep the 0.3.x behaviour for a
-workspace that depends on Git-aware selection, set:
+workspace whose root contains `.git` and depends on Git-aware selection, set:
 
 <!-- tested-example: migration-staging-exclude-opt-out -->
 ```toml
@@ -327,9 +327,11 @@ stage_exclude = []
 ```
 
 An empty list copies `.git` and every other file again, restoring Git-based
-file selection and VCS provenance, at the cost of the copy time the default
-avoids. Programmatic callers of `staged_workspace` or `prepare_workspace` opt
-out the same way, by passing `stage_exclude=()`; see
+file selection and VCS provenance when `.git` sits at the workspace root, at
+the cost of the copy time the default avoids. A workspace nested inside a
+parent repository never receives the parent's `.git`, so the opt-out does not
+restore Git-aware selection there. Programmatic callers of `staged_workspace` or
+`prepare_workspace` opt out the same way, by passing `stage_exclude=()`; see
 [Programmatic publish staging](users-guide.md#programmatic-publish-staging).
 Excluding a path that would remove a required manifest is rejected before
 staging begins.

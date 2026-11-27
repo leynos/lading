@@ -708,6 +708,13 @@ full_name = [
 ]
 reason = "signal.signal invokes this handler with the interrupted frame; the parameter is required by the handler protocol and explicitly discarded."
 
+[[tool.skylos.dead_code.entrypoints]]
+type = "method"
+full_name = [
+    "lading.commands.publish_staging._MetricsStageRecorder.record",
+]
+reason = "_recorded_stage calls this method through the StageRecorder protocol, and the default _DEFAULT_STAGE_RECORDER instance receives every staging outcome and duration."
+
 [tool.setuptools.packages.find]
 include = [
     "lading",

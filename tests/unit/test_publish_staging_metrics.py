@@ -6,6 +6,7 @@ make a slow or refused staging attributable in the run's metric summary.
 """
 
 import collections.abc as cabc
+import dataclasses as dc
 import logging
 import shutil
 import typing as typ
@@ -32,6 +33,17 @@ def reset_staging_metrics() -> cabc.Iterator[None]:
     metrics.reset()
     yield
     metrics.reset()
+
+
+@dc.dataclass(frozen=True, slots=True)
+class _RecordingRecorder:
+    """Collect the records the staging boundary hands to its recorder."""
+
+    records: list[tuple[str, float]] = dc.field(default_factory=list)
+
+    def record(self, *, outcome: str, duration_seconds: float) -> None:
+        """Append one recorded attempt."""
+        self.records.append((outcome, duration_seconds))
 
 
 def _plan(
@@ -67,21 +79,26 @@ def test_staging_records_duration_and_success(
 def test_staging_uses_the_injected_clock(
     preparation_fixtures: PreparationFixtures,
 ) -> None:
-    """The duration metric is measured with the clock seam, not wall time."""
+    """The recorded duration is measured with the clock seam, not wall time."""
     plan = _plan(preparation_fixtures)
     build_directory = preparation_fixtures.tmp_path / "build"
     options = publish.PublishOptions(build_directory=build_directory, cleanup=False)
     ticks = iter([100.0, 102.5])
+    recorder = _RecordingRecorder()
 
-    preparation, _, _ = publish_staging._stage(plan, options, clock=lambda: next(ticks))
-    try:
-        assert metrics.duration_stats(
-            publish_staging.STAGING_DURATION_METRIC
-        ).total_seconds == pytest.approx(2.5), (
-            "the duration metric must use the injected clock"
-        )
-    finally:
-        shutil.rmtree(preparation.staging_root)
+    telemetry = publish_staging.StagingTelemetry(
+        clock=lambda: next(ticks), recorder=recorder
+    )
+    with publish_staging.staged_workspace(
+        plan, options=options, telemetry=telemetry
+    ) as staged:
+        pass
+
+    assert recorder.records == [("success", pytest.approx(2.5))], (
+        "the recorded duration must use the injected clock"
+    )
+    assert staged.staging_root.exists(), "cleanup=False must retain the tree"
+    shutil.rmtree(staged.staging_root)
 
 
 def test_staging_records_an_inspection_failure(
@@ -188,14 +205,16 @@ def test_staging_summary_payload_is_pinned(
     options = publish.PublishOptions(build_directory=build_directory, cleanup=False)
     ticks = iter([100.0, 102.5])
 
-    preparation, _, _ = publish_staging._stage(
-        plan, options, stage_exclude=("venv",), clock=lambda: next(ticks)
-    )
+    telemetry = publish_staging.StagingTelemetry(clock=lambda: next(ticks))
+    with publish_staging.staged_workspace(
+        plan, options=options, stage_exclude=("venv",), telemetry=telemetry
+    ) as staged:
+        staged_root = staged.staging_root
     try:
         caplog.set_level(logging.INFO, logger="lading.utils.metrics")
         metrics.emit_summary()
     finally:
-        shutil.rmtree(preparation.staging_root)
+        shutil.rmtree(staged_root)
 
     summaries = [
         record.getMessage()
