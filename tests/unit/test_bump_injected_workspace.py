@@ -7,6 +7,7 @@ a graph loaded from Cargo before any manifest is read or written.
 
 from pathlib import Path
 
+import msgspec
 import pytest
 
 from lading.commands import bump, bump_prepare, bump_prepare_manifest_rewrites
@@ -15,6 +16,7 @@ from lading.commands.bump_plan import PlanBuilder
 from lading.utils.confinement import BumpPreflightError, UnsafeBumpTargetError
 from lading.workspace import WorkspaceCrate, WorkspaceGraph
 from lading.workspace.graph_paths import graph_relative_manifest
+from tests.helpers.manifest_rewrite_cases import _make_partial_write_failure_case
 from tests.helpers.workspace_builders import _make_config
 
 
@@ -272,3 +274,38 @@ def test_rewrite_versions_require_a_usable_manifest_version(
 
     with pytest.raises(ManifestRewriteError, match=expected_message):
         _rewrite_versions(root, graph)
+
+
+def test_stale_injected_graph_fails_before_any_write(tmp_path: Path) -> None:
+    """A reused graph with an obsolete version is rejected before writes."""
+    case = _make_partial_write_failure_case(tmp_path)
+    stale_graph = msgspec.structs.replace(
+        case.workspace,
+        crates=tuple(
+            msgspec.structs.replace(crate, version="9.9.9")
+            if crate.name == "alpha"
+            else crate
+            for crate in case.workspace.crates
+        ),
+    )
+    tracked = (
+        case.root / "Cargo.toml",
+        *(crate.manifest_path for crate in case.workspace.crates),
+        *case.fixtures,
+    )
+    originals = {path: path.read_bytes() for path in tracked}
+
+    with pytest.raises(ManifestRewriteError, match="declares"):
+        bump.run(
+            case.root,
+            "1.2.3",
+            options=bump.BumpOptions(
+                rebuild_lockfiles=False,
+                configuration=case.configuration,
+                workspace=stale_graph,
+            ),
+        )
+
+    assert {path: path.read_bytes() for path in tracked} == originals, (
+        "a stale graph must be rejected before any manifest or fixture is written"
+    )

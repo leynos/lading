@@ -1250,8 +1250,9 @@ every target and every replacement is validated before the first write.
 `lading.commands.bump_manifest_rewrite_bounds` evaluates Cargo comparators
 without changing them and reports a rewritten first comparator or retained
 later comparator that excludes the target. The dependency planner logs one
-warning per affected entry and still applies the rewrite, so the operator sees
-the exclusion in the warning and Cargo's resolver remains the final authority.
+warning per affected entry, whether or not the requirement text changes, and
+still applies a rewrite that differs, so the operator sees the exclusion and
+Cargo's resolver remains the final authority.
 
 `lading.commands.bump_manifest_rewrite_metrics` records bounded planning and
 commit outcome counters and durations. Rewrite failures surface as

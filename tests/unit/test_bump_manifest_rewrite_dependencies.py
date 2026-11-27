@@ -301,3 +301,42 @@ def test_rewriting_reports_excluding_comparator_bounds(
     assert requirement in plan.original_text, (
         "planning must preserve the original requirement text"
     )
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        pytest.param(("<2.0.0", "2.0.0"), id="unchanged-strict-upper"),
+        pytest.param((">=2.0.0, <2", "2.0.0"), id="unchanged-retained-upper"),
+    ],
+)
+def test_unchanged_requirement_still_reports_excluding_bounds(
+    tmp_path: pathlib.Path,
+    caplog: pytest.LogCaptureFixture,
+    case: tuple[str, str],
+) -> None:
+    """A requirement that composes to itself still warns when it excludes."""
+    requirement, target = case
+    manifest = tmp_path / "fixture" / "Cargo.toml"
+    manifest.parent.mkdir()
+    manifest.write_text(f'[dependencies]\nalpha = "{requirement}"\n', encoding="utf-8")
+
+    with caplog.at_level(
+        logging.WARNING, logger=bump_manifest_rewrite_dependencies.__name__
+    ):
+        plans = plan_fixture_rewrites(
+            tmp_path,
+            (ManifestRewriteConfig(paths=("fixture/Cargo.toml",)),),
+            bump_manifest_rewrites.ManifestRewriteVersions(
+                updated_crate_names=frozenset({"alpha"}),
+                pre_bump_versions={"alpha": "1.0.0"},
+                target_version=target,
+            ),
+        )
+
+    assert not plans, "an unchanged requirement must not produce a rewrite plan"
+    warnings = [record for record in caplog.records if record.levelname == "WARNING"]
+    assert len(warnings) == 1, "the excluding bound must be reported once"
+    assert target in warnings[0].getMessage(), (
+        "the warning must name the requested target version"
+    )

@@ -118,17 +118,20 @@ def _rewrite_dependency_entry(
             target_version,
             compose=compose_requirement,
         )
+        # A requirement whose text is already the replacement still needs the
+        # bound check: `<2.0.0` composes to itself when the target is `2.0.0`,
+        # yet it excludes that very target.
+        _warn_if_bounds_exclude_target(key, value, target_version)
         if replacement is None:
             return False
-        _warn_if_bounds_exclude_target(key, value, target_version)
         entry["version"] = replacement
         return True
     replacement = bump_toml.prepare_version_replacement(
         entry, target_version, compose=compose_requirement
     )
+    _warn_if_bounds_exclude_target(key, entry, target_version)
     if replacement is None:
         return False
-    _warn_if_bounds_exclude_target(key, entry, target_version)
     table[key] = replacement  # type: ignore[index]  # table-like values support assignment
     return True
 

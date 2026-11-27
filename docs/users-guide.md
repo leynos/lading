@@ -865,10 +865,10 @@ requirement's operator prefix and replaces the complete requirement. Configured
 non-member rewrites instead replace the first comparator and keep later
 comma-separated comparators verbatim, so `>=0.6.0-beta4, <0.7` becomes
 `>=0.6.0, <0.7` in a selected fixture. If the rewritten first comparator or a
-retained later comparator excludes the target, `lading bump` still applies the
-rewrite but logs a warning naming the bound, so a strict first operator (`<` or
-`>`) warns after rewriting. Cargo lockfile regeneration remains the final check
-when enabled.
+retained later comparator excludes the target, `lading bump` logs a warning
+naming the bound, even when the requirement text does not change; a strict
+first operator (`<` or `>`) therefore warns after rewriting. Cargo lockfile
+regeneration remains the final check when enabled.
 
 Lockfile regeneration runs
 `cargo update --workspace --manifest-path <manifest>` for the workspace root,
