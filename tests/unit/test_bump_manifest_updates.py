@@ -220,18 +220,19 @@ def test_render_manifest_updates_only_selected_dotted_dependency(
 ) -> None:
     """Dotted manifest entries follow exact-key selection, not the package field.
 
-    The documentation identity rule must not leak into manifests: ``beta`` is a
-    selected key only when it is named, and the unselected entry keeps its
-    version even though its ``package`` field names a workspace crate.
+    The fixture separates the two rules in both directions. ``alpha-core`` is
+    selected only by its key because its ``package`` names an unrelated
+    package, while ``alpha`` is selected only by a ``package`` rule because its
+    key is not a target. A package-based selector would invert both outcomes.
     """
     manifest_path = tmp_path / "Cargo.toml"
     manifest_path.write_text(
         '[package]\nname = "demo"\nversion = "0.1.0"\n\n'
         "[dependencies]\n"
-        'alpha.package = "alpha"\n'
-        'alpha.version = "1.0.0"\n'
-        'beta.package = "beta"\n'
-        'beta.version = "1.0.0"\n',
+        'alpha-core.package = "unrelated"\n'
+        'alpha-core.version = "1.0.0"\n'
+        'alpha.package = "alpha-core"\n'
+        'alpha.version = "1.0.0"\n',
         encoding="utf-8",
     )
 
@@ -240,16 +241,16 @@ def test_render_manifest_updates_only_selected_dotted_dependency(
         (),
         "2.0.0",
         bump_manifests.ManifestRenderOptions(
-            dependency_sections={"dependencies": {"alpha"}}
+            dependency_sections={"dependencies": {"alpha-core"}}
         ),
     )
 
     assert rendered is not None, "the selected dotted dependency must be rewritten"
-    assert 'alpha.version = "2.0.0"' in rendered, (
+    assert 'alpha-core.version = "2.0.0"' in rendered, (
         "the exactly named dotted dependency must reach the target version"
     )
-    assert 'beta.version = "1.0.0"' in rendered, (
-        "an unselected dotted dependency must keep its version"
+    assert 'alpha.version = "1.0.0"' in rendered, (
+        "a key whose package names the target must stay untouched"
     )
 
 

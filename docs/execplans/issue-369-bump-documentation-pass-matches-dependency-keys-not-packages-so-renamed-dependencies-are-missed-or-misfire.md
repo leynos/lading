@@ -124,17 +124,18 @@ follows, verified by direct probing:
    `package` field when present, and by its key when the field is absent.
 2. Treat an entry whose `package` field is present but empty or non-string as
    unidentifiable: never fall back to its key, and never raise.
-3. Preserve every unchanged behaviour: manifest rewriting, `[package]` and
-   `[workspace.package]` handling, exact rendering (field order, dotted syntax,
-   comments, trivia), idempotence, and the scope limit to the three top-level
-   canonical sections.
+3. Preserve manifest key selection, the `[package]` and `[workspace.package]`
+   handling, exact rendering (field order, dotted syntax, comments, trivia),
+   idempotence, and the scope limit to the three top-level canonical sections.
+   A dotted manifest entry already selected by its exact key now receives its
+   version through the widened dispatch; selection itself does not change.
 4. Support mutating dotted-key dependency entries (an `OutOfOrderTableProxy`)
    and dependency sections that are themselves out-of-order proxies.
 5. Cover the behaviour with unit, pipeline, and CLI behavioural tests, and
    document the identity rule and its scope.
 
 Explicit non-goals: supporting `[workspace.dependencies]` or target-specific
-tables in documentation fences, changing the manifest pass, adding
+tables in documentation fences, changing manifest key selection, adding
 configuration knobs, or resolving aliases through `cargo metadata` for
 documentation snippets.
 
@@ -147,12 +148,13 @@ documentation snippets.
   `update_toml_snippet_versions`, `update_toml_snippet_dependencies`, and
   `update_documentation_files` (the last is re-exported by `bump_docs.py`).
 - No new runtime dependency. `tomlkit>=0.15,<0.16` is already declared.
-- New and edited production modules aim at the 400-line ceiling. The two
-  edited modules already exceeded it at the base (`bump_docs_fences.py` 411
-  lines, `bump_toml.py` 532 lines); the change adds the identity helper and
-  dispatch branch without a module split, and the exception is recorded in the
-  decision log. Ruff complexity ceiling 8; Pylint maximum five positional
-  arguments.
+- New and edited code modules aim at the 400-line ceiling. Four edited files
+  already exceeded it at the base: `bump_docs_fences.py` 411 lines,
+  `bump_toml.py` 532 lines, `tests/bdd/steps/test_bump_steps.py` 424 lines, and
+  `tests/unit/test_bump_manifest_updates.py` 414 lines. The change grows them
+  to 453, 536, 447, and 452 respectively without a module split; the exception
+  is recorded in the decision log. Ruff complexity ceiling 8; Pylint maximum
+  five positional arguments.
 - Prose uses en-GB-oxendict spelling.
 - Implementation proceeds under the user's explicit instruction to implement
   the supplied coding plan; the plan's milestones are authoritative.
@@ -163,10 +165,10 @@ Budgets are measured as net lines (additions minus deletions) against the
 current `HEAD` (`656506d5`). ExecPlan files are excluded from every count.
 
 - Files: more than 14 non-ExecPlan files changed. The original budget of 10
-  was revised on 2026-11-27 after the implementation reached 12 files: the
-  natural surface is two production modules, four unit-test files, one
-  snapshot, two BDD files, and three documentation files, and dropping a
-  required test or document to meet 10 would weaken the delivery.
+  was revised on 2026-11-27 after the implementation reached 14 files: two
+  production modules, five unit-test files, one snapshot, three BDD files, and
+  three documentation files. Dropping a required test or document to meet 10
+  would weaken the delivery.
 - Code: more than 750 net lines across production code and tests.
 - Configuration: more than 20 net lines (none expected).
 - Documentation: more than 150 net lines excluding ExecPlan files.
@@ -237,6 +239,12 @@ increase. Any further threshold breach requires escalation.
   added identity cases whose key equals the target, a dotted-manifest
   regression test, the negative documentation step and scenario line, corrected
   guidance, and recorded the tolerance and module-size decisions here.
+- [x] (2026-11-27) Round 3 assessments found no production defect and cleared
+  the issue path. Remaining items: CodeScene duplication in
+  `test_bump_steps.py` (fixed by extracting shared read/unescape helpers; local
+  `cs check` now reports 10.00), a sharper manifest boundary test (selected key
+  naming another package, unselected key whose package names the target), and
+  test-file size records. The plan statements and file enumeration are aligned.
 - [ ] Re-run the gates, push the repair, reconcile the assessment threads, and
   merge PR #422 once it reaches equilibrium.
 
@@ -291,11 +299,14 @@ increase. Any further threshold breach requires escalation.
 - Decision: test rendered text rather than tomlkit types. Rationale: the
   contract is the rewritten Markdown, not the parser's internal shape.
 - Decision: record a revised file tolerance (10 to 14) and a module-size
-  deviation rather than splitting `bump_docs_fences.py` or `bump_toml.py` in
-  this change. Rationale: both modules already exceeded 400 lines at the base,
-  the change adds 42 and 4 lines respectively, and a split would enlarge the
-  review diff beyond the issue. This is a recorded deviation, not a silent
-  increase; the user guide and design note still state the behaviour.
+  deviation rather than splitting the four affected files in this change.
+  Rationale: `bump_docs_fences.py` (411), `bump_toml.py` (532),
+  `tests/bdd/steps/test_bump_steps.py` (424), and
+  `tests/unit/test_bump_manifest_updates.py` (414) already exceeded 400 lines
+  at the base; the change grows them to 453, 536, 447, and 452 respectively,
+  and a split would enlarge the review diff beyond the issue. This is a
+  recorded deviation, not a silent increase; the user guide and design note
+  still state the behaviour.
 - Decision: keep the documented quote-style normalization as pre-existing
   behaviour. Rationale: `prepare_version_replacement` has always re-created
   string requirements, so changing it belongs to a separate rendering change
