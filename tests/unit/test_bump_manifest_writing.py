@@ -130,6 +130,32 @@ def test_update_dependency_sections_workspace_dev_and_build() -> None:
     )
 
 
+def test_manifest_pass_leaves_target_tables_unchanged() -> None:
+    """Manifest rewriting does not extend to target-specific dependency tables.
+
+    The documentation pass traverses ``target`` separately; the shared updater
+    must keep its manifest behaviour, where a target-specific requirement is
+    left alone because Cargo applies it only to the matching target.
+    """
+    document = parse_toml(
+        '[dependencies]\nalpha = "0.1.0"\n\n'
+        "[target.'cfg(unix)'.dependencies]\nalpha = \"0.1.0\"\n"
+    )
+
+    changed = bump_toml.update_dependency_sections(
+        document, {"dependencies": ("alpha",)}, "1.0.0"
+    )
+
+    assert changed is True, "the unconditional dependency must be rewritten"
+    assert document["dependencies"]["alpha"].value == "1.0.0", (
+        "[dependencies] alpha should be rewritten"
+    )
+    target_alpha = document["target"]["cfg(unix)"]["dependencies"]["alpha"]
+    assert target_alpha.value == "0.1.0", (
+        "a target-specific dependency must keep its version in the manifest pass"
+    )
+
+
 def test_package_alias_does_not_rewrite_a_workspace_dependency(
     tmp_path: Path,
 ) -> None:

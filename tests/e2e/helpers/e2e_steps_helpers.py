@@ -318,3 +318,13 @@ def filter_records(
     [('cargo::publish', ('--dry-run',), {})]
     """
     return [record for record in publish_spies["records"] if record[0] == label]
+
+
+def run_lading_in_e2e_workspace(
+    repo_root: Path,
+    e2e_state: dict[str, typ.Any],
+    *args: str,
+) -> _CliRunResult:
+    """Run the lading CLI against the E2E workspace and capture the result."""
+    workspace: workspace_builder.NonTrivialWorkspace = e2e_state["workspace"]
+    return run_cli(repo_root, workspace.root, *args)

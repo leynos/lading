@@ -1333,11 +1333,18 @@ can see which generated files need review and commit.
 `lading.commands.bump_toml.DEPENDENCY_SECTIONS` is the canonical vocabulary of
 Cargo dependency-section names (`dependencies`, `dev-dependencies`, and
 `build-dependencies`). Modules that iterate dependency sections
-(`bump_docs.update_toml_snippet_dependencies`,
+(`bump_docs_dependencies.update_toml_snippet_dependencies`,
 `bump._workspace_dependency_sections`) or map dependency kinds to sections
 (`bump._DEPENDENCY_SECTION_BY_KIND`) must derive from this constant rather than
 re-declaring the literals, so a change to the recognized section set is made in
 exactly one place.
+
+Table location is a separate concern from section naming.
+`lading.commands.bump_docs_dependencies` decides which tables the documentation
+pass visits — the document root, `[workspace.*]`, and each immediate
+`[target.<spec>.*]` — and delegates the rewrite to the shared
+`bump_toml.update_dependency_sections`. A module that needs a different
+location policy belongs beside it rather than inside the section vocabulary.
 
 ### Model checking the formatting helpers
 
