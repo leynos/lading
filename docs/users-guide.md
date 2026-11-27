@@ -1010,8 +1010,7 @@ an account whose home is not otherwise writable:
 ```sh
 home=$(getent passwd "$ACCOUNT" | cut -d: -f6)
 install -d -m 0700 "$home/.local/state/lading/workspace-write-locks"
-chown "$ACCOUNT:$ACCOUNT" \
-  "$home/.local/state/lading/workspace-write-locks"
+chown "$ACCOUNT" "$home/.local/state/lading/workspace-write-locks"
 ```
 
 Every parent directory must be searchable by the account, and the lock
