@@ -21,13 +21,17 @@ if typ.TYPE_CHECKING:
 
 
 @when(
-    "I run lading publish --forbid-dirty in the E2E workspace", target_fixture="cli_run"
+    parsers.re(
+        r"^I run lading publish(?P<flag> --forbid-dirty)? in the E2E workspace$"
+    ),
+    target_fixture="cli_run",
 )
 def when_run_lading_publish(
     repo_root: Path,
     e2e_state: dict[str, typ.Any],
+    flag: str | None,
 ) -> _CliRunResult:
-    """Invoke `lading publish` (dry-run default) with `--forbid-dirty`.
+    """Invoke `lading publish` in the E2E workspace and capture the result.
 
     Parameters
     ----------
@@ -35,59 +39,17 @@ def when_run_lading_publish(
         Repository root from which the CLI module is executed.
     e2e_state : dict[str, typ.Any]
         Shared step state carrying the target ``workspace``.
+    flag : str | None
+        The optional ``--forbid-dirty`` switch parsed from the step text.
 
     Returns
     -------
     _CliRunResult
         The captured CLI result mapping with the executed ``command``,
         ``returncode``, ``stdout``, ``stderr``, and ``workspace_root``.
-
-    Examples
-    --------
-    Bound to the Gherkin ``when`` step and invoked by pytest-bdd; the
-    returned mapping is exposed as the ``cli_run`` fixture::
-
-        >>> result = when_run_lading_publish(repo_root, e2e_state)  # doctest: +SKIP
-        >>> result["returncode"]  # doctest: +SKIP
-        0
     """
-    return run_lading_in_e2e_workspace(
-        repo_root, e2e_state, "publish", "--forbid-dirty"
-    )
-
-
-@when("I run lading publish in the E2E workspace", target_fixture="cli_run")
-def when_run_lading_publish_allow_dirty(
-    repo_root: Path,
-    e2e_state: dict[str, typ.Any],
-) -> _CliRunResult:
-    """Invoke `lading publish` using the default allow-dirty behaviour.
-
-    Parameters
-    ----------
-    repo_root : Path
-        Repository root from which the CLI module is executed.
-    e2e_state : dict[str, typ.Any]
-        Shared step state carrying the target ``workspace``.
-
-    Returns
-    -------
-    _CliRunResult
-        The captured CLI result mapping with the executed ``command``,
-        ``returncode``, ``stdout``, ``stderr``, and ``workspace_root``.
-
-    Examples
-    --------
-    Bound to the Gherkin ``when`` step and invoked by pytest-bdd; the
-    returned mapping is exposed as the ``cli_run`` fixture::
-
-        >>> result = when_run_lading_publish_allow_dirty(  # doctest: +SKIP
-        ...     repo_root, e2e_state
-        ... )
-        >>> result["returncode"]  # doctest: +SKIP
-        0
-    """
-    return run_lading_in_e2e_workspace(repo_root, e2e_state, "publish")
+    extra = ("--forbid-dirty",) if flag else ()
+    return run_lading_in_e2e_workspace(repo_root, e2e_state, "publish", *extra)
 
 
 def _crate_names_called(publish_spies: dict[str, typ.Any], record: str) -> list[str]:
