@@ -97,7 +97,7 @@ Feature: Lading CLI scaffolding
     And the workspace README contains workspace and target dependency snippets for "alpha"
     And bump.documentation.globs contains "README.md"
     When I invoke lading bump 1.2.3 with that workspace using --dry-run
-    Then the workspace and target documentation fences record version "0.1.0"
+    Then the workspace and target documentation file is unchanged
     And the CLI output lists documentation path "- README.md (documentation)"
 
   Scenario: Bumping transposes workspace README to crates

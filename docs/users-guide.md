@@ -359,6 +359,14 @@ Only the dependency keys named in the fence are rewritten, and only their
 `version` requirement; a requirement operator such as `^` or `~` is preserved.
 Other crates and other keys are left untouched.
 
+Keys are matched as written. The documentation pass has no Cargo metadata, so
+it cannot resolve an alias: for a workspace crate `alpha`, a fence entry
+`alpha-core = { package = "alpha", version = "1.0.0" }` keeps its version.
+Conversely, an entry keyed `alpha` is rewritten even when it names a different
+package. The manifest pass resolves crate names to manifest keys from the
+workspace graph before applying the same rule, so it does follow aliases; that
+mapping is manifest-only.
+
 A fence can also show a location this pass cannot reach. That location is left
 unchanged and no error is reported, while any supported location in the same
 fence is still rewritten:
@@ -377,8 +385,10 @@ fence is still rewritten:
   header `alpha` reads as an ordinary table and is rewritten normally.
 
 Target-specific tables inside a `Cargo.toml` are not rewritten by
-`lading bump`; only their documentation counterparts are. A bump rewrites the
-unconditional section that carries the same dependency.
+`lading bump`; only their documentation counterparts are. Where the same
+dependency is also declared in an unconditional section of that manifest, the
+bump rewrites that entry. A dependency declared only for a target keeps its
+version in the manifest and must be edited by hand.
 
 #### Confinement preflight
 

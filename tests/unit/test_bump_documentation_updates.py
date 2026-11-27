@@ -204,6 +204,35 @@ def test_documentation_pass_rewrites_supported_locations_beside_unsupported() ->
     assert parse_toml(_fence_body(updated))["dependencies"]["alpha"] == "2.0.0", updated
 
 
+@pytest.mark.parametrize(
+    ("entry", "expected_changed", "expected_version"),
+    [
+        ('alpha-core = { package = "alpha", version = "1.0.0" }', False, "1.0.0"),
+        ('alpha = { package = "serde", version = "1.0.0" }', True, "2.0.0"),
+    ],
+    ids=["aliased-key", "workspace-key-with-foreign-package"],
+)
+def test_documentation_pass_matches_fence_keys_literally(
+    entry: str, *, expected_changed: bool, expected_version: str
+) -> None:
+    """Fence keys are matched as written; aliases are not resolved.
+
+    Documented limit: the documentation pass is given crate names and has no
+    Cargo metadata, so it cannot map a crate to an aliased manifest key. The
+    manifest pass resolves that mapping from the workspace graph before calling
+    the same updater, so both passes match keys literally; only the manifest
+    pass knows which key an alias denotes.
+    """
+    text = _toml_fence(f"[target.'cfg(unix)'.dependencies]\n{entry}\n")
+
+    updated, changed = _rewrite_fence(text)
+
+    assert changed is expected_changed, updated
+    document = parse_toml(_fence_body(updated))
+    table = document["target"]["cfg(unix)"]["dependencies"]
+    assert table[entry.split(" = ")[0]]["version"] == expected_version, updated
+
+
 def test_documentation_pass_is_idempotent() -> None:
     """A second pass over already-rewritten text reports no further change."""
     text = _toml_fence(
@@ -263,18 +292,20 @@ def test_documentation_pass_skips_out_of_order_dependency_entry() -> None:
         'name = "alpha"\n'
     )
 
-    updated, changed = _rewrite_fence(text)
-
-    assert changed is False, "the only named entry is the skipped proxy"
-    assert updated == text, "a skipped proxy must leave the fence unchanged"
-
-    # The sibling plain entry proves the section itself is reachable, so the
-    # skip above is the proxy and not a missed table.
-    sibling, sibling_changed = bump_docs.rewrite_markdown_toml_fences(
-        text, {"beta"}, "2.0.0"
+    # Both names in one call: the proxy entry is skipped while the plain
+    # sibling in the same section is rewritten, so a pass that reached nothing
+    # could not report a change.
+    updated, changed = bump_docs.rewrite_markdown_toml_fences(
+        text, {"alpha", "beta"}, "2.0.0"
     )
-    assert sibling_changed is True, "the plain sibling entry must be rewritten"
-    assert 'beta = "2.0.0"' in sibling, sibling
+
+    assert changed is True, "the plain sibling entry must be rewritten"
+    document = parse_toml(_fence_body(updated))
+    section = document["target"]["cfg(unix)"]["dependencies"]
+    assert section["beta"] == "2.0.0", updated
+    assert section["alpha"]["version"] == "1.0.0", (
+        f"the out-of-order proxy entry must keep its version: {updated!r}"
+    )
 
 
 @pytest.mark.parametrize(

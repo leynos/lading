@@ -119,7 +119,12 @@ ISSUE-370-REQ-docs      -> EP-M4 -> docs/users-guide.md, docs/lading-design.md
 - Iterations: if the focused suite still fails after 3 fix attempts on any
   milestone, stop and escalate.
 - Size: if `bump_toml.py` grows by more than 4 lines, or any code file must
-  exceed 400 lines after this change, stop and escalate.
+  exceed 400 lines after this change, stop and escalate. Discharged during the
+  review round: `tests/bdd/steps/test_bump_steps.py` (424 lines at base) and
+  `tests/e2e/steps/test_e2e_steps.py` (528 at base) were already over the limit
+  and both grew in the first pass. Rather than escalate an avoidable growth,
+  the new BDD steps moved to their own module and the end-to-end assertion
+  became a builder-backed comparison, so neither file is longer than at base.
 - Ambiguity: if a required behaviour conflicts with the users' guide promise
   for fence rewriting, stop and escalate rather than choosing unilaterally.
 
@@ -187,6 +192,18 @@ plan of work.
   location, and the out-of-order example needed a third header to reproduce the
   skip. The guide was corrected, a test now pins the sibling rewrite, and the
   gate sequence was re-run (1756 tests, 106 snapshots, lint 10.00/10).
+- [x] (2026-11-27) The ExecPlan assessment (`EP-370-A1`) returned not clear with
+  three findings, all verified: the plan overclaimed alias parity, the guide
+  assumed an unconditional dependency always exists alongside a target entry,
+  and two already-oversized test files grew. All three are addressed. New BDD
+  steps moved to `tests/bdd/steps/test_documentation_steps.py`, so
+  `test_bump_steps.py` is back to its pre-change 424 lines and
+  `config_fixtures.py` fell from 400 to 369; the end-to-end builder now exposes
+  `workspace_readme(...)`, so the assertion is a complete-text comparison and
+  `test_e2e_steps.py` fell from 528 to 527. The dry-run scenario asserts
+  byte-for-byte equality with the fixture, and the proxy test makes one call
+  covering both the skipped entry and its rewritten sibling. The alias claim
+  was corrected in the plan and the docs, and pinned by parametrized tests.
 
 ## Surprises & discoveries
 
@@ -241,11 +258,26 @@ plan of work.
   Date/Author: 2026-11-27, implementation session.
 - Decision: reuse the unchanged `update_dependency_sections` rather than
   writing a documentation-specific section updater. Rationale: the manifest
-  pass and the documentation pass must agree on section vocabulary, alias
-  handling, and operator-prefix composition; sharing the function makes
-  disagreement structurally impossible. The only widening is the annotation
-  that lets a table be passed where a document is passed today. Date/Author:
-  2026-11-27, implementation session.
+  pass and the documentation pass must agree on section vocabulary and
+  requirement-operator composition; sharing the function makes disagreement
+  structurally impossible. The only widening is the annotation that lets a
+  table be passed where a document is passed today. Date/Author: 2026-11-27,
+  implementation session. Corrected 2026-11-27 after review: the shared updater
+  matches dependency **keys** literally in both passes, but only the manifest
+  pass maps a bumped crate name to its manifest alias (via
+  `dependency.manifest_name`, derived from Cargo metadata). The documentation
+  pass is handed crate names and has no metadata, so alias resolution is
+  manifest-only. That asymmetry predates this change; the review comment
+  claiming alias parity was about this plan's wording, not about the new
+  traversal, and both behaviours are now pinned by tests and stated as limits
+  in the users' guide.
+- Decision: do not add alias resolution to the documentation pass. Rationale:
+  the issue asks for the same *sections* as the manifest pass, not for
+  crate-to- key mapping, and resolving aliases would require threading the
+  workspace graph into the documentation stage — a public-surface change the
+  plan's constraints forbid. The current behaviour is pinned by
+  `test_documentation_pass_matches_fence_keys_literally` and documented.
+  Date/Author: 2026-11-27, review-response session.
 - Decision: traverse `target` one level only. Rationale: Cargo's own grammar
   puts a target spec directly under `target`, and a deeper traversal would
   rewrite tables whose meaning this tool cannot verify. Skipping is silent, in

@@ -357,11 +357,8 @@ def then_readme_contains_version(e2e_state: dict[str, typ.Any]) -> None:
     """Assert the workspace README TOML snippets reflect the bumped version."""
     workspace: workspace_builder.NonTrivialWorkspace = e2e_state["workspace"]
     readme = (workspace.root / "README.md").read_text(encoding="utf-8")
-    assert '[dependencies]\ncore = "1.0.0"\nutils = "1.0.0"\napp = "1.0.0"' in readme, (
-        readme
-    )
-    assert '[workspace.dependencies]\ncore = "1.0.0"' in readme, readme
-    assert "[target.'cfg(unix)'.dependencies]\ncore = \"1.0.0\"" in readme, readme
+    expected = workspace_builder.workspace_readme(workspace.crate_names, "1.0.0")
+    assert readme == expected, f"expected every fence rewritten: {readme!r}"
 
 
 @then("the Git working tree has uncommitted changes")
