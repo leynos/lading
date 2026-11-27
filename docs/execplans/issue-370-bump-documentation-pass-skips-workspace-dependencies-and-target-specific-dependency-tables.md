@@ -179,6 +179,12 @@ plan of work.
   sequence passed in order: `make fmt`, `make check-fmt`, `make lint`
   (10.00/10), `make typecheck`, `make test` (1755 passed, 31 skipped, 106
   snapshots), `make markdownlint`, `make nixie`.
+- [x] (2026-11-27) First `coderabbit review --agent` pass returned two minor
+  findings, both against `docs/users-guide.md` and both verified in the code: a
+  fence with an unreachable location still rewrites a supported sibling
+  location, and the out-of-order example needed a third header to reproduce the
+  skip. The guide was corrected, a test now pins the sibling rewrite, and the
+  gate sequence was re-run (1756 tests, 106 snapshots, lint 10.00/10).
 
 ## Surprises & discoveries
 
@@ -208,6 +214,11 @@ plan of work.
   first probe of this shape only covered the workspace case and misreported
   which entry was skipped; the target case was measured directly before the
   test was written.
+- The first draft of the users' guide said a skipped shape left the whole fence
+  unchanged. It does not: the root and workspace passes run before the target
+  traversal, so a fence holding both an unreachable `target` value and a
+  supported `[dependencies]` table still changes. The guide now scopes the
+  promise to the location, and a test pins the behaviour.
 - The regenerated snapshot caught a defect in the new property fixture: the
   decoy section names were appended to `_DECOY_LOCATIONS` as bare strings, so
   `"".join` split them into characters and rendered
