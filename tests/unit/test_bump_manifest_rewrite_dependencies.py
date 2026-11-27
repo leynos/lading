@@ -1,14 +1,19 @@
 """Tests for Cargo dependency matching in manifest rewrites."""
 
+import collections.abc as cabc
+import logging
 import pathlib
 import typing as typ
 
+import pytest
 from tomlkit import parse as parse_toml
 from tomlkit.container import OutOfOrderTableProxy
 
 from lading.commands import bump_manifest_rewrite_dependencies, bump_manifest_rewrites
 from lading.config import ManifestRewriteConfig
 from tests.helpers.manifest_rewrites import plan_fixture_rewrites
+
+type _ManifestWriter = cabc.Callable[[pathlib.Path, str, str], pathlib.Path]
 
 if typ.TYPE_CHECKING:
     from syrupy.assertion import SnapshotAssertion
@@ -244,4 +249,55 @@ def test_rewrite_preserves_upper_bound_of_compound_requirement() -> None:
     assert changed, "the matching workspace crate requirement should change"
     assert document["dependencies"]["rstest-bdd"] == ">=0.6.0, <0.7", (
         "rewriting the lower comparator must retain the excluded upper range"
+    )
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        pytest.param((">=1.0.0", "2.0.0", ""), id="inclusive-lower-bound"),
+        pytest.param(("<3.0.0", "2.0.0", "2.0.0"), id="strict-upper-rejects-target"),
+        pytest.param((">1.0.0", "2.0.0", "2.0.0"), id="strict-lower-rejects-target"),
+        pytest.param((">0.5.0", "2.0.0", "2.0.0"), id="strict-lower-rewritten"),
+        pytest.param((">=0.6.0-beta4, <0.7", "0.6.0", ""), id="retained-upper-accepts"),
+        pytest.param((">=1.0.0, <2", "2.0.0", "2.0.0"), id="retained-upper-rejects"),
+        pytest.param(("=1.0.0", "2.0.0", ""), id="equality-rewrites-to-target"),
+    ],
+)
+def test_rewriting_reports_excluding_comparator_bounds(
+    tmp_path: pathlib.Path,
+    caplog: pytest.LogCaptureFixture,
+    case: tuple[str, str, str],
+) -> None:
+    """An incompatible rewritten or retained comparator is reported once."""
+    requirement, target, expected_warning = case
+    manifest = tmp_path / "fixture" / "Cargo.toml"
+    manifest.parent.mkdir()
+    manifest.write_text(f'[dependencies]\nalpha = "{requirement}"\n', encoding="utf-8")
+    group = ManifestRewriteConfig(paths=("fixture/Cargo.toml",))
+
+    with caplog.at_level(
+        logging.WARNING, logger=bump_manifest_rewrite_dependencies.__name__
+    ):
+        (plan,) = plan_fixture_rewrites(
+            tmp_path,
+            (group,),
+            bump_manifest_rewrites.ManifestRewriteVersions(
+                updated_crate_names=frozenset({"alpha"}),
+                pre_bump_versions={"alpha": "1.0.0"},
+                target_version=target,
+            ),
+        )
+
+    assert manifest.exists(), "the planner must not delete the manifest"
+    warnings = [record for record in caplog.records if record.levelname == "WARNING"]
+    if expected_warning:
+        assert len(warnings) == 1, "an excluding comparator must be reported once"
+        assert expected_warning in warnings[0].getMessage(), (
+            "the warning must name the requested target version"
+        )
+    else:
+        assert not warnings, "compatible comparators must not warn"
+    assert requirement in plan.original_text, (
+        "planning must preserve the original requirement text"
     )

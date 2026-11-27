@@ -9,7 +9,8 @@ from pathlib import Path
 
 import pytest
 
-from lading.commands import bump, bump_prepare
+from lading.commands import bump, bump_prepare, bump_prepare_manifest_rewrites
+from lading.commands.bump_manifest_rewrite_model import ManifestRewriteError
 from lading.commands.bump_plan import PlanBuilder
 from lading.utils.confinement import BumpPreflightError, UnsafeBumpTargetError
 from lading.workspace import WorkspaceCrate, WorkspaceGraph
@@ -42,6 +43,15 @@ def _initialize(root: Path, graph: WorkspaceGraph) -> None:
     )
 
 
+def _rewrite_versions(root: Path, graph: WorkspaceGraph) -> dict[str, str]:
+    """Return manifest-derived versions for a configured rewrite plan."""
+    context = bump._initialize_bump_context(
+        root,
+        bump.BumpOptions(configuration=_make_config(), workspace=graph),
+    )
+    return bump_prepare_manifest_rewrites._pre_bump_versions_from_manifests(context)
+
+
 def test_injected_graph_rejects_a_foreign_root(tmp_path: Path) -> None:
     """An injected graph rooted elsewhere cannot be bumped from ``root``."""
     root = tmp_path.resolve()
@@ -57,13 +67,26 @@ def test_injected_graph_rejects_a_foreign_root(tmp_path: Path) -> None:
     )
 
 
-def test_injected_graph_rejects_a_misnamed_member_manifest(tmp_path: Path) -> None:
-    """A member manifest that is not named ``Cargo.toml`` is rejected."""
+def _workspace_with_member_manifest(
+    tmp_path: Path,
+    content: str,
+    *,
+    manifest_name: str = "Cargo.toml",
+) -> tuple[Path, Path]:
+    """Create a workspace root and one member manifest with ``content``."""
     root = tmp_path.resolve()
     (root / "Cargo.toml").write_text("[workspace]\nmembers = []\n", encoding="utf-8")
-    manifest = root / "crates" / "alpha" / "Other.toml"
+    manifest = root / "crates" / "alpha" / manifest_name
     manifest.parent.mkdir(parents=True)
-    manifest.write_text('version = "0.1.0"\n', encoding="utf-8")
+    manifest.write_text(content, encoding="utf-8")
+    return root, manifest
+
+
+def test_injected_graph_rejects_a_misnamed_member_manifest(tmp_path: Path) -> None:
+    """A member manifest that is not named ``Cargo.toml`` is rejected."""
+    root, manifest = _workspace_with_member_manifest(
+        tmp_path, 'version = "0.1.0"\n', manifest_name="Other.toml"
+    )
     graph = WorkspaceGraph(workspace_root=root, crates=(_crate(manifest),))
 
     with pytest.raises(UnsafeBumpTargetError) as excinfo:
@@ -187,3 +210,31 @@ def test_graph_relative_manifest_rejects_parent_traversal(tmp_path: Path) -> Non
     assert "parent traversal" in str(excinfo.value), (
         "a parent-traversing suffix must be rejected"
     )
+
+
+def test_injected_graph_rejects_a_stale_crate_version(tmp_path: Path) -> None:
+    """A reused graph whose crate version drifted from disk is rejected."""
+    root, manifest = _workspace_with_member_manifest(
+        tmp_path, '[package]\nname = "alpha"\nversion = "2.0.0"\n'
+    )
+    graph = WorkspaceGraph(workspace_root=root, crates=(_crate(manifest),))
+
+    with pytest.raises(ManifestRewriteError) as excinfo:
+        _rewrite_versions(root, graph)
+
+    assert "records crate 'alpha' at version 0.1.0" in str(excinfo.value), (
+        "the diagnostic must name the graph's stale version"
+    )
+
+
+def test_injected_graph_rejects_a_renamed_crate(tmp_path: Path) -> None:
+    """A reused graph cannot name a package the manifest no longer declares."""
+    root, manifest = _workspace_with_member_manifest(
+        tmp_path, '[package]\nname = "renamed-alpha"\nversion = "0.1.0"\n'
+    )
+    graph = WorkspaceGraph(workspace_root=root, crates=(_crate(manifest),))
+
+    with pytest.raises(
+        ManifestRewriteError, match="package name differs from workspace discovery"
+    ):
+        _rewrite_versions(root, graph)

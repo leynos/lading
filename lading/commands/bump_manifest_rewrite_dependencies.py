@@ -6,12 +6,13 @@ requirement keeps its first comparator and any later bounds.
 """
 
 import collections.abc as cabc
+import logging
 import typing as typ
 
 from tomlkit.container import OutOfOrderTableProxy
 from tomlkit.items import InlineTable, Table
 
-from lading.commands import bump_toml
+from lading.commands import bump_manifest_rewrite_bounds, bump_toml
 
 if typ.TYPE_CHECKING:
     from tomlkit.toml_document import TOMLDocument
@@ -21,6 +22,8 @@ type _TableLike = Table | InlineTable | OutOfOrderTableProxy
 _TABLE_TYPES: typ.Final[
     tuple[type[Table] | type[InlineTable] | type[OutOfOrderTableProxy], ...]
 ] = (Table, InlineTable, OutOfOrderTableProxy)
+
+_log = logging.getLogger(__name__)
 
 
 def rewrite_dependency_requirements(
@@ -109,13 +112,15 @@ def _rewrite_dependency_entry(
     if isinstance(entry, _TABLE_TYPES):
         if entry.get("workspace") is True:
             return False
+        value = entry.get("version")
         replacement = bump_toml.prepare_version_replacement(
-            entry.get("version"),
+            value,
             target_version,
             compose=compose_requirement,
         )
         if replacement is None:
             return False
+        _warn_if_bounds_exclude_target(key, value, target_version)
         entry["version"] = replacement
         return True
     replacement = bump_toml.prepare_version_replacement(
@@ -123,8 +128,30 @@ def _rewrite_dependency_entry(
     )
     if replacement is None:
         return False
+    _warn_if_bounds_exclude_target(key, entry, target_version)
     table[key] = replacement  # type: ignore[index]  # table-like values support assignment
     return True
+
+
+def _warn_if_bounds_exclude_target(
+    dependency_name: str,
+    value: object,
+    target_version: str,
+) -> None:
+    """Log once when a rewritten or retained comparator excludes the target."""
+    requirement = bump_toml.value_as_string(value)
+    if requirement is None:
+        return
+    warning = bump_manifest_rewrite_bounds.requirement_bound_warning(
+        requirement, target_version
+    )
+    if warning is None:
+        return
+    _log.warning(
+        "%s",
+        bump_manifest_rewrite_bounds.format_requirement_bound_warning(warning),
+        extra={"dependency": dependency_name},
+    )
 
 
 def compose_requirement(existing: str, target_version: str) -> str:

@@ -1247,10 +1247,22 @@ nothing. `commit_plan` performs the only writes, and a failure part-way leaves
 earlier writes in place; the workflow deliberately provides no rollback because
 every target and every replacement is validated before the first write.
 
+`lading.commands.bump_manifest_rewrite_bounds` evaluates Cargo comparators
+without changing them and reports a rewritten first comparator or retained
+later comparator that excludes the target. The dependency planner logs one
+warning per affected entry and still applies the rewrite, so the operator sees
+the exclusion in the warning and Cargo's resolver remains the final authority.
+
 `lading.commands.bump_manifest_rewrite_metrics` records bounded planning and
 commit outcome counters and durations. Rewrite failures surface as
 `ManifestRewriteError`; the CLI reports them as
 `Manifest rewrite error: <message>`.
+
+An injected `BumpOptions.workspace` graph is validated before use: its root and
+manifest paths must be confined, and each crate name and effective version must
+match the member manifest on disk, including `version.workspace = true`
+inheritance. A caller that reuses a graph after an earlier bump is therefore
+rejected before any fixture text is planned from stale versions.
 
 A live run holds `bump_workspace_write_lock.workspace_write_lock` from planning
 through commit and lockfile regeneration; dry runs take no lock. The lock is a

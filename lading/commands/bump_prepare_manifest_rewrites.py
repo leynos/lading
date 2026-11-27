@@ -10,10 +10,13 @@ import collections.abc as cabc
 import time
 import typing as typ
 
+from tomlkit.exceptions import TOMLKitError
+
 from lading.commands import (
     bump_manifest_rewrite_filesystem,
     bump_manifest_rewrite_metrics,
     bump_manifest_rewrites,
+    bump_toml,
 )
 from lading.commands.bump_manifest_rewrite_metrics import (
     ManifestRewriteMetricLabels,
@@ -32,9 +35,12 @@ from lading.utils.confinement import (
 if typ.TYPE_CHECKING:  # pragma: no cover - import-time typing aids only
     from pathlib import Path
 
+    from tomlkit.toml_document import TOMLDocument
+
     from lading.commands.bump_manifest_rewrites import ManifestRewritePlan
     from lading.commands.bump_manifests import _BumpContext
     from lading.config import ManifestRewriteConfig
+    from lading.workspace import WorkspaceCrate
 
 
 def prepare_manifest_rewrites(
@@ -103,12 +109,108 @@ def _plan_rewrites(
         sources,
         ManifestRewriteVersions(
             updated_crate_names=context.updated_crate_names,
-            pre_bump_versions={
-                crate.name: crate.version for crate in context.workspace.crates
-            },
+            pre_bump_versions=_pre_bump_versions_from_manifests(context),
             target_version=target_version,
         ),
     )
+
+
+def _pre_bump_versions_from_manifests(context: _BumpContext) -> dict[str, str]:
+    """Derive member versions from disk and require graph agreement.
+
+    Configured rewrites use these versions as their pre-bump source. Deriving
+    them here, rather than trusting the supplied graph, stops a caller that
+    reuses a graph after an earlier bump from planning against stale versions
+    and silently leaving fixture text at the previous target.
+
+    Returns
+    -------
+    dict[str, str]
+        Each member crate's effective version read from its manifest.
+    """
+    workspace_document = _parse_manifest(context.workspace_manifest)
+    inherited_version = _inherited_workspace_version(workspace_document)
+    versions: dict[str, str] = {}
+    for crate in context.workspace.crates:
+        declared_version = _declared_crate_version(crate, inherited_version)
+        _require_graph_version(crate, declared_version)
+        versions[crate.name] = declared_version
+    return versions
+
+
+def _parse_manifest(manifest_path: Path) -> TOMLDocument:
+    """Read and parse one manifest for version evidence."""
+    try:
+        return bump_toml.parse_manifest(manifest_path)
+    except (OSError, UnicodeDecodeError, TOMLKitError) as exc:
+        message = f"Could not read manifest for rewrite planning {manifest_path}: {exc}"
+        raise ManifestRewriteError(message, failed_path=manifest_path) from exc
+
+
+def _inherited_workspace_version(document: TOMLDocument) -> str | None:
+    """Return ``[workspace.package].version`` when it is a string."""
+    package_table = bump_toml.select_table(document, ("workspace", "package"))
+    if package_table is None:
+        return None
+    version = package_table.get("version")
+    return version if isinstance(version, str) else None
+
+
+def _declared_crate_version(
+    crate: WorkspaceCrate,
+    inherited_version: str | None,
+) -> str:
+    """Return the version a member manifest declares for ``crate``."""
+    document = _parse_manifest(crate.manifest_path)
+    package = document.get("package")
+    if not isinstance(package, cabc.Mapping):
+        message = f"Member manifest has no [package] table: {crate.manifest_path}"
+        raise ManifestRewriteError(message, failed_path=crate.manifest_path)
+    _require_package_name(package, crate)
+    match package.get("version"):
+        case str() as direct_version:
+            return direct_version
+        case {"workspace": True}:
+            if inherited_version is None:
+                message = (
+                    "Workspace-inherited package version is unavailable in "
+                    f"{crate.manifest_path}"
+                )
+                raise ManifestRewriteError(message, failed_path=crate.manifest_path)
+            return inherited_version
+        case None:
+            # Cargo treats an omitted package version as 0.0.0.
+            return "0.0.0"
+        case _:
+            message = (
+                "Member manifest declares a non-string package version: "
+                f"{crate.manifest_path}"
+            )
+            raise ManifestRewriteError(message, failed_path=crate.manifest_path)
+
+
+def _require_package_name(
+    package: cabc.Mapping[str, object],
+    crate: WorkspaceCrate,
+) -> None:
+    """Require the manifest package name to match workspace discovery."""
+    if bump_toml.value_as_string(package.get("name")) == crate.name:
+        return
+    message = (
+        f"Manifest package name differs from workspace discovery: {crate.manifest_path}"
+    )
+    raise ManifestRewriteError(message, failed_path=crate.manifest_path)
+
+
+def _require_graph_version(crate: WorkspaceCrate, declared_version: str) -> None:
+    """Reject a supplied graph whose recorded version is stale."""
+    if declared_version == crate.version:
+        return
+    message = (
+        f"Injected workspace graph records crate {crate.name!r} at version "
+        f"{crate.version}, but {crate.manifest_path} declares {declared_version}"
+    )
+    raise ManifestRewriteError(message, failed_path=crate.manifest_path)
 
 
 def _propose_rewrites(
