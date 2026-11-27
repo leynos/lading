@@ -986,8 +986,8 @@ stderr_tail_lines = 40
   while a standalone nested workspace reports its own. Staging copies such
   fixtures into the staged workspace regardless of `.gitignore`, because it
   filters only by `publish.stage_exclude`; see
-  [staging exclusions](#staging-exclusions). The workspace root `Cargo.toml`
-  is always included and should not be listed.
+  [staging exclusions](#staging-exclusions). The workspace root `Cargo.toml` is
+  always included and should not be listed.
 - `rebuild_lockfiles`: boolean, default `true`. Controls whether `lading bump`
   regenerates the workspace lockfile, discovered tracked lockfiles, and
   configured nested lockfiles after manifest updates. Pass
