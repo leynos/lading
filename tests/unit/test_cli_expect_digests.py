@@ -154,7 +154,7 @@ def test_discovery_is_locked_only_when_digests_are_expected(
     extra_args, is_locked = case
     commands: list[tuple[str, ...]] = []
     monkeypatch.setattr(
-        cli, "_select_runner", lambda *_secrets: _stale_lockfile_runner(commands)
+        cli, "_select_runner", lambda *_a, **_k: _stale_lockfile_runner(commands)
     )
 
     assert _publish(tmp_path, *extra_args) == 1, "discovery must fail in both cases"

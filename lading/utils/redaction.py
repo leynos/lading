@@ -48,12 +48,23 @@ REDACTED = "<redacted>"
 
 # Cargo's two credential variables: the crates.io token and a named registry's.
 _TOKEN_VARIABLE = re.compile(r"CARGO_REGISTRY_TOKEN|CARGO_REGISTRIES_[A-Z0-9_]+_TOKEN")
-_ACTIVE: contextvars.ContextVar[tuple[str, ...]] = contextvars.ContextVar(
-    "lading_active_secrets", default=()
+
+
+@dc.dataclass(eq=False, slots=True)
+class _Scope:
+    """One open :func:`use_secrets` block: its secrets (which may grow) and parent."""
+
+    secrets: tuple[str, ...]
+    parent: _Scope | None
+
+
+# The innermost open scope in this context.
+_ACTIVE: contextvars.ContextVar[_Scope | None] = contextvars.ContextVar(
+    "lading_active_secrets", default=None
 )
-# Every open scope's secrets. The log hooks are process-wide, so they read this
-# rather than the per-context ``_ACTIVE``.
-_LOGGED: list[tuple[str, ...]] = []
+# Every open scope. The log hooks are process-wide, so they read this rather
+# than the per-context ``_ACTIVE``.
+_LOGGED: list[_Scope] = []
 
 
 def _overlaps_marker(secret: str) -> bool:
@@ -244,23 +255,51 @@ def use_secrets(secrets: cabc.Iterable[str]) -> cabc.Generator[None]:
     sanitized first (see
     :func:`~lading.utils.exception_redaction.sanitize_exception`).
     """
-    combined = ordered_secrets((*_ACTIVE.get(), *secrets))
-    token = _ACTIVE.set(combined)
-    _LOGGED.append(combined)
+    parent = _ACTIVE.get()
+    scope = _Scope(ordered_secrets((*_active_secrets(), *secrets)), parent)
+    token = _ACTIVE.set(scope)
+    _LOGGED.append(scope)
     hooks = LogRedaction(_redact_logged)
     try:
         yield
     except Exception as exc:
         # An exception leaving the scope is a sink too: it reaches callers, logs
         # and tracebacks after the scope has ended.
-        safe = sanitize_exception(exc, functools.partial(redact_text, secrets=combined))
+        safe = sanitize_exception(
+            exc, functools.partial(redact_text, secrets=scope.secrets)
+        )
         if safe is exc:
             raise
         raise safe from safe.__cause__
     finally:
         hooks.remove()
-        _LOGGED.remove(combined)
+        _LOGGED.remove(scope)
         _ACTIVE.reset(token)
+
+
+def add_active_secrets(values: cabc.Iterable[str]) -> None:
+    """Hide ``values`` as well, until the outermost open scope ends.
+
+    A command can bring secrets unknown when its scope opened, such as the
+    tokens in its own Cargo home's credentials file. Every enclosing scope
+    gains them, so messages built later hide them too. Outside any scope this
+    does nothing, so a run that never activated secrets is unchanged.
+
+    Examples
+    --------
+    >>> with use_secrets(("abc",)):
+    ...     add_active_secrets(("xyz",))
+    ...     redact_active("abc xyz")
+    '<redacted> <redacted>'
+    >>> redact_active("xyz")
+    'xyz'
+    """
+    added = tuple(values)
+    scope = _ACTIVE.get()
+    while scope is not None:
+        # Replaced whole, so a concurrent reader sees the old or the new set.
+        scope.secrets = ordered_secrets((*scope.secrets, *added))
+        scope = scope.parent
 
 
 def _redact_logged(text: str) -> str:
@@ -277,7 +316,16 @@ def _redact_logged(text: str) -> str:
     str
         ``text`` with every open scope's secrets replaced.
     """
-    return redact_text(text, tuple(itertools.chain.from_iterable(tuple(_LOGGED))))
+    scopes = tuple(_LOGGED)
+    return redact_text(
+        text, tuple(itertools.chain.from_iterable(s.secrets for s in scopes))
+    )
+
+
+def _active_secrets() -> tuple[str, ...]:
+    """Return the innermost open scope's secrets, or none outside any scope."""
+    scope = _ACTIVE.get()
+    return () if scope is None else scope.secrets
 
 
 def redact_active(text: str) -> str:
@@ -288,7 +336,7 @@ def redact_active(text: str) -> str:
     str
         ``text`` unchanged when no secrets are active.
     """
-    return redact_text(text, _ACTIVE.get())
+    return redact_text(text, _active_secrets())
 
 
 class SecretRedactor:

@@ -77,7 +77,9 @@ def _invoke(
     )
 
 
-def redacting_invoke(secrets: cabc.Sequence[str]) -> CommandRunner:
+def redacting_invoke(
+    secrets: cabc.Sequence[str], *, cargo_home: Path | None = None
+) -> CommandRunner:
     """Return the default publish runner with ``secrets`` hidden from its output.
 
     Returns
@@ -87,7 +89,7 @@ def redacting_invoke(secrets: cabc.Sequence[str]) -> CommandRunner:
         exact ``secrets`` (and registry tokens in a call's ``env``) never
         appear in what it relays or captures.
     """
-    return _map_errors(redacting_runner(secrets))
+    return _map_errors(redacting_runner(secrets, cargo_home=cargo_home))
 
 
 @dc.dataclass(frozen=True, slots=True)

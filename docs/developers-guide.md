@@ -1910,10 +1910,17 @@ staged. The inputs arrive as `PublishOptions.cargo_environment`, a
 never out of what it parses. `lading.cli` collects the values from the
 environment and the credentials file (`runtime.credentials`) for a
 digest-checked run only; `_select_runner` then returns `redacting_runner`,
-while a run without the option always gets the plain `subprocess_runner`.
-`redact_text` replaces, left to right, the longest secret starting at each
-position, so the result does not depend on the order secrets are given in.
-Every known secret is replaced, including one that could overlap the
+while a run without the option always gets the plain `subprocess_runner`. The
+entry point's file is only the first: a relative `CARGO_HOME` is resolved by
+Cargo against each command's working directory, so before starting each command
+`redacting_runner` reads the credentials file of the home that command runs with
+(`invocation_cargo_home`: the call's own `CARGO_HOME`, else the entry point's,
+joined to the call's `cwd`), hides its tokens from that command's relay and
+adds them to every open scope with `add_active_secrets`, so later diagnostics
+and logs hide them too. The relative home is never made absolute once for the
+whole run. `redact_text` replaces, left to right, the longest secret starting
+at each position, so the result does not depend on the order secrets are given
+in. Every known secret is replaced, including one that could overlap the
 `<redacted>` marker, as a named-registry token that is just `redacted` could:
 `marker_for` then builds the marker from one character found in no secret
 (framed by `<` and `>` when no secret has a bracket), so no secret can show

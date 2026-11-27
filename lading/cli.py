@@ -118,7 +118,9 @@ _CMD_MOX_TRUTHY_VALUES = frozenset({"1", "true", "yes", "on"})
 app = _shared_app if __name__ == "lading.cli" else create_app()
 
 
-def _select_runner(secrets: cabc.Sequence[str] | None = None) -> CommandRunner:
+def _select_runner(
+    secrets: cabc.Sequence[str] | None = None, *, cargo_home: Path | None = None
+) -> CommandRunner:
     """Return the command runner selected for this CLI invocation.
 
     Parameters
@@ -129,6 +131,9 @@ def _select_runner(secrets: cabc.Sequence[str] | None = None) -> CommandRunner:
         A sequence, even an empty one, selects the redacting runner, which is
         what ``--expect-digests`` needs: tokens can also arrive later, through a
         call's environment overrides.
+    cargo_home : Path | None
+        The Cargo home the redacting runner resolves each command's own home
+        from, so the credentials file a command actually uses is hidden too.
 
     Returns
     -------
@@ -157,7 +162,9 @@ def _select_runner(secrets: cabc.Sequence[str] | None = None) -> CommandRunner:
     # ambient environment. Without a token the plain runner is used unchanged.
     # Without digests the plain runner is used whatever the environment holds,
     # exactly as before the option existed.
-    return subprocess_runner if secrets is None else redacting_runner(secrets)
+    if secrets is None:
+        return subprocess_runner
+    return redacting_runner(secrets, cargo_home=cargo_home)
 
 
 type WorkspaceLoader = cabc.Callable[[Path], WorkspaceGraph]
@@ -199,7 +206,8 @@ def _run_with_context(
         The command's rendered summary.
     """
     secrets = None if environment is None else environment.secrets
-    active_runner = command_runner or _select_runner(secrets)
+    home = None if environment is None else environment.cargo_home
+    active_runner = command_runner or _select_runner(secrets, cargo_home=home)
     hidden = nullcontext() if secrets is None else use_secrets(secrets)
     configuration_scope: AbstractContextManager[object] = nullcontext()
     try:

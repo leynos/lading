@@ -41,7 +41,9 @@ def discovery_runner(options: PublishOptions) -> CommandRunner | None:
     environment = options.cargo_environment
     if options.expect_digests is None or environment is None:
         return None
-    return options.command_runner or redacting_runner(environment.secrets)
+    return options.command_runner or redacting_runner(
+        environment.secrets, cargo_home=environment.cargo_home
+    )
 
 
 def refuse_staged_defaults(
@@ -82,7 +84,8 @@ def command_runner(options: PublishOptions) -> CommandRunner:
     if options.command_runner is not None:
         return options.command_runner
     if options.cargo_environment is not None and options.expect_digests is not None:
-        return redacting_invoke(options.cargo_environment.secrets)
+        environment = options.cargo_environment
+        return redacting_invoke(environment.secrets, cargo_home=environment.cargo_home)
     return publish_pipeline._invoke
 
 
