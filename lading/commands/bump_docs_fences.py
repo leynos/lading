@@ -74,18 +74,6 @@ def rewrite_markdown_toml_fences(
     return updated, changed
 
 
-def _names_bumped_crate(
-    document: TOMLDocument,
-    dependency_targets: cabc.Collection[str],
-) -> bool:
-    """Return whether ``[package].name`` names one of ``dependency_targets``."""
-    package = bump_toml.select_table(document, ("package",))
-    if package is None:
-        return False
-    name = bump_toml.value_as_string(package.get("name"))
-    return name is not None and name in dependency_targets
-
-
 def _update_snippet_package_versions(
     document: TOMLDocument,
     dependency_targets: cabc.Collection[str],
@@ -103,11 +91,13 @@ def _update_snippet_package_versions(
     bool
         ``True`` when a package or workspace-package version was replaced.
     """
-    if not _names_bumped_crate(document, dependency_targets):
+    package = bump_toml.select_table(document, ("package",))
+    if package is None:
         return False
-    changed = bump_toml.replace_string_version(
-        bump_toml.select_table(document, ("package",)), target_version
-    )
+    name = bump_toml.value_as_string(package.get("name"))
+    if name is None or name not in dependency_targets:
+        return False
+    changed = bump_toml.replace_string_version(package, target_version)
     changed |= bump_toml.replace_string_version(
         bump_toml.select_table(document, ("workspace", "package")), target_version
     )

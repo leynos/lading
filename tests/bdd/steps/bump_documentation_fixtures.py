@@ -57,5 +57,5 @@ def mixed_fence_body(name: str) -> str:
 def given_workspace_readme_mixed_sample(workspace_directory: Path) -> None:
     """Write a README mixing eligible and ineligible TOML fences."""
     (workspace_directory / "README.md").write_text(
-        MIXED_DOCUMENTATION_SAMPLE, encoding="utf-8"
+        MIXED_DOCUMENTATION_SAMPLE, encoding="utf-8", newline="\n"
     )
