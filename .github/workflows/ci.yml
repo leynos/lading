@@ -124,6 +124,8 @@ jobs:
       - name: Check spelling
         run: make spelling
 
+      - name: Install the YAML lint tools
+        uses: leynos/shared-actions/.github/actions/install-yaml-lint@a108423efa7fb83565089449f2647d34286a48a4
       - name: Run linters, including Skylos dead-code detection
         run: make lint
 
