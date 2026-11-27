@@ -10,6 +10,7 @@ from tests.helpers.markdown_fence_scan import (
     indentation,
     list_item_end,
     quote_depth,
+    strip_list_items,
     strip_quotes,
     unmarked_fence_delimiter,
     unmarked_fence_end,
@@ -141,4 +142,25 @@ def test_nested_list_marker_uses_its_container_indent() -> None:
     )
     assert list_item_end("        - code", 4) is None, (
         "eight spaces are more than three beyond the container"
+    )
+
+
+def test_strip_list_items_consumes_nested_markers() -> None:
+    """Nested list containers can open on one line."""
+    assert strip_list_items("- - ~~~~text", 0) == ("~~~~text", 4), (
+        "both markers must be consumed and their columns accumulated"
+    )
+
+
+def test_unmarked_fence_delimiter_accepts_a_nested_list_opener() -> None:
+    """A fence after two list markers is still an opening fence."""
+    assert unmarked_fence_delimiter("- - ~~~~text", 0) == ("~", 4), (
+        "the outer fence must be recognised so its body can be skipped"
+    )
+
+
+def test_quote_marker_tabs_accumulate_columns() -> None:
+    """Each tab after a quote marker is measured from the accumulated column."""
+    assert strip_quotes(">\t>\t x", 2) == "   x", (
+        "two markers and their tab padding leave three columns"
     )

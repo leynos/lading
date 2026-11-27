@@ -20,6 +20,7 @@ __all__ = [
     "list_context",
     "list_item_end",
     "quote_depth",
+    "strip_list_items",
     "strip_quotes",
     "unmarked_fence_delimiter",
     "unmarked_fence_end",
@@ -67,6 +68,7 @@ def _strip_one_quote(line: str, column: int) -> tuple[str, int, bool] | None:
         tab_end = (new_column // TAB_WIDTH + 1) * TAB_WIDTH
         content_column = new_column if padding_consumed else new_column + 1
         remainder = " " * max(tab_end - content_column, 0) + remainder[1:]
+        return remainder, content_column, padding_consumed
     return remainder, new_column, padding_consumed
 
 
@@ -225,16 +227,38 @@ def unmarked_fence_delimiter(
     """
     depth = quote_depth(raw)
     content = strip_quotes(raw, depth) or ""
-    list_item = _list_item(content, list_indent)
-    if list_item is not None:
-        remainder = content[_list_content_start(content, list_item) :]
+    remainder, _content_column = strip_list_items(content, list_indent)
+    if remainder != content:
         too_indented = indentation(remainder) > MAX_FENCE_INDENT
     else:
-        remainder = content
         too_indented = indentation(remainder) > list_indent + MAX_FENCE_INDENT
     if too_indented:
         return None
     return fence_delimiter(remainder.strip(" \t"))
+
+
+def strip_list_items(content: str, container_indent: int) -> tuple[str, int]:
+    """Strip every leading list marker, returning the rest and its column.
+
+    CommonMark allows nested list containers to open on one line, so
+    ``- - content`` has two markers.
+
+    Returns
+    -------
+    tuple[str, int]
+        The remaining content and the column where it begins.
+    """
+    remainder = content
+    base = 0
+    container = container_indent
+    matched = False
+    while (match := _list_item(remainder, container)) is not None:
+        content_start = _list_content_start(remainder, match)
+        base = _column_after(remainder[:content_start], base)
+        remainder = remainder[content_start:]
+        container = base
+        matched = True
+    return remainder, base if matched else container_indent
 
 
 def _list_item(content: str, container_indent: int) -> re.Match[str] | None:

@@ -348,9 +348,11 @@ provisioned private account-owned lock directory; dry runs take no lock. See
 for the lock location and repair guidance. Command summaries still go to
 stdout, and a script that captured both streams together sees no change in
 meaning. A documentation guide needs no change when it does not configure
-`bump.documentation.globs`, or when every fence that names a bumped crate
-already declares a string `version`. A fence that relied on the previous pass
-inserting a version is covered by the review in
+`bump.documentation.globs`. A guide that does configure them needs review when
+any fence relied on the previous pass inserting or rewriting a package version:
+a fence that names a bumped crate must already declare a string `version`, and
+a virtual-root `[workspace.package]` fence is always reviewed because its
+version is no longer updated automatically; see
 [section 6](#6-review-documentation-snippets-for-over-broad-rewriting).
 
 ## Migration checklist

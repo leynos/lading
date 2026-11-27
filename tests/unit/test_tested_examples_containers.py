@@ -321,6 +321,21 @@ def test_loader_restores_the_outer_list_indentation(tmp_path: Path) -> None:
     )
 
 
+def test_loader_reads_a_marker_after_nested_list_markers(tmp_path: Path) -> None:
+    """Two list containers may open on the same line as a marker."""
+    path = write_document(
+        tmp_path,
+        "- - <!-- tested-example: deep -->\n    ```bash\n    echo ok\n    ```\n",
+    )
+
+    examples = load_tested_examples(path)
+
+    assert set(examples) == {"deep"}, (
+        "the marker after both list markers must be recognised"
+    )
+    assert examples["deep"].body == "echo ok", "the nested example must be parsed"
+
+
 def test_loader_clears_list_state_between_separate_quotes(
     tmp_path: Path,
 ) -> None:

@@ -20,8 +20,8 @@ from tests.helpers.markdown_fence_scan import (
     fence_delimiter,
     indentation,
     list_context,
-    list_item_end,
     quote_depth,
+    strip_list_items,
     strip_quotes,
     unmarked_fence_delimiter,
     unmarked_fence_end,
@@ -184,9 +184,8 @@ def _marker_at(
     """Return the marker on ``raw``, or ``None`` when it carries none."""
     depth = quote_depth(raw)
     content = strip_quotes(raw, depth) or ""
-    item_end = list_item_end(content, list_indent)
-    marker_text = (content[item_end:] if item_end is not None else content).strip()
-    container_indent = list_indent
+    marker_text, container_indent = strip_list_items(content, list_indent)
+    marker_text = marker_text.strip()
     if not marker_text.startswith("<!-- tested-example:"):
         return None
     match = _MARKER.match(marker_text)
