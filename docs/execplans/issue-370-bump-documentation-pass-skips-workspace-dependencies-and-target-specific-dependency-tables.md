@@ -5,10 +5,12 @@ This ExecPlan (execution plan) is a living document. The sections `Constraints`,
 `Outcomes & retrospective`, `Conformance basis`, and `Verification plan` must
 be kept up to date as work proceeds.
 
-Status: IN PROGRESS
+Status: COMPLETE
 
 Branch:
 `issue-370-bump-documentation-pass-skips-workspace-dependencies-and-target-specific-dependency-tables`
+
+Pull request: <https://github.com/leynos/lading/pull/423>
 
 Issue: <https://github.com/leynos/lading/issues/370>
 
@@ -445,4 +447,8 @@ test assertions toward structure rather than text.
 
 ## Revision note
 
-Initial draft, 2026-11-27. No revisions yet.
+Initial draft, 2026-11-27.
+
+Revision 2, 2026-11-27: marked `COMPLETE` once implementation, coverage, and
+documentation were delivered and the full gate sequence passed, and recorded
+the pull request. No scope change.
