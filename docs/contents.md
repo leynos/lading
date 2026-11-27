@@ -41,7 +41,8 @@ branch, recording the plan, progress, decisions, and retrospective for a change.
   complete write plan before mutation.
 - [Documentation dependency tables in bump][execplan-issue-370] - delivered plan
   for rewriting `[workspace.*]` and `[target.<spec>.*]` dependency tables in
-  documentation fences, matching the manifest pass.
+  documentation fences; the target tables are documentation-only, while the
+  workspace tables match the manifest pass.
 
 ## Decision records
 

@@ -343,7 +343,7 @@ READMEs appear in the output with the `(readme)` suffix described above.
 If `bump.documentation.globs` is configured, `lading` also searches those
 Markdown files for TOML code fences and updates version values that refer to
 workspace crates. A rewrite visits every location a reader is told to declare a
-dependency, matching the manifest pass:
+dependency:
 
 - the top-level `[dependencies]`, `[dev-dependencies]`, and
   `[build-dependencies]` tables;
@@ -354,6 +354,10 @@ dependency, matching the manifest pass:
   (`[target.'cfg(unix)'.dependencies]`), double-quoted
   (`[target."cfg(windows)".dependencies]`), or a bare triple
   (`[target.x86_64-unknown-linux-gnu.dependencies]`).
+
+The first two groups match what the manifest pass rewrites. Target tables are
+documentation-only: `lading bump` leaves a target-specific table inside a
+`Cargo.toml` unchanged.
 
 Only the dependency keys named in the fence are rewritten, and only their
 `version` requirement; a requirement operator such as `^` or `~` is preserved.
