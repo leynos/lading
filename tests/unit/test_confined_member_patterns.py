@@ -16,6 +16,11 @@ from lading.utils.confinement import (
     UnsafeBumpTargetError,
     validate_relative_pattern,
 )
+from lading.utils.confinement.glob_expansion import _Expansion as _GlobExpansion
+from lading.utils.confinement.glob_types import (
+    MatchExpectation,
+    UnmatchedPolicy,
+)
 from lading.workspace.confined_discovery import load_bump_workspace
 from lading.workspace.member_declarations import _reject_hidden_wildcard
 from tests.unit.confined_discovery_helpers import (
@@ -240,3 +245,22 @@ def test_hidden_wildcard_rejection_follows_the_full_component(
         return
     with pytest.raises(UnsafeBumpTargetError):
         _reject_hidden_wildcard(pattern, key="workspace.members[0]")
+
+
+def test_member_expansion_matches_wildcards_case_sensitively(
+    tmp_path: Path,
+) -> None:
+    """Cargo's member matcher selects ``Alpha`` but not ``archive`` for ``A*``."""
+    expansion = _GlobExpansion(
+        root=tmp_path,
+        key="workspace.members[0]",
+        expect=MatchExpectation.DIRECTORY,
+        unmatched=UnmatchedPolicy.ERROR,
+        link_predicate=lambda _path: False,
+        case_sensitive=True,
+    )
+
+    assert expansion._matches("Alpha", "A*"), "an exact-case match must be selected"
+    assert not expansion._matches("archive", "A*"), (
+        "a lower-case name must not match a case-sensitive wildcard"
+    )
