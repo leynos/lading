@@ -78,8 +78,11 @@ production modules are executable contracts.
 ## Required outcome
 
 1. `update_toml_snippet_versions` and `rewrite_markdown_toml_fences` leave a
-   fence byte-for-byte unchanged and report `changed is False` when the fence
-   does not name a bumped crate in `[package].name`.
+   fence's package version unchanged and report `changed is False` when the
+   fence does not name a bumped crate in `[package].name`. Dependency
+   requirements are independent of that gate, so a fence that contains an
+   eligible dependency still changes even though its package version does not
+   (requirement 5).
 2. A fence that names a bumped crate and declares a string `version` has that
    value replaced, preserving inline comments and trivia.
 3. A fence that declares `version.workspace = true`, an inline
@@ -157,10 +160,12 @@ snapshots, and the documented example matches the tested behaviour.
 
 Invariants:
 
-- I1 (no insertion): a fence whose `[package]` has no `version` key produces
-  output identical to its input.
+- I1 (no insertion): a fence whose `[package]` has no `version` key gains no
+  version, so a fence with no eligible dependency produces output identical to
+  its input.
 - I2 (name gate): a fence whose `[package].name` is absent, non-string, or not
-  in the bumped set is unchanged, including its `[workspace.package]` table.
+  in the bumped set keeps its package and `[workspace.package]` versions;
+  dependency requirements may still be rewritten under I5.
 - I3 (string only): a `version` value that is a boolean, table, inline table,
   dotted table, or absent is never replaced.
 - I4 (replacement): a string `version` that differs from the target is
@@ -177,8 +182,8 @@ Lemmas:
 - L2: reading `[package].name` through the same `select_table` used for the
   version table makes the gate and the rewrite observe one table identity,
   including `OutOfOrderTableProxy`.
-- L3: when the gate fails, neither version helper is called, so the output
-  rendering path is never reached.
+- L3: when the gate fails, neither version helper is called; only the
+  independent dependency path can then report a change.
 
 Axioms (third-party interfaces treated as documented contracts):
 
@@ -286,6 +291,19 @@ Scenario: Bumping restricts documentation version rewriting to bumped crates
   `bump_docs_fences.py` past the 400-line ceiling; the extraction is the
   sanctioned separate atomic refactor after the functional commit, and both
   modules are now under the ceiling.
+- 2026-11-27: tolerate the code budget being exceeded. The measured Python
+  source and test change is +1397/-695, a net +702 against the +320-line
+  tolerance, because the repository's own 400-line ceiling required the
+  renderer and dependency-helper splits, and the review required two new BDD
+  step modules plus their tests. The work is required by the accepted scope,
+  AGENTS.md, and the review findings, so it is recorded as an accepted budget
+  exception rather than scope growth. The ExecPlan itself is excluded from
+  every budget.
+- 2026-11-27: correct the virtual-root guidance after review. A virtual
+  manifest has no `[package]` table, so advising readers to add a bumped crate's
+  `[package].name` to a virtual-root example would describe a different
+  workspace shape. The guides now say to maintain that documented version by
+  hand.
 
 ## Outcomes & retrospective
 
