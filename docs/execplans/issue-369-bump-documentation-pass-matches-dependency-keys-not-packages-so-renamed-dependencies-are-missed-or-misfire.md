@@ -152,7 +152,7 @@ documentation snippets.
   already exceeded it at the base: `bump_docs_fences.py` 411 lines,
   `bump_toml.py` 532 lines, `tests/bdd/steps/test_bump_steps.py` 424 lines, and
   `tests/unit/test_bump_manifest_updates.py` 414 lines. The change grows them
-  to 453, 536, 447, and 452 respectively without a module split; the exception
+  to 453, 536, 447, and 453 respectively without a module split; the exception
   is recorded in the decision log. Ruff complexity ceiling 8; Pylint maximum
   five positional arguments.
 - Prose uses en-GB-oxendict spelling.
@@ -217,16 +217,17 @@ increase. Any further threshold breach requires escalation.
   dispatch in `bump_toml.py`. Focused unit tests now pass (46 passed), the
   pipeline tests pass with three new snapshots, and the BDD scenario passes.
 - [x] (2026-11-27) `make check-fmt`, `make fmt`, `make lint`, `make typecheck`
-  and `make test` all pass. Test gate: 1755 passed, 31 skipped, 108 snapshots.
-  Lint needed three fixes: a `Returns` section on the private helper, a
-  seven-argument test collapsed into an `_AliasScenario` dataclass, and three
-  inline-literal assertions replaced with membership checks.
+  and `make test` all pass. Test gate: 1758 passed, 31 skipped, 108 snapshots
+  after the assessment repairs. Lint needed three fixes: a `Returns` section on
+  the private helper, a seven-argument test collapsed into an `_AliasScenario`
+  dataclass, and three inline-literal assertions replaced with membership
+  checks.
 - [x] (2026-11-27) EP-M3: Documented the identity rule and section scope in
   `docs/users-guide.md` and `docs/lading-design.md`, and added this plan to
   `docs/contents.md`. `make fmt`, `make markdownlint` (including the spelling
   gate), and `make nixie` pass. The focused suite passed 114 tests, and the
   full gates pass: `make check-fmt`, `make lint`, `make typecheck`, and
-  `make test` (1755 passed, 31 skipped, 108 snapshots).
+  `make test` (1758 passed, 31 skipped, 108 snapshots).
 - [x] (2026-11-27) Pushed the branch and opened draft PR #422, which states
   `Closes #369`.
 - [x] (2026-11-27) Ran `coderabbit review --agent --base main` on the first
@@ -245,8 +246,11 @@ increase. Any further threshold breach requires escalation.
   `cs check` now reports 10.00), a sharper manifest boundary test (selected key
   naming another package, unselected key whose package names the target), and
   test-file size records. The plan statements and file enumeration are aligned.
-- [ ] Re-run the gates, push the repair, reconcile the assessment threads, and
-  merge PR #422 once it reaches equilibrium.
+- [x] (2026-11-27) Re-ran every gate on each repair head and pushed
+  `f6e6801a`; local CodeScene reports 10.00 and the delta is clean. Hosted
+  `build-dist`, `lint-test`, `CodeScene`, and Gecko pass on that head.
+- [ ] Reconcile the final assessment round and merge PR #422 once it reaches
+  equilibrium.
 
 ## Surprises & discoveries
 
@@ -303,7 +307,7 @@ increase. Any further threshold breach requires escalation.
   Rationale: `bump_docs_fences.py` (411), `bump_toml.py` (532),
   `tests/bdd/steps/test_bump_steps.py` (424), and
   `tests/unit/test_bump_manifest_updates.py` (414) already exceeded 400 lines
-  at the base; the change grows them to 453, 536, 447, and 452 respectively,
+  at the base; the change grows them to 453, 536, 447, and 453 respectively,
   and a split would enlarge the review diff beyond the issue. This is a
   recorded deviation, not a silent increase; the user guide and design note
   still state the behaviour.
@@ -450,7 +454,7 @@ make markdownlint: 0 issues in 0 files (spelling gate clean)
 make nixie: All diagrams validated successfully
 make lint: 10.00/10 (Ruff, Interrogate, Skylos, duplication, Pylint)
 make typecheck: All checks passed
-make test: 1755 passed, 31 skipped, 108 snapshots
+make test: 1758 passed, 31 skipped, 108 snapshots
 ```
 
 Lessons:
@@ -470,9 +474,9 @@ Lessons:
   distinguish the correct no-identity rule from an incorrect key fallback; the
   assessment caught it and the fixtures now use `alpha`.
 - A plan tolerance can be wrong on the first estimate. The natural file
-  surface was 12, not 10, and the two edited modules already exceeded the
-  400-line ceiling; recording the deviation was more honest than deleting a
-  required test or document.
+  surface was 14, not 10, and four edited files already exceeded the 400-line
+  ceiling; recording the deviation was more honest than deleting a required
+  test or document.
 
 Residual gap: documentation identity is not resolved through `cargo metadata`,
 so a documented alias of a non-member package is unaffected. That matches the
@@ -485,8 +489,8 @@ issue's expected behaviour and the section scope.
   and recorded the shared-dispatch decision, revised the file tolerance from 10
   to 14 with a module-size exception, strengthened the invalid-`package` test
   fixtures, added the dotted-manifest regression test and the negative BDD
-  assertion, and corrected the migration guidance. Status remains `IN PROGRESS`
-  until PR #422 merges.
-- 2026-11-27: Recorded the red baseline, the implementation, the lint-driven
-  test restructuring, the documentation gates, and the final gate results.
-  Status remains `IN PROGRESS` until the draft pull request exists.
+  assertion, and corrected the migration guidance.
+- 2026-11-27: Round-4 record correction. Updated the
+  `tests/unit/test_bump_manifest_updates.py` head size to 453 lines, recorded
+  the pushed repair head and the 1,758-test gate result, and marked the gate
+  rerun complete. Status remains `IN PROGRESS` until PR #422 merges.
