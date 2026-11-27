@@ -220,56 +220,6 @@ def then_cli_output_lists_manifest_paths(
     )
 
 
-_LISTED_PATH_LABELS = {
-    "manifest": "updated manifest",
-    "documentation": "changed documentation file",
-    "README": "transposed README",
-    "lockfile": "refreshed lockfile",
-}
-
-
-@then(
-    parsers.re(
-        r"the CLI output lists (?P<kind>manifest|documentation|README|lockfile) path"
-        r' "(?P<expected>[^"]+)"'
-    )
-)
-def then_cli_output_lists_path(
-    cli_run: dict[str, typ.Any], kind: str, expected: str
-) -> None:
-    """Assert that the CLI output includes ``expected`` as a ``kind`` path line."""
-    assert cli_run["returncode"] == 0, (
-        f"listing a {kind} path requires a successful bump run; "
-        f"stderr:\n{cli_run['stderr']}"
-    )
-    stdout_lines = [line.strip() for line in cli_run["stdout"].splitlines()]
-    assert expected in stdout_lines, (
-        f"the output must acknowledge the {_LISTED_PATH_LABELS[kind]} {expected!r}"
-    )
-
-
-@then(
-    parsers.re(
-        r"the CLI output lists (?P<kind>documentation|README|lockfile) path"
-        r' "(?P<expected>[^"]+)" once'
-    )
-)
-def then_cli_output_lists_path_once(
-    cli_run: dict[str, typ.Any], kind: str, expected: str
-) -> None:
-    """Assert ``expected`` appears exactly once as a ``kind`` path line."""
-    assert cli_run["returncode"] == 0, (
-        f"listing a {kind} path requires a successful bump run; "
-        f"stderr:\n{cli_run['stderr']}"
-    )
-    stdout_lines = [line.strip() for line in cli_run["stdout"].splitlines()]
-    matches = [line for line in stdout_lines if line == expected]
-    assert len(matches) == 1, (
-        f"the output must acknowledge the {_LISTED_PATH_LABELS[kind]} "
-        f"{expected!r} exactly once; got {len(matches)} of {stdout_lines!r}"
-    )
-
-
 @then("the bump command refreshed tracked lockfiles")
 def then_bump_refreshed_lockfiles(cli_run: dict[str, typ.Any]) -> None:
     """Assert the live bump lockfile scenario completed successfully."""
@@ -337,51 +287,6 @@ def then_bump_did_not_refresh_lockfiles(cli_run: dict[str, typ.Any]) -> None:
     )
     assert "cargo update --workspace" not in output, (
         "a dry run must not refresh lockfiles"
-    )
-
-
-@then(parsers.parse('the documentation file "{relative_path}" contains "{expected}"'))
-def then_documentation_contains(
-    cli_run: dict[str, typ.Any], relative_path: str, expected: str
-) -> None:
-    """Assert that ``expected`` appears in the specified documentation file."""
-    doc_path = cli_run["workspace"] / relative_path
-    normalized_expected = expected.replace(r"\"", '"')
-    contents = doc_path.read_text(encoding="utf-8")
-    assert normalized_expected in contents, (
-        f"the documentation file {relative_path!r} must contain {expected!r} "
-        "after the bump"
-    )
-
-
-@then(
-    parsers.parse(
-        'the documentation file "{relative_path}" does not contain "{unexpected}"'
-    )
-)
-def then_documentation_does_not_contain(
-    cli_run: dict[str, typ.Any], relative_path: str, unexpected: str
-) -> None:
-    """Assert that ``unexpected`` is absent from the documentation file."""
-    doc_path = cli_run["workspace"] / relative_path
-    normalized_unexpected = unexpected.replace(r"\"", '"')
-    contents = doc_path.read_text(encoding="utf-8")
-    assert normalized_unexpected not in contents, (
-        f"the documentation file {relative_path!r} must not contain "
-        f"{unexpected!r} after the bump; got:\n{contents}"
-    )
-
-
-@then(parsers.parse('the crate "{crate_name}" README contains "{expected}"'))
-def then_crate_readme_contains(
-    cli_run: dict[str, typ.Any], crate_name: str, expected: str
-) -> None:
-    """Assert that the adopted crate README contains ``expected``."""
-    readme_path = cli_run["workspace"] / "crates" / crate_name / "README.md"
-    normalized_expected = expected.replace(r"\"", '"')
-    contents = readme_path.read_text(encoding="utf-8")
-    assert normalized_expected in contents, (
-        f"the {crate_name!r} crate README must contain {expected!r} after the bump"
     )
 
 

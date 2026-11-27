@@ -108,9 +108,9 @@ Feature: Lading CLI scaffolding
     When I invoke lading bump 1.2.3 with that workspace
     Then the documentation file "README.md" contains "[dependencies]"
     And the documentation file "README.md" contains "alpha = \"1.2.3\""
-    And the documentation file "README.md" contains "[package.metadata.mytool]"
-    And the documentation file "README.md" contains "version = \"0.1.0\""
-    And the documentation file "README.md" contains "version.workspace = true"
+    And the documentation file "README.md" retains the fence "metadata"
+    And the documentation file "README.md" retains the fence "unrelated-application"
+    And the documentation file "README.md" retains the fence "inherited-version"
     And the documentation file "README.md" does not contain "version = \"1.2.3\""
     And the CLI output lists documentation path "- README.md (documentation)" once
 

@@ -50,6 +50,8 @@ def inherited_hypothesis_profile_name() -> str:
 
 pytest_plugins = (
     "cmd_mox.pytest_plugin",
+    "tests.bdd.steps.bump_documentation_fixtures",
+    "tests.bdd.steps.bump_output_steps",
     "tests.bdd.steps.config_fixtures",
     "tests.bdd.steps.manifest_fixtures",
     "tests.bdd.steps.metadata_fixtures",
