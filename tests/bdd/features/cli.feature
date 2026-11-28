@@ -100,6 +100,20 @@ Feature: Lading CLI scaffolding
     Then the workspace and target documentation file is unchanged
     And the CLI output lists documentation path "- README.md (documentation)"
 
+  Scenario: Bumping restricts documentation version rewriting to bumped crates
+    Given a workspace directory with configuration
+    And cargo metadata describes a sample workspace
+    And the workspace README contains a mixed TOML documentation sample
+    And bump.documentation.globs contains "README.md"
+    When I invoke lading bump 1.2.3 with that workspace
+    Then the documentation file "README.md" contains "[dependencies]"
+    And the documentation file "README.md" contains "alpha = \"1.2.3\""
+    And the documentation file "README.md" retains the fence "metadata"
+    And the documentation file "README.md" retains the fence "unrelated-application"
+    And the documentation file "README.md" retains the fence "inherited-version"
+    And the documentation file "README.md" does not contain "version = \"1.2.3\""
+    And the CLI output lists documentation path "- README.md (documentation)" once
+
   Scenario: Bumping transposes workspace README to crates
     Given a workspace directory with configuration
     And cargo metadata describes a sample workspace

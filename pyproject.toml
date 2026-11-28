@@ -172,6 +172,10 @@ extend-ignore = [
 # exceptions a caller must still handle.
 "lading/runtime/subprocess_runner.py" = ["docstring-missing-exception", "docstring-extraneous-exception"]
 "lading/commands/bump_readme.py" = ["docstring-missing-exception", "docstring-extraneous-exception"]
+# The tested-example loader delegates marker, duplicate and unterminated-fence
+# checks to private helpers; pydoclint tracks only direct raises, so it cannot
+# express the propagated ValueError contract.
+"tests/helpers/tested_examples.py" = ["docstring-extraneous-exception"]
 # ``_sequences.py`` raises through the ``_reject`` factory, which returns the
 # injected ``error`` (a ``LadingError`` subclass) for the caller to raise.
 # pydoclint keys DOC501/DOC502 on the syntactic raise-callable (``_reject``)

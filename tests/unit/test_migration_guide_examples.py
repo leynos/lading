@@ -14,6 +14,7 @@ from pathlib import Path
 
 import pytest
 
+from lading.commands import bump_docs_fences
 from tests.helpers.tested_examples import MarkedExample, load_tested_examples
 
 _GUIDE = Path("docs/v0-4-0-migration-guide.md")
@@ -165,6 +166,33 @@ def test_every_marked_example_has_content() -> None:
         assert example.body.strip(), (
             f"tested-example {example.identifier!r} must have a body"
         )
+
+
+def test_documentation_snippet_examples_match_the_documentation_pass() -> None:
+    """The guide's snippet examples behave as the documentation pass does."""
+    examples = load_tested_examples(_GUIDE)
+    bumped = {"alpha"}
+    target = "1.2.3"
+
+    unrelated = examples["migration-docs-unrelated-package"]
+    unrelated_updated, unrelated_changed = (
+        bump_docs_fences.update_toml_snippet_versions(unrelated.body, bumped, target)
+    )
+    assert not unrelated_changed, (
+        "the guide claims an unrelated package keeps its version"
+    )
+    assert unrelated_updated == unrelated.body, (
+        "the unrelated-package example must survive the pass unchanged"
+    )
+
+    eligible = examples["migration-docs-eligible-package"]
+    eligible_updated, eligible_changed = bump_docs_fences.update_toml_snippet_versions(
+        eligible.body, bumped, target
+    )
+    assert eligible_changed, "the guide claims a bumped crate's version moves"
+    assert f'version = "{target}"' in eligible_updated, (
+        "the eligible example must be rewritten to the guide's target version"
+    )
 
 
 def test_prerelease_examples_pin_the_guide_release() -> None:

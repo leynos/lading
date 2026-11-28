@@ -381,11 +381,31 @@ lading bump <new_version> [--dry-run]
   `tomlkit`, updating `[package]`, `[workspace.package]`, and dependency
   entries that reference workspace crates. Existing requirement operators and
   inline trivia remain intact.
+- Package versions inside a fence follow a narrower policy than manifest
+  versions (issue #368). `[package].version` and `[workspace.package].version`
+  are replaced only when the fence's `[package].name` names a bumped,
+  non-excluded crate and the existing value is a string. The documentation pass
+  never inserts a missing key, never replaces an inherited
+  (`version.workspace = true`, inline `{ workspace = true }`) or non-string
+  value, and does not re-version an unrelated example manifest. Manifests keep
+  using `bump_toml.assign_version`, which inserts or replaces as before; the
+  documentation pass uses the replace-only `bump_toml.replace_string_version`.
+- The `[package].name` gate applies to `[workspace.package]` too. A fence that
+  documents only a virtual workspace root has no package name, so it cannot be
+  distinguished from an arbitrary workspace example, and its
+  `[workspace.package].version` is left unchanged. A virtual manifest has no
+  `[package]` table by definition, so adding one to satisfy the gate would
+  describe a different workspace shape; such a documented version is maintained
+  by hand. A root manifest that is also a package carries `[package].name`, and
+  both of its versions are rewritten when that crate is bumped and both are
+  standard table sections. The pass uses `select_table` without
+  `include_inline`, so an inline `workspace = { ... }` version table is left
+  alone.
 - Dependency-table location in documentation is owned by
   `lading.commands.bump_docs_dependencies`. It calls the shared
-  `bump_toml.update_dependency_sections` once on the document with workspace
-  sections enabled and once for each immediate `target` selector, so fence
-  rewriting reaches `[workspace.dependencies]` and
+  `bump_toml_dependencies.update_dependency_sections` once on the document with
+  workspace sections enabled and once for each immediate `target` selector, so
+  fence rewriting reaches `[workspace.dependencies]` and
   `[target.<spec>.dependencies]` alongside their dev and build variants. The
   manifest pass keeps to the unconditional sections: a target-specific
   requirement inside a `Cargo.toml` is left alone, because Cargo applies it

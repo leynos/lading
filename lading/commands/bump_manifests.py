@@ -10,7 +10,7 @@ import collections.abc as cabc
 import dataclasses as dc
 import typing as typ
 
-from lading.commands import bump_toml
+from lading.commands import bump_toml, bump_toml_dependencies
 
 if typ.TYPE_CHECKING:  # pragma: no cover - import-time typing aids only
     from pathlib import Path
@@ -25,8 +25,10 @@ _WORKSPACE_SELECTORS: typ.Final[tuple[tuple[str, ...], ...]] = (
 )
 
 # Derived from the canonical section vocabulary so the kind mapping cannot
-# drift from ``bump_toml.DEPENDENCY_SECTIONS`` (issue #103).
-_NORMAL_SECTION, _DEV_SECTION, _BUILD_SECTION = bump_toml.DEPENDENCY_SECTIONS
+# drift from ``bump_toml_dependencies.DEPENDENCY_SECTIONS`` (issue #103).
+_NORMAL_SECTION, _DEV_SECTION, _BUILD_SECTION = (
+    bump_toml_dependencies.DEPENDENCY_SECTIONS
+)
 
 _DEPENDENCY_SECTION_BY_KIND: typ.Final[dict[str | None, str]] = {
     None: _NORMAL_SECTION,
@@ -123,11 +125,11 @@ def render_manifest(
         table = bump_toml.select_table(document, selector)
         changed |= bump_toml.assign_version(table, target_version)
     if options.dependency_sections:
-        changed |= bump_toml.update_dependency_sections(
+        changed |= bump_toml_dependencies.update_dependency_sections(
             document, options.dependency_sections, target_version
         )
     if options.workspace_sections:
-        changed |= bump_toml.update_workspace_dependency_sections(
+        changed |= bump_toml_dependencies.update_workspace_dependency_sections(
             document, options.workspace_sections, target_version
         )
     return document.as_string() if changed else None
@@ -140,7 +142,10 @@ def _workspace_dependency_sections(
     crate_names = {name for name in updated_crates if name}
     if not crate_names:
         return {}
-    return {section: set(crate_names) for section in bump_toml.DEPENDENCY_SECTIONS}
+    return {
+        section: set(crate_names)
+        for section in bump_toml_dependencies.DEPENDENCY_SECTIONS
+    }
 
 
 def _dependency_sections_for_crate(

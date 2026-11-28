@@ -12,19 +12,24 @@ import re
 import typing as typ
 from pathlib import Path
 
+from tests.helpers.markdown_fence_scan import (
+    MAX_FENCE_INDENT,
+    closes_fence,
+    dedent,
+    fence_delimiter,
+    indentation,
+    list_context,
+    quote_depth,
+    strip_list_items,
+    strip_quotes,
+    unmarked_fence_delimiter,
+    unmarked_fence_end,
+)
+
 __all__ = ["MarkedExample", "load_tested_examples"]
 
 _MARKER: typ.Final[re.Pattern[str]] = re.compile(
     r"^<!--\s*tested-example:\s*([a-z0-9-]+)\s*-->$"
-)
-_MIN_FENCE_LENGTH: typ.Final[int] = 3
-_MAX_FENCE_INDENT: typ.Final[int] = 3
-_CONTAINER_MARKERS: typ.Final[re.Pattern[str]] = re.compile(
-    r"^(?:(?:>\s?)|(?:[-+*]|\d{1,9}[.)])\s+)+"
-)
-_QUOTE_TOKEN: typ.Final[re.Pattern[str]] = re.compile(r"^ {0,3}> ?")
-_LIST_ITEM: typ.Final[re.Pattern[str]] = re.compile(
-    r"^(?P<indent> *)(?:[-+*]|\d{1,9}[.)])(?P<space>[ \t]+)"
 )
 
 
@@ -50,13 +55,19 @@ class MarkedExample:
     line: int
 
 
-def load_tested_examples(path: Path) -> dict[str, MarkedExample]:
+def load_tested_examples(
+    path: Path, *, require_markers: bool = True
+) -> dict[str, MarkedExample]:
     """Return every marked example in ``path`` keyed by identifier.
 
     Parameters
     ----------
     path : Path
         Markdown document to scan.
+    require_markers : bool, optional
+        When ``True`` (the default), a fence without a marker is an error.
+        When ``False``, unmarked fences are skipped so a document can adopt
+        the convention one example at a time without rewriting every fence.
 
     Returns
     -------
@@ -66,58 +77,109 @@ def load_tested_examples(path: Path) -> dict[str, MarkedExample]:
     Raises
     ------
     ValueError
-        If a fence has no marker, a marker is malformed or not followed by a
-        fence, a fence is unterminated, or an identifier is duplicated.
+        If ``require_markers`` is true and a fence has no marker, a marker is
+        malformed or not followed by a fence, a fence is unterminated, or an
+        identifier is duplicated.
     """
     lines = path.read_text(encoding="utf-8").splitlines()
-    examples: dict[str, MarkedExample] = {}
+    state = _LoadState(
+        lines=lines,
+        path=path,
+        require_markers=require_markers,
+        examples={},
+    )
     index = 0
-    list_levels: list[int] = []
     while index < len(lines):
-        raw = lines[index]
-        list_indent = _list_context(raw, list_levels)
-        _reject_unmarked_fence(raw, path, index, list_indent)
-        marker = _marker_at(raw, path, index, list_indent)
-        if marker is None:
-            index += 1
-            continue
-        if marker.identifier in examples:
-            message = (
-                f"{path}:{index + 1}: duplicate tested-example {marker.identifier!r}"
-            )
-            raise ValueError(message)
-        example, next_index = _read_marked_example(lines, index, marker)
-        examples[marker.identifier] = example
-        index = next_index
-    return examples
+        index = _load_line(state, index)
+    return state.examples
 
 
-def _list_context(raw: str, levels: list[int]) -> int:
-    """Return the content indentation of the enclosing list item, if any.
+@dc.dataclass(slots=True)
+class _LoadState:
+    """Mutable state for one loader pass."""
 
-    ``levels`` holds the content indentation of each open list level. An
-    outdented line closes deeper levels, restoring the matching ancestor.
+    lines: cabc.Sequence[str]
+    path: Path
+    require_markers: bool
+    examples: dict[str, MarkedExample]
+    list_levels: dict[int, list[int]] = dc.field(default_factory=dict)
+    container_depth: int = 0
+
+
+def _load_line(state: _LoadState, index: int) -> int:
+    """Load one line, returning the next index to inspect."""
+    raw = state.lines[index]
+    list_indent = _container_indent(state, raw)
+    marker = _marker_at(raw, state.path, index, list_indent)
+    if marker is None:
+        return _skip_line(state, index, list_indent)
+    return _load_marked(state, index, marker)
+
+
+def _container_indent(state: _LoadState, raw: str) -> int:
+    """Return the enclosing list indentation for ``raw``.
+
+    List levels are scoped to a block-quote depth; leaving a quote discards
+    the levels it owned, so a later quote at the same depth cannot inherit
+    them.
 
     Returns
     -------
     int
-        The content indentation of the enclosing list item, or ``0`` outside a
-        list.
+        The content indentation of the enclosing list item, or ``0``.
     """
-    depth = _quote_depth(raw)
-    content = _strip_quotes(raw, depth) or ""
-    match = _LIST_ITEM.match(content)
-    if match is not None:
-        indent = match.end()
-        while levels and levels[-1] >= indent:
-            levels.pop()
-        levels.append(indent)
-        return indent
-    if content.strip():
-        indentation = _indentation(content)
-        while levels and levels[-1] > indentation:
-            levels.pop()
-    return levels[-1] if levels else 0
+    depth = quote_depth(raw)
+    if depth > state.container_depth:
+        _enter_container(state, raw)
+    elif depth < state.container_depth:
+        _leave_container(state, depth)
+    state.container_depth = depth
+    levels = state.list_levels.setdefault(depth, [])
+    return list_context(raw, levels)
+
+
+def _enter_container(state: _LoadState, raw: str) -> None:
+    """Continue or discard the enclosing list when a quote starts."""
+    outer = state.list_levels.get(state.container_depth)
+    if not outer:
+        return
+    content = strip_quotes(raw, state.container_depth) or raw
+    content_indent = indentation(content)
+    if content_indent < outer[-1]:
+        # An outdented quote leaves the inner lists but can remain inside an
+        # ancestor list, which must keep its indentation.
+        state.list_levels[state.container_depth] = [
+            level for level in outer if level <= content_indent
+        ]
+
+
+def _leave_container(state: _LoadState, depth: int) -> None:
+    """Drop list levels scoped to containers deeper than ``depth``."""
+    for stale in [key for key in state.list_levels if key > depth]:
+        del state.list_levels[stale]
+
+
+def _load_marked(state: _LoadState, index: int, marker: _MarkerContext) -> int:
+    """Load the example introduced by ``marker``."""
+    if marker.identifier in state.examples:
+        message = (
+            f"{state.path}:{index + 1}: duplicate tested-example {marker.identifier!r}"
+        )
+        raise ValueError(message)
+    example, next_index = _read_marked_example(state.lines, index, marker)
+    state.examples[marker.identifier] = example
+    return next_index
+
+
+def _skip_line(state: _LoadState, index: int, list_indent: int) -> int:
+    """Return the next index after a line that carries no marker."""
+    if state.require_markers:
+        _reject_unmarked_fence(state.lines[index], state.path, index, list_indent)
+        return index + 1
+    # Skip the whole fence so a literal marker in its body is not read as an
+    # example.
+    skip_to = unmarked_fence_end(state.lines, index, list_indent)
+    return skip_to if skip_to is not None else index + 1
 
 
 def _reject_unmarked_fence(
@@ -128,26 +190,12 @@ def _reject_unmarked_fence(
 ) -> None:
     """Raise when ``raw`` opens a fence that no marker introduces.
 
-    A delimiter indented beyond its container's limit is literal code, not a
-    fence, so it is left alone.
-
     Raises
     ------
     ValueError
         If the line opens a fence that no marker introduces.
     """
-    depth = _quote_depth(raw)
-    content = _strip_quotes(raw, depth) or ""
-    list_item = _LIST_ITEM.match(content)
-    if list_item is not None:
-        base = list_item.end()
-        remainder = content[base:]
-    else:
-        base = list_indent
-        remainder = content
-    if _indentation(remainder) > base + _MAX_FENCE_INDENT:
-        return
-    if _fence_delimiter(remainder.strip()) is not None:
+    if unmarked_fence_delimiter(raw, list_indent) is not None:
         message = f"{path}:{index + 1}: unmarked fenced example"
         raise ValueError(message)
 
@@ -159,13 +207,11 @@ def _marker_at(
     list_indent: int,
 ) -> _MarkerContext | None:
     """Return the marker on ``raw``, or ``None`` when it carries none."""
-    depth = _quote_depth(raw)
-    content = _strip_quotes(raw, depth) or ""
-    list_item = _LIST_ITEM.match(content)
-    marker_text = (
-        content[list_item.end() :] if list_item is not None else content
-    ).strip()
-    container_indent = list_indent
+    depth = quote_depth(raw)
+    content = strip_quotes(raw, depth) or ""
+    marker_text, columns = strip_list_items(content, list_indent)
+    container_indent = columns[-1] if columns else list_indent
+    marker_text = marker_text.strip()
     if not marker_text.startswith("<!-- tested-example:"):
         return None
     match = _MARKER.match(marker_text)
@@ -187,12 +233,12 @@ def _read_marked_example(
 ) -> tuple[MarkedExample, int]:
     """Read the fence that follows a marker and return it with the next index."""
     fence_start = _next_fence_line(lines, index + 1, marker)
-    opener = _strip_quotes(lines[fence_start], marker.depth)
+    opener = strip_quotes(lines[fence_start], marker.depth)
     if opener is None:  # pragma: no cover - _next_fence_line found it
         message = f"{marker.path}:{fence_start + 1}: malformed fenced example"
         raise ValueError(message)
     fence = opener.strip()
-    delimiter = _fence_delimiter(fence)
+    delimiter = fence_delimiter(fence)
     if delimiter is None:  # pragma: no cover - _next_fence_line found it
         message = f"{marker.path}:{fence_start + 1}: malformed fenced example"
         raise ValueError(message)
@@ -202,7 +248,7 @@ def _read_marked_example(
         identifier=marker.identifier,
         character=character,
         length=length,
-        indent=_indentation(opener),
+        indent=indentation(opener),
         depth=marker.depth,
         container_indent=marker.container_indent,
     )
@@ -214,58 +260,6 @@ def _read_marked_example(
         line=index + 1,
     )
     return example, fence_end + 1
-
-
-def _without_container(line: str) -> str:
-    """Return ``line`` without leading block-quote or list-item markers."""
-    return _CONTAINER_MARKERS.sub("", line).strip()
-
-
-def _quote_depth(line: str) -> int:
-    """Return the number of block-quote markers that prefix ``line``."""
-    depth = 0
-    remainder = line
-    while (match := _QUOTE_TOKEN.match(remainder)) is not None:
-        remainder = remainder[match.end() :]
-        depth += 1
-    return depth
-
-
-def _strip_quotes(line: str, depth: int) -> str | None:
-    """Remove ``depth`` block-quote markers, or ``None`` when the quote ends."""
-    remainder = line
-    for _ in range(depth):
-        match = _QUOTE_TOKEN.match(remainder)
-        if match is None:
-            return None
-        remainder = remainder[match.end() :]
-    return remainder
-
-
-def _fence_delimiter(line: str) -> tuple[str, int] | None:
-    """Return the fence character and run length for an opening fence."""
-    for character in ("`", "~"):
-        length = len(line) - len(line.lstrip(character))
-        if length < _MIN_FENCE_LENGTH or not line.startswith(character * length):
-            continue
-        if _is_valid_fence_info(character, line[length:]):
-            return character, length
-    return None
-
-
-def _is_valid_fence_info(character: str, info: str) -> bool:
-    r"""Return whether ``info`` may follow a fence opener of ``character``.
-
-    CommonMark forbids backticks in a backtick fence's info string, so
-    ``\`\`\`bash\`\`\``` is inline code, not a fence. Tilde fences may carry
-    backticks in their info string.
-
-    Returns
-    -------
-    bool
-        ``True`` when the info string is valid for the fence character.
-    """
-    return character != "`" or "`" not in info
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -285,7 +279,7 @@ def _next_fence_line(
 ) -> int:
     """Return the line index of the fence following a marker."""
     for index in range(start, len(lines)):
-        content = _strip_quotes(lines[index], marker.depth)
+        content = strip_quotes(lines[index], marker.depth)
         if content is None:
             break
         if not content.strip():
@@ -308,9 +302,9 @@ def _opens_fence(content: str, marker: _MarkerContext) -> bool:
         ``True`` for a fence delimiter indented no further than the marker's
         container allows.
     """
-    if _fence_delimiter(content.strip()) is None:
+    if fence_delimiter(content.strip()) is None:
         return False
-    return _indentation(content) <= marker.container_indent + _MAX_FENCE_INDENT
+    return indentation(content) <= marker.container_indent + MAX_FENCE_INDENT
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -334,20 +328,20 @@ def _read_fence_body(
     """Return the fence body and the index of its matching closing fence."""
     body: list[str] = []
     for index in range(start, len(lines)):
-        content = _strip_quotes(lines[index], fence.depth)
+        content = strip_quotes(lines[index], fence.depth)
         if content is None:
             break
         if _ends_list_container(fence, content):
             # An outdented line ends the list container, and with it the fence.
             break
-        if _closes_fence(
+        if closes_fence(
             content,
             fence.character,
             fence.length,
             fence.container_indent,
         ):
             return body, index
-        body.append(_dedent(content, fence.indent))
+        body.append(dedent(content, fence.indent))
     message = (
         f"{fence.path}:{start}: tested-example {fence.identifier!r} is unterminated"
     )
@@ -358,44 +352,4 @@ def _ends_list_container(fence: _MarkedFence, content: str) -> bool:
     """Return whether ``content`` is outdented from ``fence``'s list container."""
     if not content.strip() or not fence.container_indent:
         return False
-    return _indentation(content) < fence.container_indent
-
-
-def _closes_fence(
-    line: str,
-    character: str,
-    length: int,
-    container_indent: int,
-) -> bool:
-    """Return whether ``line`` closes a fence of ``character`` and ``length``.
-
-    GitHub-flavoured Markdown permits at most three leading spaces relative to
-    the container. A list item's marker sets the container indentation; a
-    top-level fence has none, so its opener's own indentation does not extend
-    the limit.
-
-    Returns
-    -------
-    bool
-        Whether ``line`` closes the fence.
-    """
-    allowed = container_indent + _MAX_FENCE_INDENT
-    if _indentation(line) > allowed:
-        return False
-    stripped = line.strip()
-    run = len(stripped) - len(stripped.lstrip(character))
-    return run >= length and stripped == character * run
-
-
-def _indentation(line: str) -> int:
-    """Return the number of leading spaces before any other character."""
-    return len(line) - len(line.lstrip(" "))
-
-
-def _dedent(line: str, indent: int) -> str:
-    """Remove up to ``indent`` leading spaces from ``line``."""
-    removed = 0
-    while removed < indent and line.startswith(" "):
-        line = line[1:]
-        removed += 1
-    return line
+    return indentation(content) < fence.container_indent
