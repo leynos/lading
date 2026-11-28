@@ -301,7 +301,7 @@ Scenario: Bumping restricts documentation version rewriting to bumped crates
   sanctioned separate atomic refactor after the functional commit, and both
   modules are now under the ceiling.
 - 2026-11-27: tolerate both budget exceptions. Final measurement against the
-  reviewed base `ba6ebc9d`: Python source and tests +2675/-1248, a net +1427
+  reviewed base `ba6ebc9d`: Python source and tests +2747/-1248, a net +1499
   against the +320-line tolerance, and `pyproject.toml` +4/-0 against the
   zero-line configuration tolerance. Earlier figures (+702, +1282, +1486, then
   +1484) predated the rebases onto #423 and #353 and the review-driven
