@@ -831,11 +831,16 @@ records an outcome for it:
    downgrades a failed `cargo package` to a warning because a sibling version
    is not yet published, there is no archive to compare. That crate is reported
    as unverified, never as verified.
+5. **Archives that cannot be reached.** When the archive Cargo wrote cannot be
+   located or read, when the crates.io lookup gives up after its retries, or
+   when Cargo reports a version as published that crates.io does not serve, the
+   crate is recorded as unavailable and the run stops. Lading cannot tell
+   whether that crate is safe, so it never guesses.
 
 Each crate's outcome (`verified`, `already published and identical`, `conflict`,
-`mismatch`, or `unverified`) is logged as it is decided, counted under
-[`publish.archive_check`](#publisharchive_check), and listed in the publish
-summary:
+`mismatch`, `unverified`, or `unavailable`) is logged as it is decided,
+counted under [`publish.archive_check`](#publisharchive_check), and listed in
+the publish summary:
 
 ```plaintext
 Archive checks against /work/digests.txt:
@@ -1445,10 +1450,11 @@ sibling workspace dependency is downgraded to a warning because
 Incremented once for each archive outcome decided under `--expect-digests`.
 Labels:
 
-- `outcome` — `verified`, `already_published`, `conflict`, `mismatch`, or
-  `unverified`. A crate that is packaged, found already published, and so
-  skipped counts as `verified` and then `already_published`; a crate that is
-  uploaded counts as `verified` at packaging and again after the upload.
+- `outcome` — `verified`, `already_published`, `conflict`, `mismatch`,
+  `unverified`, or `unavailable` (the archive could not be located, read, or
+  fetched from crates.io). A crate that is packaged, found already published,
+  and so skipped counts as `verified` and then `already_published`; a crate
+  that is uploaded counts as `verified` at packaging and again after the upload.
 
 ### `[preflight]`
 

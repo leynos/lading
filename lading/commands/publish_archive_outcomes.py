@@ -14,6 +14,8 @@ Examples
 'verified'
 >>> ArchiveOutcome.CONFLICT in FAILURES
 True
+>>> ArchiveOutcome.UNAVAILABLE in FAILURES
+True
 """
 
 import dataclasses as dc
@@ -37,9 +39,14 @@ class ArchiveOutcome(enum.StrEnum):
     CONFLICT = "conflict"
     MISMATCH = "mismatch"
     UNVERIFIED = "unverified"
+    UNAVAILABLE = "unavailable"
 
 
-FAILURES = frozenset({ArchiveOutcome.CONFLICT, ArchiveOutcome.MISMATCH})
+FAILURES = frozenset({
+    ArchiveOutcome.CONFLICT,
+    ArchiveOutcome.MISMATCH,
+    ArchiveOutcome.UNAVAILABLE,
+})
 
 
 @dc.dataclass(frozen=True, slots=True)

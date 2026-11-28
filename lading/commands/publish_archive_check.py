@@ -25,8 +25,10 @@ The publish pipeline calls it at these points in a crate's life:
 4. :meth:`~ArchiveVerifier.confirm_already_published` when Cargo reports a
    version the earlier check missed.
 
-Each crate ends with one outcome. Digests, crate names and paths are the only
-things recorded; lading never reads a registry credential here.
+Each crate ends with one outcome; a crate whose archive cannot be reached
+ends as unavailable, recorded before the error propagates. Digests, crate
+names and paths are the only things recorded; lading never reads a registry
+credential here.
 
 Examples
 --------
@@ -58,6 +60,7 @@ from lading.commands.publish_errors import (
     PublishPreflightError,
     UploadedArchiveMismatchError,
 )
+from lading.commands.publish_registry import PublishedArchiveUnavailableError
 from lading.commands.publish_target_dir import CargoTargetLocator
 
 if typ.TYPE_CHECKING:
@@ -190,11 +193,15 @@ class ArchiveVerifier:
         UploadedArchiveMismatchError
             For :data:`UPLOADED` when the digest differs.
         ArchiveUnavailableError
-            If the archive cannot be located or read.
+            If the archive cannot be located or read; the crate is recorded as
+            unavailable first.
         """  # ruff: ignore[docstring-extraneous-exception]  # raised through phase.error_cls and _digest_archive
-        comparison = _Comparison(
-            self.expected.digest_for(crate), self._digest_archive(crate, crate_root)
-        )
+        try:
+            actual = self._digest_archive(crate, crate_root)
+        except ArchiveUnavailableError:
+            self._record(crate, ArchiveOutcome.UNAVAILABLE, "archive could not be read")
+            raise
+        comparison = _Comparison(self.expected.digest_for(crate), actual)
         if not comparison.is_match:
             self._record(crate, ArchiveOutcome.MISMATCH, phase.differs_detail)
             summary = phase.differs_message.format(
@@ -251,9 +258,15 @@ class ArchiveVerifier:
         PublishedArchiveConflictError
             If the published archive differs from the expectation.
         PublishedArchiveUnavailableError
-            If the published archive cannot be fetched or hashed.
-        """  # ruff: ignore[docstring-extraneous-exception]  # raised by fetch_published_digest
-        published = self.fetch_published_digest(crate)
+            If the published archive cannot be fetched or hashed; the crate is
+            recorded as unavailable first.
+        """
+        try:
+            published = self.fetch_published_digest(crate)
+        except PublishedArchiveUnavailableError:
+            detail = "published archive lookup failed"
+            self._record(crate, ArchiveOutcome.UNAVAILABLE, detail)
+            raise
         if published is None:
             return False
         comparison = _Comparison(self.expected.digest_for(crate), published)
@@ -296,6 +309,9 @@ class ArchiveVerifier:
             If the published archive cannot be fetched or hashed.
         """  # ruff: ignore[docstring-extraneous-exception]  # raised by settle_published
         if not self.settle_published(crate):
+            self._record(
+                crate, ArchiveOutcome.UNAVAILABLE, "crates.io does not serve it"
+            )
             message = (
                 f"cargo reports that crate {crate.name} {crate.version} is "
                 "already published, but crates.io does not serve its archive, so "

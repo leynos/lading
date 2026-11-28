@@ -11,6 +11,7 @@ from lading.commands.publish_archive_check import (
     create_verifier,
 )
 from lading.commands.publish_archive_outcomes import ArchiveOutcome, CrateOutcome
+from lading.commands.publish_digest_run import archive_summary
 from lading.commands.publish_digests import ExpectedDigests
 from lading.commands.publish_errors import (
     ArchiveMismatchError,
@@ -49,7 +50,9 @@ def test_missing_archive_is_reported_with_its_path(tmp_path: Path) -> None:
         verifier.check_archive(crate, crate.root_path, PACKAGED)
 
     assert "alpha-0.1.0.crate" in str(excinfo.value), "the path must be named"
-    assert not verifier.outcomes, "no outcome is recorded without a comparison"
+    assert [decided.outcome for decided in verifier.outcomes] == [
+        ArchiveOutcome.UNAVAILABLE
+    ], "the crate is recorded as unavailable, never as verified"
 
 
 def test_outcomes_are_kept_in_decision_order(tmp_path: Path) -> None:
@@ -204,15 +207,58 @@ def test_failed_lookup_query_raises_without_recording(tmp_path: Path) -> None:
     """The read-only query reports an unavailable archive as an error, not None."""
     crate = make_crate(tmp_path, "alpha")
 
-    def unavailable(name: str, version: str) -> str | None:
-        """Fail the way the crates.io fetcher does when it gives up."""
-        message = f"Could not fetch {name} {version}"
-        raise PublishedArchiveUnavailableError(message)
-
     expected = ExpectedDigests("d", {"alpha-0.1.0.crate": digest(PLAIN_ARCHIVE)})
-    verifier = create_verifier(expected, FakeCargo(), unavailable)
+    verifier = create_verifier(expected, FakeCargo(), _unavailable_fetch)
 
     with pytest.raises(PublishedArchiveUnavailableError):
         verifier.fetch_published_digest(crate)
 
     assert not verifier.outcomes, "a query records no outcome"
+
+
+def _unavailable_fetch(name: str, version: str) -> str | None:
+    """Fail the way the crates.io fetcher does when it gives up."""
+    message = f"Could not fetch {name} {version}"
+    raise PublishedArchiveUnavailableError(message)
+
+
+def _not_published(name: str, version: str) -> str | None:
+    """Report every version as absent from crates.io."""
+    del name, version
+
+
+def test_failed_lookup_is_recorded_and_counted_as_unavailable(tmp_path: Path) -> None:
+    """The deciding command records, counts and reports a failed lookup."""
+    metrics.reset()
+    crate = make_crate(tmp_path, "alpha")
+    expected = ExpectedDigests("d", {"alpha-0.1.0.crate": digest(PLAIN_ARCHIVE)})
+    verifier = create_verifier(expected, FakeCargo(), _unavailable_fetch)
+
+    with pytest.raises(PublishedArchiveUnavailableError):
+        verifier.settle_published(crate)
+
+    assert verifier.outcome_of(crate) is ArchiveOutcome.UNAVAILABLE, (
+        "the failed lookup is recorded as unavailable"
+    )
+    assert metrics.counter_value("publish.archive_check", outcome="unavailable") == 1, (
+        "and counted under the archive-check counter"
+    )
+    assert "alpha 0.1.0: unavailable" in "\n".join(archive_summary(verifier)), (
+        "and listed in the publish summary"
+    )
+
+
+def test_cargo_reported_version_missing_from_crates_io_is_unavailable(
+    tmp_path: Path,
+) -> None:
+    """A version Cargo says exists but crates.io does not serve is unavailable."""
+    crate = make_crate(tmp_path, "alpha")
+    expected = ExpectedDigests("d", {"alpha-0.1.0.crate": digest(PLAIN_ARCHIVE)})
+    verifier = create_verifier(expected, FakeCargo(), _not_published)
+
+    with pytest.raises(ArchiveUnavailableError):
+        verifier.confirm_already_published(crate)
+
+    assert verifier.outcome_of(crate) is ArchiveOutcome.UNAVAILABLE, (
+        "the uncomparable version is recorded as unavailable"
+    )
