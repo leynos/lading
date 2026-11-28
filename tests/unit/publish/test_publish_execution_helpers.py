@@ -12,6 +12,8 @@ from cmd_mox import ipc as cmd_mox_ipc
 
 from lading.commands import publish_execution
 from lading.commands.publish import PublishPreflightError
+from lading.runtime.env_redaction import log_subprocess_environment
+from lading.runtime.stream_relay import RelayCapture, relay_decoded
 from lading.testing import cmd_mox_runner
 
 subprocess_runner = importlib.import_module("lading.runtime.subprocess_runner")
@@ -426,13 +428,13 @@ def test_merge_cmd_mox_path_entries_filters_shim(
     )
 
 
-def test_relay_stream_decodes_and_buffers_text() -> None:
+def test_relay_decoded_decodes_and_buffers_text() -> None:
     """Stream relaying should buffer decoded text and write to sinks."""
     source = io.BytesIO("hello\nworld\u20ac".encode()[:-1])
     sink = io.StringIO()
     buffer: list[str] = []
 
-    subprocess_runner.relay_stream(source, sink, buffer, "stdout")
+    relay_decoded(source, sink, RelayCapture(buffer, "stdout"))
 
     assert "".join(buffer).startswith("hello\nworld"), (
         "decoded text must be accumulated into the capture buffer"
@@ -491,7 +493,7 @@ def test_log_subprocess_environment_redacts_sensitive_values(
     """Environment logging should redact common secret tokens."""
     caplog.set_level("DEBUG", logger="lading.runtime.subprocess_runner")
 
-    subprocess_runner._log_subprocess_environment({
+    log_subprocess_environment({
         "TOKEN": "secret",
         "PATH": "/usr/bin",
     })

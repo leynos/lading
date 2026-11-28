@@ -3,6 +3,7 @@
 from lading.toml_coerce._mappings import (
     expect_mapping,
     optional_mapping,
+    optional_string_field,
     string_mapping,
 )
 from lading.toml_coerce._scalars import boolean, expect_string, non_negative_int
@@ -22,6 +23,7 @@ __all__ = [
     "is_non_empty_sequence",
     "non_negative_int",
     "optional_mapping",
+    "optional_string_field",
     "string_mapping",
     "string_matrix",
     "string_tuple",

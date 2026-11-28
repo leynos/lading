@@ -1198,10 +1198,10 @@ from the private modules.
 
 `lading/workspace/confined_discovery.py` owns bump discovery.
 `load_bump_workspace` validates the declared member and exclusion patterns
-before any Cargo invocation, calls `load_cargo_metadata` with `no_deps=True`,
-and validates every reported member manifest before `build_workspace_graph`
-reads it. Publish discovery is unchanged and continues to use
-`lading.workspace.load_workspace`.
+before any Cargo invocation, calls `load_cargo_metadata` with
+`query=MetadataQuery(no_deps=True)`, and validates every reported member
+manifest before `build_workspace_graph` reads it. Publish discovery is
+unchanged and continues to use `lading.workspace.load_workspace`.
 
 `lading/commands/bump_plan.py` owns the frozen `BumpPlan`/`PlannedWrite`
 models, the `PlanBuilder` proposal sink, the deterministic commit order, and the
@@ -1557,6 +1557,19 @@ and returns the parsed JSON mapping. Any execution errors or invalid output
 raise `CargoMetadataError` with a descriptive message, so callers can present
 actionable feedback to users.
 
+Its keyword-only `query` parameter takes a
+`lading.workspace.metadata.MetadataQuery(no_deps, manifest_path, locked)`, a
+frozen record of the flags one run asks for; `None` asks for the full
+dependency graph with no extra flags. `no_deps=True` adds `--no-deps`, so Cargo
+reports only the members it can read from the manifests (bump discovery uses it
+to stay read-only and cheap). `manifest_path` adds `--manifest-path`, so Cargo
+resolves the workspace containing that manifest (lockfile planning uses it).
+`locked=True` adds `--locked`: Cargo then refuses to update a stale
+`Cargo.lock` and exits non-zero instead, which surfaces as
+`CargoMetadataInvocationError`. `MetadataQuery.command()` returns the argument
+tuple, for example
+`('cargo', 'metadata', '--format-version', '1', '--no-deps', '--locked')`.
+
 ### Workspace graph model
 
 `load_workspace` converts the raw metadata into a strongly typed
@@ -1576,6 +1589,16 @@ print([crate.name for crate in workspace.crates])
 The builder reads each crate manifest with `tomlkit` to detect
 `readme.workspace = true` directives while preserving document structure for
 future round-tripping.
+
+`load_workspace(workspace_root=None, *, locked=False)` takes a keyword-only
+`locked` flag, passed through as `MetadataQuery(locked=locked)`. With
+`locked=True` discovery runs `cargo metadata --locked`, so a `Cargo.lock` that
+no longer matches the manifests fails discovery with
+`CargoMetadataInvocationError` rather than being rewritten. Only
+`lading publish --expect-digests` sets it (the command line binds it with
+`functools.partial(load_workspace, locked=True)`), because a recorded digest
+only means something against a fixed lockfile; every other caller keeps the
+default and discovery behaves as before.
 
 ## Programmatic publish options
 
@@ -1601,6 +1624,18 @@ defaults are:
   already verified the workspace passes a
   `SkipPreflightDecision(skip=True, source=...)`, whose source names the input
   in the publish log and labels the `publish.preflight` metric.
+- `expect_digests=None` — a `sha256sum`-format file of expected archive digests
+  (`--expect-digests`); a relative path resolves against the workspace root.
+  Setting it turns on archive verification, `--locked --registry crates-io` for
+  both cargo commands, locked workspace discovery, and the crates.io-only
+  restriction (issue #419).
+- `cargo_environment=None` — a `CargoEnvironment` (the `CARGO_REGISTRY_DEFAULT`
+  value, Cargo's home, and the registry token values to hide) resolved once by
+  `lading.cli` so the publish command stays free of ambient state. It is
+  required with `expect_digests`, which refuses to run without it.
+- `published_digest_fetcher=None` — replaces the crates.io download used to
+  compare an already-published version. Tests pass a fake so nothing reaches
+  the network.
 
 Additional parameters `configuration`, `workspace`, and `command_runner` allow
 dependency injection for testing and are typically left unset.
@@ -1841,11 +1876,158 @@ structured command failures. `CargoIndexLookupFailure` is the value object for
 crates.io index lookup failures, and `parse_index_lookup_failure()` is the
 primary owner of cargo's marker-based index-miss detection.
 
+`publish_failures.py` owns the classification of a failed `cargo package` or
+`cargo publish` (`_handle_package_failure`, `_handle_publish_failure`, and the
+`_handle_index_missing_version` wrapper that picks the phase's error class), so
+`publish_pipeline.py` keeps only the sequencing.
+
 `publish_index_check.py` owns crates.io index-lookup downgrade decisions after
 output has crossed that adapter boundary. It receives `CargoIndexLookupFailure`
 instances, applies crate-name canonicalization, and decides whether an index
 miss is out-of-plan and fatal, in-plan but still fatal, or in-plan and
 downgraded by `allow_unpublished_workspace_deps` during dry-run publication.
+
+`publish_digests.py`, `publish_archive_check.py`, `publish_archive_outcomes.py`,
+`publish_target_dir.py`, `publish_registry.py`, `publish_registry_reads.py` and
+`publish_registry_telemetry.py` implement `--expect-digests` (issue
+[#419](https://github.com/leynos/lading/issues/419); [ADR-013](adrs/adr-0013-verify-archives-against-expected-digests.md)).
+`publish_digests` is the pure half: `parse_digest_text`,
+`load_expected_digests` and `validate_against_plan` turn the file into
+`ExpectedDigests` and reject it before anything is staged,
+`require_crates_io_crates` refuses a crate limited to another registry, and
+`sha256_file` hashes an archive in bounded chunks. The verifier is deliberately
+narrow and everything it needs is injected:
+
+- `publish_archive_check.ArchiveVerifier` computes and compares digests and
+  records outcomes. `create_verifier` wires the production parts. The pipeline
+  calls it at four points: before packaging, `settle_published` (a command that
+  decides, records and may raise; its read-only counterpart
+  `fetch_published_digest` is a query with no side effects, and
+  `is_already_published` lets the dry-run publish phase skip what the packaging
+  phase found); `check_archive` with `PACKAGED` after `cargo package`, with
+  `DRY_RUN_PUBLISH` after `cargo publish --dry-run`, and with `UPLOADED` after
+  a live publish; `mark_unverified` when a dry run downgrades packaging or
+  publishing; and `confirm_already_published` when Cargo reports a version the
+  first check missed.
+- `publish_target_dir.CargoTargetLocator` asks `cargo metadata --no-deps` for
+  each crate root's target directory once, through the command runner, and is
+  injected into the verifier as a plain function.
+- `publish_archive_outcomes` holds `ArchiveOutcome`, `CrateOutcome` and the
+  `ArchiveObserver` port; `LoggingObserver` logs each outcome and increments the
+  `publish.archive_check` counter, so the verifier itself neither logs nor
+  counts.
+- Rendering for the publish summary is presentation:
+  `publish_digest_run.archive_summary`.
+
+`publish_digest_run` holds the digest-specific steps of `run()`: the runner
+choice (`command_runner`, `discovery_runner`), the pre-flight validation
+(`digest_checks`), and `refuse_staged_defaults`, which repeats the registry
+check from the staged paths. `publish_cargo_config.effective_default_registry`
+follows Cargo's own order (`CARGO_REGISTRY_DEFAULT`, then `.cargo/config` or
+`.cargo/config.toml`, the extensionless file winning, from a start directory up
+through its ancestors, then Cargo home); `refuse_alternate_default` applies it
+to the workspace root and to each publishable crate's root before anything is
+staged. The inputs arrive as `PublishOptions.cargo_environment`, a
+`CargoEnvironment` resolved by `lading.cli`. `lading.utils.redaction`,
+`lading.utils.secret_scope` and `redacting_runner` keep exact registry-token
+values out of what lading shows, never out of what it parses. `lading.cli`
+collects the values from the environment and the credentials file
+(`runtime.credentials`) for a digest-checked run only, opens a scope for them
+with `use_secrets`, and hands the `SecretScope` it yields to `_select_runner`,
+which returns `redacting_runner(scope, ...)`, while a run without the option
+always gets the plain `subprocess_runner`. `publish.run` does the same for a
+programmatic caller: `hidden_secrets` yields the run's scope and
+`command_runner` and `discovery_runner` build their redacting runners on it.
+The entry point's file is only the first: a relative `CARGO_HOME` is resolved
+by Cargo against each command's working directory, so before starting each
+command `redacting_runner` reads the credentials file of the home that command
+runs with (`invocation_cargo_home`: the call's own `CARGO_HOME`, else, on Unix,
+`$HOME/.cargo` for a `HOME` the call's environment sets, as Cargo derives its
+default home from the environment it runs with, else the entry point's, joined
+to the call's `cwd`), and adds its tokens, and those in the call's own `env`,
+to the scope it was given with `SecretScope.hide`, so that command's relay
+hides them and, through the scope, so do later diagnostics and logs. A runner
+changes only the scope it is handed, never an enclosing one; when a
+`use_secrets` block ends, what its scope holds is handed to the enclosing scope
+(`SecretScope.parent`), so a learned token stays hidden until the outermost
+scope ends. A scope's `secrets` are its own values plus every enclosing
+scope's, read live, so a child sees what its parent learns later. The relative
+home is never made absolute once for the whole run. `redact_text` replaces,
+left to right, the longest secret starting at each position, so the result does
+not depend on the order secrets are given in. Every known secret is replaced,
+including one that could overlap the `<redacted>` marker, as a named-registry
+token that is just `redacted` could: `marker_for` then builds the marker from
+one character found in no secret (framed by `<` and `>` when no secret has a
+bracket), so no secret can show through it, and fails closed with `ValueError`
+if none is left. The marker depends only on the set of secrets, so
+`SecretRedactor` reproduces it exactly for any chunking by keeping the tail raw
+until later input settles it (a Hypothesis property checks the equivalence).
+The runner captures each stream raw and filters only the mirrored text
+(`stream_relay.relay_decoded` with a `RelayCapture`). Messages built from
+captured output are hidden where they leave lading rather than where they are
+built: `command_detail` and `append_detail` are pure and redact only the
+`secrets` a caller passes explicitly (the auxiliary-build failure passes its
+known values), and every other such message, the metadata error included, is
+hidden by the sinks below. The spawn error, the logged command line and the
+debug environment log redact by value too. `use_secrets` sanitizes an exception
+that propagates out of its scope
+(`lading.utils.exception_redaction.sanitize_exception`: strings at any depth of
+`args` and attributes, notes and the whole cause and context chain, in place,
+(containers that contain themselves terminate; any traversal failure falls back
+to a replacement), then a `str`/`repr` check that replaces any exception still
+rendering a secret, at its place in the chain, with a redacted `LadingError`
+carrying its type name), `publish.run` opens the scope before it logs or
+validates anything, and `use_secrets` also installs a log-record factory
+(`RecordFactory`, so a handler on any logger is covered), a wrapper around
+`Logger.makeRecord` (`MakeRecordPatch`, which redacts the `extra` fields
+applied after the factory, replacing any object that would render a secret with
+its redacted text), and `RedactingFilter` on the root log handlers
+(`protect_handler` covers handlers configured later). Those hooks are
+process-wide and stack when scopes nest, the outermost running first, so every
+one of them redacts with the combined secrets of all open scopes (longest
+first) rather than its own: an outer secret that prefixes an inner one cannot
+split it and leave the rest showing. And `lading.cli_environment` activates the
+environment's token values before it reads the credentials file (so a warning
+about it is redacted) and prints errors and summaries through `redact_active`,
+so a message built without any redaction is still hidden where it leaves lading
+for a digest-checked run. Every runner logs through
+`subprocess_runner.run_logged`, so the `Running external command` line is
+identical with or without redaction; `env_redaction` is the older key-based
+masking for logged environment overrides. `publish_registry` is the injectable
+`PublishedDigestFetcher` port; `fetch_crates_io_digest` streams the archive from
+`static.crates.io` through a size cap, one 180 s time budget spanning
+connecting, reads, closing and retry waits, a `Content-Length` check and
+bounded retries (a short or interrupted body, including `IncompleteRead`, is
+retried), and tests substitute a fake. `publish_registry_reads` owns the time
+side of that download: the `Deadline` one lookup shares across its attempts and
+`read_chunk`, which reads the body one bounded chunk at a time.
+`publish_registry_telemetry.FetchTelemetry` counts each attempt under
+`publish.archive_fetch`, logs each retry with its attempt number, elapsed
+milliseconds and remaining budget, and logs one bounded summary (attempts,
+elapsed milliseconds and `failure_category`) before a lookup gives up. Each
+underlying socket read is bounded by a socket timeout of the 60 s request
+timeout or the budget left, whichever is less, so a stalled body costs one
+request timeout and is retried while budget remains, reading with `read1`; that
+does not bound one `read1` call, since CPython's chunked reader can make
+several reads in one while it consumes the trailers, nor closing. The budget is
+therefore not a strict bound on elapsed time: deadline checks once the body is
+read and the response closed, before a digest or a 404's `None` is returned,
+reject a result that arrives after expiry, so expiry is never reported as
+either, but they cannot interrupt a `read1` or a close already in progress. The
+new errors (`ExpectedDigestsError`, `ArchiveMismatchError`,
+`UploadedArchiveMismatchError`, `PublishedArchiveConflictError`) live in
+`publish_errors`, as does `ArchiveUnavailableError`;
+`PublishedArchiveUnavailableError` sits beside the fetcher in
+`publish_registry`. `tests/e2e/test_publish_expect_digests_cli.py` covers the
+option through the real `lading` process, with a stub `cargo`
+(`tests/e2e/helpers/stub_cargo.py`) on `PATH` and a loopback server standing in
+for the archive host (the process is started through a launcher that points the
+downloader at it, so nothing reaches crates.io).
+`tests/helpers/publish_digests.py` provides `FakeCargo`, `FakeRegistry`, and
+`PublishRig`, which drive `publish.run` in process without a subprocess or
+socket; the behavioural scenarios in
+`tests/bdd/features/publish_expect_digests.feature` use them because a download
+cannot be injected into the CLI subprocess the other publish scenarios run.
 
 `publish_sccache_stats.py`, `publish_sccache_report.py`, and
 `publish_sccache.py` implement the opt-in compiler-cache instrumentation (issue
@@ -1913,13 +2095,14 @@ line that was never parsed. Resolving an _absent_ flag against
 forwarded to every `cargo package` and `cargo publish` invocation within a
 single `lading publish` run. Its fields are:
 
-| Field                              | Type           | Default | Purpose                                                               |
-| ---------------------------------- | -------------- | ------- | --------------------------------------------------------------------- |
-| `live`                             | `bool`         | —       | When `True`, omits `--dry-run` from `cargo publish`.                  |
-| `allow_dirty`                      | `bool`         | —       | Passes `--allow-dirty` to both cargo subcommands.                     |
-| `allow_unpublished_workspace_deps` | `bool`         | `False` | Dry-run-only override; see `allow_unpublished_workspace_deps` above.  |
-| `sccache_stats`                    | `bool`         | `False` | Query sccache around every cargo build and log per-crate cache lines. |
-| `sccache_stats_json`               | `Path \| None` | `None`  | Write the sccache report here; implies `sccache_stats`.               |
+| Field                              | Type                      | Default | Purpose                                                                                          |
+| ---------------------------------- | ------------------------- | ------- | ------------------------------------------------------------------------------------------------ |
+| `live`                             | `bool`                    | —       | When `True`, omits `--dry-run` from `cargo publish`.                                             |
+| `allow_dirty`                      | `bool`                    | —       | Passes `--allow-dirty` to both cargo subcommands.                                                |
+| `allow_unpublished_workspace_deps` | `bool`                    | `False` | Dry-run-only override; see `allow_unpublished_workspace_deps` above.                             |
+| `sccache_stats`                    | `bool`                    | `False` | Query sccache around every cargo build and log per-crate cache lines.                            |
+| `sccache_stats_json`               | `Path \| None`            | `None`  | Write the sccache report here; implies `sccache_stats`.                                          |
+| `verifier`                         | `ArchiveVerifier \| None` | `None`  | Set by `--expect-digests`; its presence also adds `--locked --registry crates-io` (`is_locked`). |
 
 The dataclass is an internal implementation detail; callers interact with the
 public `PublishOptions` dataclass, which `run()` converts before dispatching.
@@ -2032,13 +2215,13 @@ for the entire handler call: the active `PublishPlan`, the
 
 ### Command-failure detail helpers (`lading.utils.process`)
 
-`command_detail(stdout, stderr) -> str` returns the most informative output
-stream for a failed command: stderr stripped of whitespace when non-empty,
-otherwise stdout stripped, otherwise the empty string.
+`command_detail(stdout, stderr, *, secrets=()) -> str` returns the most
+informative output stream for a failed command: stderr stripped of whitespace
+when non-empty, otherwise stdout stripped, otherwise the empty string.
 
-`append_detail(message, detail, *, separator=": ") -> str` appends an
-_already-derived_ `detail` to `message` using `separator` only when `detail` is
-non-empty. Reach for it when the caller has already computed the detail (for
+`append_detail(message, detail, *, separator=": ", secrets=()) -> str` appends
+an _already-derived_ `detail` to `message` using `separator` only when `detail`
+is non-empty. Reach for it when the caller has already computed the detail (for
 example via `command_detail` to branch on its content) and must not derive it
 twice — `_verify_clean_working_tree` inspects the detail to decide whether to
 mention "is this a git repository?" before appending it.
@@ -2046,6 +2229,11 @@ mention "is this a git repository?" before appending it.
 `with_detail(message, stdout, stderr, *, separator=": ") -> str` is the
 convenience wrapper that derives the detail with `command_detail` and appends
 it with `append_detail` in one call.
+
+All three are pure. `command_detail` and `append_detail` replace exactly the
+`secrets` they are given and read no open secret scope, so their output depends
+only on their arguments; a message they build without secrets is hidden where
+it leaves lading, by the sinks of `lading.utils.secret_scope`.
 
 These are the canonical home for the `(stderr or stdout)` failure-detail idiom.
 Modules that render command failures (`lading.commands.lockfile`,
@@ -2126,6 +2314,15 @@ canonical error-message shape is
 `{field} must be {expected}; received {type(value).__name__}.` and is pinned by
 property and snapshot tests in `tests/unit/test_toml_coerce.py`.
 
+`optional_string_field(table, key) -> str | None` is the lenient counterpart
+for documents read without validation, such as Cargo's credentials file. It
+takes no `error` keyword and never raises: it returns `table[key]` when `table`
+is a mapping holding a string there, and `None` when `table` is not a mapping
+(a scalar or a list where a table should be), when the key is missing, or when
+the value is not a string. `lading.runtime.credentials` uses it to read
+`registry.token` and `registries.<name>.token`, so a malformed entry
+contributes no token rather than failing the run.
+
 ### Module size extractions (issue 108)
 
 To keep source files within the 400-line guideline, the following
@@ -2160,6 +2357,29 @@ responsibilities live in dedicated modules, imported by their original homes:
 - `lading.cli_entrypoint` — process startup, configuration loading, dispatch,
   and translation of preflight and workspace failures into exit codes (imported
   by `cli`).
+- `lading.cli_runner` — selection of the cmd-mox, plain or redacting command
+  runner for one invocation (`_select_runner`, re-exported by `cli`, where
+  tests replace it).
+- `lading.cli_environment` — the Cargo environment of a digest-checked publish
+  and the scope that hides its registry tokens; `cli_entrypoint` prints errors
+  and results through it.
+- `lading.utils.secret_scope` — `use_secrets` and the `SecretScope` it yields:
+  the exact token values a digest-checked run hides, handed explicitly to the
+  redacting runners, plus `redact_active` for the remaining sinks. While a
+  scope is open it installs the log hooks and sanitizes exceptions that leave
+  it.
+- `lading.utils.log_redaction` — the process-wide logging hooks
+  (`RecordFactory`, `MakeRecordPatch`, `RedactingFilter`, installed and removed
+  together through `LogRedaction`) that redact every record while a secret
+  scope is open. It is the one deliberate exception to the rule that the
+  library leaves global logging state alone, and it takes the redaction as a
+  function, so it depends on no scope machinery.
+- `lading.runtime.credentials` —
+  `credential_file_tokens(cargo_home, *, redact)` reads `registry.token` and
+  `registries.<name>.token` from Cargo's `credentials.toml` and legacy
+  `credentials` files. An unreadable or malformed file contributes nothing and
+  logs a warning naming only the path, redacted with the caller's function, and
+  the failure type, never the contents.
 
 ### In-process metrics (`lading.utils.metrics`)
 
@@ -2187,6 +2407,8 @@ Defined metrics:
 | `lockfile.validate`              | `outcome`                     | One increment per `validate_lockfile_freshness` call; `outcome` is `fresh`, `stale`, or `failed`.                                                                                                                                                |
 | `lockfile.validate.duration`     | (none)                        | Duration observation around each `cargo metadata --locked` probe.                                                                                                                                                                                |
 | `publish.cargo.duration`         | `subcommand`, `crate`         | One duration observation per `cargo package` or `cargo publish` invocation in the publish pipeline, successful or not (issue #251).                                                                                                              |
+| `publish.archive_check`          | `outcome`                     | `ArchiveVerifier` decides an archive outcome under `--expect-digests`; `outcome` is `verified`, `already_published`, `conflict`, `mismatch`, `unverified`, or `unavailable` (issue #419).                                                        |
+| `publish.archive_fetch`          | `result`                      | One increment per crates.io archive download attempt under `--expect-digests` (`publish_registry_telemetry.FetchTelemetry`); `result` is `succeeded`, `not_published`, `retried`, or `unavailable`, never a URL or error text.                   |
 | `publish.sccache.query`          | `outcome`                     | One increment per sccache statistics query while instrumentation is on (`--sccache-stats`, or a `--sccache-stats-json` path, which implies it); `outcome` is `success` or `failure` (issue [#252](https://github.com/leynos/lading/issues/252)). |
 
 Duration metrics aggregate a count and total seconds per label set via
@@ -2237,7 +2459,7 @@ safe name used by relay threads.
 payload and returns the updated `(sink, binary_sink)` pair. Callers must retain
 both returned values as the active sink state for the next chunk. The required
 `stream: StreamName` argument is `"stdout"` or `"stderr"` and identifies the
-child pipe. `relay_stream(source, sink, buffer, stream)` and
+child pipe. `relay_decoded(source, sink, capture)` and
 `write_to_sink(sink, payload, stream)` take the same stream label.
 
 Before a fallback, payloads use the text sink's normal encoding. If that write

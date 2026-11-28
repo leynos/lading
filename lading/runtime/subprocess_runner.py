@@ -1,6 +1,5 @@
 """Subprocess-backed implementation of the command runner port."""
 
-import codecs
 import collections.abc as cabc
 import dataclasses as dc
 import logging
@@ -12,7 +11,10 @@ from pathlib import Path
 
 from lading.exceptions import LadingError
 from lading.utils.process import c_locale_env, log_command_invocation
+from lading.utils.redaction import redact_text
 
+from .env_redaction import log_subprocess_environment
+from .stream_relay import RelayCapture, relay_decoded
 from .stream_relay import TextSink as _TextSink
 from .stream_relay import format_thread_name as _format_thread_name
 from .stream_relay import write_to_relay_sink as _write_to_relay_sink
@@ -21,17 +23,6 @@ if typ.TYPE_CHECKING:
     from .relay_events import StreamName
 
 _LOGGER = logging.getLogger(__name__)
-_ENV_REDACTION_TOKENS = (
-    "TOKEN",
-    "AUTH",
-    "BEARER",
-    "PASS",
-    "CRED",
-    "PASSPHRASE",
-    "SECRET",
-    "KEY",
-)
-_STREAM_CHUNK_SIZE = 4096
 
 
 class CommandSpawnError(LadingError):
@@ -45,6 +36,22 @@ class CommandSpawnError(LadingError):
         super().__init__(message)
 
 
+def _spawn_error(
+    program: str, reason: OSError, secrets: tuple[str, ...]
+) -> CommandSpawnError:
+    """Return the spawn failure with ``secrets`` hidden from its text and cause.
+
+    Returns
+    -------
+    CommandSpawnError
+        The original details when nothing is hidden, else redacted ones.
+    """
+    shown = redact_text(str(reason), secrets), redact_text(program, secrets)
+    if shown == (str(reason), program):
+        return CommandSpawnError(program, reason)
+    return CommandSpawnError(shown[1], OSError(shown[0]))
+
+
 @dc.dataclass(frozen=True, slots=True)
 class SubprocessContext:
     """Execution context for subprocess invocations."""
@@ -53,6 +60,7 @@ class SubprocessContext:
     env: cabc.Mapping[str, object] | None = None
     stdin_data: str | None = None
     echo_stdout: bool = True
+    secrets: tuple[str, ...] = ()
 
 
 def subprocess_runner(
@@ -94,9 +102,41 @@ def subprocess_runner(
     >>> subprocess_runner(["echo", "hello"])  # doctest: +SKIP
     (0, 'hello\n', '')
     """
-    log_command_invocation(_LOGGER, command, cwd)
-    program, args = split_command(command)
     context = SubprocessContext(cwd=cwd, env=env, echo_stdout=echo_stdout)
+    return run_logged(command, context)
+
+
+def run_logged(
+    command: cabc.Sequence[str], context: SubprocessContext
+) -> tuple[int, str, str]:
+    """Log ``command`` as an external invocation, then run it under ``context``.
+
+    This is the one place the ``Running external command`` line is emitted, so
+    every runner built on it (including the redacting one) logs identically.
+
+    Returns
+    -------
+    tuple[int, str, str]
+        Exit code, captured stdout, and captured stderr.
+
+    Raises
+    ------
+    ValueError
+        If ``command`` is empty.
+    CommandSpawnError
+        If the program cannot be spawned.
+    """
+    # An argument can carry a credential too, so the logged line is scrubbed.
+    shown = [redact_text(argument, context.secrets) for argument in command]
+    # The working directory is shown too, so it is scrubbed; the process still
+    # runs in the real one.
+    cwd = (
+        None
+        if context.cwd is None
+        else Path(redact_text(str(context.cwd), context.secrets))
+    )
+    log_command_invocation(_LOGGER, shown, cwd)
+    program, args = split_command(command)
     return invoke_via_subprocess(program, args, context)
 
 
@@ -151,7 +191,8 @@ def _spawn_process(
             stdin=subprocess.PIPE if context.stdin_data is not None else None,
         )
     except OSError as exc:
-        raise CommandSpawnError(program, exc) from exc
+        error = _spawn_error(program, exc, context.secrets)
+        raise error from (exc if error.reason is exc else None)
 
 
 def _drain_stdin_and_wait(
@@ -172,6 +213,21 @@ def _drain_stdin_and_wait(
         for thread in threads:
             thread.join()
     return exit_code
+
+
+def _relay_thread(
+    program: str,
+    source: typ.IO[bytes] | None,
+    sink: _TextSink | None,
+    capture: RelayCapture,
+) -> threading.Thread:
+    """Return the unstarted thread that relays and captures one stream."""
+    return threading.Thread(
+        target=relay_decoded,
+        args=(source, sink, capture),
+        name=_format_thread_name(program, capture.stream),
+        daemon=True,
+    )
 
 
 def invoke_via_subprocess(
@@ -210,28 +266,23 @@ def invoke_via_subprocess(
     # The command line itself is logged once, at INFO, by
     # ``subprocess_runner`` via ``log_command_invocation``; only the
     # environment overrides are worth an extra DEBUG record here.
-    _log_subprocess_environment(context.env)
+    log_subprocess_environment(context.env, context.secrets)
     normalized_env = c_locale_env(normalize_environment(context.env))
     process = _spawn_process(program, command, context, normalized_env)
     stdout_chunks: list[str] = []
     stderr_chunks: list[str] = []
     threads = [
-        threading.Thread(
-            target=relay_stream,
-            args=(
-                process.stdout,
-                sys.stdout if context.echo_stdout else None,
-                stdout_chunks,
-                "stdout",
-            ),
-            name=_format_thread_name(program, "stdout"),
-            daemon=True,
+        _relay_thread(
+            program,
+            process.stdout,
+            sys.stdout if context.echo_stdout else None,
+            RelayCapture(stdout_chunks, "stdout", context.secrets),
         ),
-        threading.Thread(
-            target=relay_stream,
-            args=(process.stderr, sys.stderr, stderr_chunks, "stderr"),
-            name=_format_thread_name(program, "stderr"),
-            daemon=True,
+        _relay_thread(
+            program,
+            process.stderr,
+            sys.stderr,
+            RelayCapture(stderr_chunks, "stderr", context.secrets),
         ),
     ]
     for thread in threads:
@@ -269,78 +320,6 @@ def normalize_environment(
     # Values may be any object (callers pass ``Path``/``int`` freely);
     # ``subprocess`` insists on ``str``, so every value is stringified here.
     return {key: str(value) for key, value in env.items()}
-
-
-def relay_stream(
-    source: typ.IO[bytes] | None,
-    sink: _TextSink | None,
-    buffer: list[str],
-    stream: StreamName,
-) -> None:
-    """Forward ``source`` into ``sink`` while preserving captured output.
-
-    Returns ``None``; decoded chunks are appended to ``buffer`` in place.
-
-    Parameters
-    ----------
-    source : typ.IO[bytes] | None
-        Byte stream to read from.
-    sink : _TextSink | None
-        Text stream to mirror decoded output to.
-    buffer : list[str]
-        Mutable list receiving decoded chunks.
-    stream : StreamName
-        ``"stdout"`` or ``"stderr"`` label for the relayed child stream.
-
-    Raises
-    ------
-    OSError
-        If reading or closing the source stream fails.
-    ValueError
-        If a stream operation occurs on a closed stream.
-
-    Examples
-    --------
-    >>> import io
-    >>> source = io.BytesIO(b"hello")
-    >>> sink = io.StringIO()
-    >>> buffer: list[str] = []
-    >>> relay_stream(source, sink, buffer, "stdout")
-    >>> buffer
-    ['hello']
-    >>> sink.getvalue()
-    'hello'
-    """
-    if source is None:
-        return
-    decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
-    active_sink = sink
-    binary_sink: typ.BinaryIO | None = None
-    try:
-        try:
-            while True:
-                chunk = source.read(_STREAM_CHUNK_SIZE)
-                if not chunk:
-                    break
-                text = decoder.decode(chunk)
-                if text:
-                    buffer.append(text)
-                    active_sink, binary_sink = _write_to_relay_sink(
-                        active_sink, binary_sink, stream, text
-                    )
-            tail = decoder.decode(b"", final=True)
-            if tail:
-                buffer.append(tail)
-                active_sink, binary_sink = _write_to_relay_sink(
-                    active_sink, binary_sink, stream, tail
-                )
-        finally:
-            source.close()
-    except OSError, ValueError:  # pragma: no cover - defensive logging guard
-        # Log first, then re-raise into threading.excepthook; join() may still
-        # leave a partial buffer, which is preferable to hiding stream corruption.
-        _LOGGER.exception("Stream relay thread failed")
-        raise
 
 
 def write_to_sink(
@@ -383,25 +362,3 @@ def write_to_sink(
     """
     active_sink, _binary_sink = _write_to_relay_sink(sink, None, stream, payload)
     return active_sink
-
-
-def _log_subprocess_environment(env: cabc.Mapping[str, object] | None) -> None:
-    """Log redacted environment overrides for subprocess execution."""
-    if not env:
-        return
-    redacted = _redact_environment(env)
-    _LOGGER.debug("Subprocess environment overrides: %s", redacted)
-
-
-def _redact_environment(env: cabc.Mapping[str, object]) -> dict[str, str]:
-    """Return ``env`` with sensitive values replaced by placeholders."""
-    redacted: dict[str, str] = {}
-    for key, value in env.items():
-        redacted[key] = "<redacted>" if _should_redact_env_key(key) else str(value)
-    return dict(sorted(redacted.items()))
-
-
-def _should_redact_env_key(key: str) -> bool:
-    """Return True when ``key`` likely contains secret material."""
-    upper_key = key.upper()
-    return any(token in upper_key for token in _ENV_REDACTION_TOKENS)

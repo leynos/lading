@@ -60,7 +60,9 @@ The `lading/` package is grouped by feature and operational boundary:
 - `lading/cli.py` owns command-line application wiring, command adapters, and
   the public console entry point. The shared Cyclopts app lives in
   `lading/cli_app.py`, argument and logging helpers in `lading/cli_helpers.py`,
-  and process startup, configuration loading, and dispatch in
+  command-runner selection in `lading/cli_runner.py`, the Cargo environment and
+  secret scope of a digest-checked publish in `lading/cli_environment.py`, and
+  process startup, configuration loading, and dispatch in
   `lading/cli_entrypoint.py`.
 - `lading/commands/` contains command implementations and command-specific
   helpers for version bumping and publishing.

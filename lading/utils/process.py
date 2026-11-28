@@ -27,6 +27,13 @@ The failure-detail helpers form a small layer:
 * :func:`with_detail` is the convenience wrapper that derives and appends in one
   call.
 
+All three are pure and read no ambient state; :func:`command_detail` and
+:func:`append_detail` take the secrets to hide as an explicit ``secrets``
+argument. A caller that holds the run's secrets
+passes them; otherwise the message is hidden where it leaves lading (the log
+hooks, the exception sanitizing and the command line's printer of
+:mod:`lading.utils.secret_scope`).
+
 Dependent modules that render command failures —
 :mod:`lading.commands.lockfile`, :mod:`lading.commands.bump_lockfiles`,
 :mod:`lading.commands.publish_preflight`,
@@ -40,6 +47,8 @@ import logging
 import os
 import shlex
 import typing as typ
+
+from lading.utils.redaction import redact_text
 
 if typ.TYPE_CHECKING:
     from logging import Logger as LoggerType
@@ -88,7 +97,9 @@ def log_command_invocation(
         logger.info("Running external command: %s (cwd=%s)", rendered, cwd)
 
 
-def command_detail(stdout: str, stderr: str) -> str:
+def command_detail(
+    stdout: str, stderr: str, *, secrets: cabc.Sequence[str] = ()
+) -> str:
     """Return the most informative stripped output stream for a failure.
 
     ``stderr`` is preferred; ``stdout`` is the fallback when stderr strips to
@@ -101,12 +112,14 @@ def command_detail(stdout: str, stderr: str) -> str:
         Captured standard-output stream of the failed command.
     stderr : str
         Captured standard-error stream of the failed command.
+    secrets : cabc.Sequence[str]
+        Exact values to replace in the detail; nothing else is hidden.
 
     Returns
     -------
     str
         Stripped ``stderr`` when non-empty, otherwise stripped ``stdout``,
-        otherwise the empty string.
+        otherwise the empty string, with ``secrets`` replaced.
 
     Examples
     --------
@@ -116,11 +129,19 @@ def command_detail(stdout: str, stderr: str) -> str:
     'out'
     >>> command_detail("", "")
     ''
+    >>> command_detail("", "token abc", secrets=("abc",))
+    'token <redacted>'
     """
-    return stderr.strip() or stdout.strip()
+    return redact_text(stderr.strip() or stdout.strip(), secrets)
 
 
-def append_detail(message: str, detail: str, *, separator: str = ": ") -> str:
+def append_detail(
+    message: str,
+    detail: str,
+    *,
+    separator: str = ": ",
+    secrets: cabc.Sequence[str] = (),
+) -> str:
     """Append an already-derived ``detail`` to ``message`` when non-empty.
 
     Use this when the caller has already computed ``detail`` (typically via
@@ -136,12 +157,15 @@ def append_detail(message: str, detail: str, *, separator: str = ": ") -> str:
         Pre-derived detail string; appended verbatim only when non-empty.
     separator : str, optional
         String joining ``message`` and ``detail``. Defaults to ``": "``.
+    secrets : cabc.Sequence[str]
+        Exact values to replace in the joined text; nothing else is hidden.
 
     Returns
     -------
     str
         ``message`` unchanged when ``detail`` is empty, otherwise
-        ``message`` joined to ``detail`` by ``separator``.
+        ``message`` joined to ``detail`` by ``separator``, with ``secrets``
+        replaced.
 
     Examples
     --------
@@ -152,7 +176,7 @@ def append_detail(message: str, detail: str, *, separator: str = ": ") -> str:
     """
     if not detail:
         return message
-    return f"{message}{separator}{detail}"
+    return redact_text(f"{message}{separator}{detail}", secrets)
 
 
 def with_detail(

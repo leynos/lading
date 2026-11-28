@@ -770,6 +770,60 @@ _Figure 2: Publish pre-flight sequence from checks through crate publication._
     fails, any earlier successful uploads remain on crates.io and are skipped
     on a subsequent run.
 
+3. **Verify archives against expected digests (optional):** With
+   `--expect-digests PATH`, Lading reads a `sha256sum`-format file before it
+   runs the pre-flight and checks it against the plan before staging. It then
+   compares an already-published version downloaded from crates.io before
+   packaging (skipping an identical archive, failing a different one as a
+   conflict), compares each crate's archive after `cargo package` (refusing the
+   crate and every later one on a difference), and compares the archive
+   `cargo publish` wrote after a successful live upload. Both cargo commands
+   run with `--locked --registry crates-io`, and workspace discovery runs
+   `cargo metadata --locked`. The `ArchiveVerifier` owns these steps and the
+   per-crate outcomes shown in the publish summary; the crates.io download is
+   an injectable port. See
+   [ADR-013](adrs/adr-0013-verify-archives-against-expected-digests.md).
+
+### Credential redaction during digest-checked publishes
+
+A digest-checked publish (`--expect-digests`) runs Cargo with registry
+credentials in reach, and a build script, test or Cargo diagnostic can print
+one. Lading therefore hides the exact values of the registry tokens it knows
+from everything it shows, and from nothing it parses: captured subprocess
+streams stay raw so `cargo metadata` JSON cannot be corrupted. Ordinary
+publishes and every other command are unchanged.
+
+- **Exact-value scope.** `lading.utils.secret_scope.use_secrets` opens a scope
+  holding the exact token values, never a pattern: `CARGO_REGISTRY_TOKEN`, every
+  `CARGO_REGISTRIES_<NAME>_TOKEN`, and the tokens in Cargo's credentials file.
+  It yields a `SecretScope`, which is handed explicitly to the redacting
+  runners. A runner adds the tokens each command brings, from its own
+  environment and its own Cargo home, to that scope only; when a scope ends,
+  what it learned passes to the enclosing scope, so a token stays hidden until
+  the outermost scope ends. An exception leaving a scope is sanitized on its
+  way out.
+- **Process-wide log hooks.** While any scope is open,
+  `lading.utils.log_redaction` installs a log-record factory, a wrapper around
+  `Logger.makeRecord` for `extra` fields, and a filter on the root handlers.
+  These are process-wide, so a record from any logger is redacted with the
+  combined values of every open scope; they are removed when the last scope
+  ends. This is a deliberate, isolated exception to the rule that a library
+  leaves global logging state alone.
+- **Cargo credentials-file reads.** `lading.runtime.credentials` reads
+  `registry.token` and `registries.<name>.token` from `credentials.toml` and
+  the legacy `credentials` file: once at the entry point and again for each
+  command's effective Cargo home (its own `CARGO_HOME`, else `$HOME/.cargo` for
+  a `HOME` it sets on Unix, else the entry point's, resolved against its
+  working directory). Values already known are hidden before a file is read, so
+  a warning about an unreadable file cannot reveal one through its path.
+- **External-provider limitation.** A token that a Cargo credential provider
+  fetches on demand never passes through lading, so lading cannot know it or
+  hide it.
+
+[ADR-013](adrs/adr-0013-verify-archives-against-expected-digests.md) records
+the decision to verify archives against expected digests, of which this
+redaction is part.
+
 ## 4a. `clean` Subcommand Design
 
 The `clean` command removes staging copies that earlier releases left behind.

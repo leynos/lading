@@ -13,7 +13,7 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from lading.commands import publish, publish_pipeline, publish_plan
+from lading.commands import publish, publish_failures, publish_pipeline, publish_plan
 from lading.commands.cargo_output_adapter import CargoIndexLookupFailure
 from tests.helpers.hypothesis_settings import filesystem_property_settings
 
@@ -73,7 +73,7 @@ def test_index_missing_dependency_requires_prior_publish_order(
         )
 
         if missing_index < current_index:
-            publish_pipeline._handle_index_missing_version(
+            publish_failures._handle_index_missing_version(
                 failure,
                 plan=plan,
                 options=options,
@@ -87,7 +87,7 @@ def test_index_missing_dependency_requires_prior_publish_order(
                     else "is the same crate"
                 ),
             ):
-                publish_pipeline._handle_index_missing_version(
+                publish_failures._handle_index_missing_version(
                     failure,
                     plan=plan,
                     options=options,

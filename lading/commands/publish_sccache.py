@@ -48,6 +48,7 @@ from lading.commands.publish_sccache_stats import (
     query_text,
 )
 from lading.utils import metrics
+from lading.utils.secret_scope import redact_active
 
 if typ.TYPE_CHECKING:
     from lading.runtime import CommandRunner
@@ -101,7 +102,7 @@ class SccacheSession:
             LOGGER.warning(
                 "Compiler cache statistics unavailable (%s); disabling: %s",
                 purpose,
-                exc,
+                redact_active(str(exc)),
             )
             self.enabled = False
             return None
@@ -169,21 +170,28 @@ class SccacheSession:
             text = query_text(self.wrapper, runner=self.runner, cwd=self.cwd)
         except SccacheStatsError as exc:
             metrics.increment_counter(QUERY_METRIC, outcome="failure")
-            LOGGER.warning("Compiler cache statistics text unavailable: %s", exc)
+            LOGGER.warning(
+                "Compiler cache statistics text unavailable: %s",
+                redact_active(str(exc)),
+            )
             return
         metrics.increment_counter(QUERY_METRIC, outcome="success")
         LOGGER.info(
             "sccache statistics (cumulative for the server's lifetime):\n%s",
-            text.rstrip(),
+            redact_active(text.rstrip()),
         )
 
     def _write_report(self, json_path: Path, report: dict[str, object]) -> None:
         """Write ``report`` to ``json_path`` atomically, warning on failure."""
         try:
-            write_atomically(json_path, json.dumps(report, sort_keys=True))
+            write_atomically(
+                json_path, redact_active(json.dumps(report, sort_keys=True))
+            )
         except OSError as exc:
             LOGGER.warning(
-                "Could not write compiler cache report to %s: %s", json_path, exc
+                "Could not write compiler cache report to %s: %s",
+                json_path,
+                redact_active(str(exc)),
             )
             return
         LOGGER.info("Compiler cache report written to %s", json_path)

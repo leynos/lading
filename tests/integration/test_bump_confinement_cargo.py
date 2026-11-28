@@ -28,6 +28,7 @@ from lading.utils.confinement import (
 )
 from lading.workspace import load_cargo_metadata
 from lading.workspace.confined_discovery import load_bump_workspace
+from lading.workspace.metadata import MetadataQuery
 from tests.helpers.fs_snapshot import changed_paths, snapshot_tree
 from tests.helpers.workspace_builders import _make_config
 
@@ -199,7 +200,7 @@ def test_metadata_fields_agree_between_discovery_modes(tmp_path: Path) -> None:
     _write_workspace(root)
 
     full = load_cargo_metadata(root)
-    no_deps = load_cargo_metadata(root, no_deps=True)
+    no_deps = load_cargo_metadata(root, query=MetadataQuery(no_deps=True))
 
     assert full["workspace_root"] == no_deps["workspace_root"], (
         "both modes must report the same workspace root"

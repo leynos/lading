@@ -12,27 +12,15 @@ import logging
 import time
 import typing as typ
 
-from lading.commands.cargo_output_adapter import (
-    CargoAlreadyPublishedFailure,
-    CargoIndexLookupFailure,
-    CargoSubprocessResult,
-    parse_already_published_failure,
-    parse_index_lookup_failure,
-)
-from lading.commands.publish_errors import PublishError, PublishPreflightError
+from lading.commands import publish_failures
+from lading.commands.publish_archive_check import DRY_RUN_PUBLISH, PACKAGED, UPLOADED
+from lading.commands.publish_errors import PublishPreflightError
 from lading.commands.publish_execution import (
     _CargoInvocation,
     _run_timed_cargo,
 )
 from lading.commands.publish_execution import (
     _invoke as _invoke,
-)
-from lading.commands.publish_index_check import (
-    _format_cargo_failure_message,
-    _IndexMissingVersionHandling,
-)
-from lading.commands.publish_index_check import (
-    _handle_index_missing_version as _raw_handle_index_missing_version,
 )
 from lading.commands.publish_manifest import PublishPreparationError
 from lading.commands.publish_sccache import SccacheSession, create_session
@@ -44,6 +32,7 @@ from lading.commands.publish_staging import (
 if typ.TYPE_CHECKING:
     from pathlib import Path
 
+    from lading.commands.publish_archive_check import ArchiveVerifier
     from lading.commands.publish_execution import _TimedCargoResult
     from lading.commands.publish_plan import PublishPlan
     from lading.runtime import CommandRunner
@@ -61,6 +50,15 @@ class _PublishExecutionOptions:
     allow_unpublished_workspace_deps: bool = False
     sccache_stats: bool = False
     sccache_stats_json: Path | None = None
+    # Set when expected digests are given. It rides with the flags because
+    # `--locked` follows from it: a digest only means something against a
+    # fixed lockfile, so both cargo commands then refuse to update the lock.
+    verifier: ArchiveVerifier | None = None
+
+    @property
+    def is_locked(self) -> bool:
+        """Whether cargo must be told not to update ``Cargo.lock``."""
+        return self.verifier is not None
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -76,27 +74,6 @@ class _PublicationPipelineState:
     def position(self, crate: WorkspaceCrate) -> str:
         """Return the crate's ``n/total`` position in publish order."""
         return f"{self.plan.publishable.index(crate) + 1}/{len(self.plan.publishable)}"
-
-
-def _handle_index_missing_version(
-    failure: CargoIndexLookupFailure,
-    *,
-    plan: PublishPlan,
-    options: _PublishExecutionOptions,
-) -> None:
-    """Delegate using the phase-appropriate error class."""
-    error_cls = (
-        PublishError if failure.subcommand == "publish" else PublishPreflightError
-    )
-    _raw_handle_index_missing_version(
-        failure,
-        handling=_IndexMissingVersionHandling(
-            plan=plan,
-            options=options,
-            logger=LOGGER,
-        ),
-        error_cls=error_cls,
-    )
 
 
 class _CrateAction(typ.Protocol):
@@ -132,51 +109,69 @@ def _package_publishable_crates(
     _for_each_publishable_crate(state, runner=runner, action=_package_crate)
 
 
+def _cargo_flags(options: _PublishExecutionOptions) -> tuple[str, ...]:
+    """Return the flags ``cargo package`` and ``cargo publish`` share."""
+    return (
+        *(("--allow-dirty",) if options.allow_dirty else ()),
+        # With digests, a digest only means something against a fixed lockfile
+        # and a fixed registry. `--registry crates-io` stops Cargo's own
+        # configuration (`[registry] default`) from sending the upload, or the
+        # dependency resolution, anywhere lading cannot compare against.
+        *(("--locked", "--registry", "crates-io") if options.is_locked else ()),
+    )
+
+
+def _run_recorded_cargo(
+    invocation: _CargoInvocation,
+    state: _PublicationPipelineState,
+    *,
+    runner: CommandRunner,
+) -> _TimedCargoResult:
+    """Run one timed cargo invocation and record it with the sccache session."""
+    result = _run_timed_cargo(invocation, runner=runner, clock=state.clock)
+    if state.sccache is not None:
+        state.sccache.record(
+            invocation.crate_name, invocation.subcommand, result.elapsed_seconds
+        )
+    return result
+
+
 def _package_crate(
     crate: WorkspaceCrate,
     state: _PublicationPipelineState,
     *,
     runner: CommandRunner,
 ) -> None:
-    """Package one publishable crate using the staged workspace."""
+    """Package one publishable crate using the staged workspace.
+
+    Under ``--expect-digests`` a version already on crates.io is compared first
+    and, when identical, not packaged at all: its published bytes are what
+    matter, whatever a local build would produce.
+    """
     plan = state.plan
     options = state.options
-    package_args: tuple[str, ...] = ("--allow-dirty",) if options.allow_dirty else ()
+    if options.verifier is not None and options.verifier.settle_published(crate):
+        return
+    package_args = _cargo_flags(options)
     crate_root = _resolve_staged_crate_root(crate, plan, state.preparation.staging_root)
     position = state.position(crate)
     LOGGER.info("Running cargo package for crate %s (%s)", crate.name, position)
-    result = _run_timed_cargo(
+    result = _run_recorded_cargo(
         _CargoInvocation(("cargo", "package", *package_args), crate_root, crate.name),
+        state,
         runner=runner,
-        clock=state.clock,
     )
-    if state.sccache is not None:
-        state.sccache.record(crate.name, "package", result.elapsed_seconds)
-    if result.exit_code == 0:
-        LOGGER.info(
-            "Successfully packaged crate %s (%s) in %.1fs",
-            crate.name,
-            position,
-            result.elapsed_seconds,
-        )
+    if result.exit_code != 0:
+        publish_failures._handle_package_failure(crate, result, state=state)
         return
-    lookup_failure = parse_index_lookup_failure(
-        crate_name=crate.name,
-        subcommand="package",
-        result=CargoSubprocessResult(
-            exit_code=result.exit_code,
-            stdout=result.stdout,
-            stderr=result.stderr,
-        ),
+    LOGGER.info(
+        "Successfully packaged crate %s (%s) in %.1fs",
+        crate.name,
+        position,
+        result.elapsed_seconds,
     )
-    if lookup_failure is not None:
-        _handle_index_missing_version(lookup_failure, plan=plan, options=options)
-        return
-    message = _format_cargo_failure_message(
-        "package", crate.name, result.exit_code, result.streams
-    )
-    LOGGER.error(message)
-    raise PublishPreflightError(message)
+    if options.verifier is not None:
+        options.verifier.check_archive(crate, crate_root, PACKAGED)
 
 
 def _publish_crates(
@@ -197,28 +192,23 @@ def _publish_crate(
     """Publish one crate from the staged workspace."""
     plan = state.plan
     options = state.options
-    publish_args: list[str] = []
-    if options.allow_dirty:
-        publish_args.append("--allow-dirty")
-    if not options.live:
-        publish_args.append("--dry-run")
-    publish_args_tuple = tuple(publish_args)
+    publish_args = (*_cargo_flags(options), *(() if options.live else ("--dry-run",)))
     crate_root = _resolve_staged_crate_root(crate, plan, state.preparation.staging_root)
+    if options.verifier is not None and options.verifier.is_already_published(crate):
+        # Found identical on crates.io before packaging: nothing to upload, so
+        # a rerun of an interrupted release resumes safely.
+        return
     LOGGER.info(
         "Running cargo publish%s for crate %s (%s)",
         "" if options.live else " --dry-run",
         crate.name,
         state.position(crate),
     )
-    result = _run_timed_cargo(
-        _CargoInvocation(
-            ("cargo", "publish", *publish_args_tuple), crate_root, crate.name
-        ),
+    result = _run_recorded_cargo(
+        _CargoInvocation(("cargo", "publish", *publish_args), crate_root, crate.name),
+        state,
         runner=runner,
-        clock=state.clock,
     )
-    if state.sccache is not None:
-        state.sccache.record(crate.name, "publish", result.elapsed_seconds)
     _handle_publish_result(crate, result, state=state)
 
 
@@ -229,51 +219,29 @@ def _handle_publish_result(
     state: _PublicationPipelineState,
 ) -> None:
     """Handle a completed ``cargo publish`` invocation."""
-    plan = state.plan
     options = state.options
-    exit_code, stdout, stderr = result.exit_code, result.stdout, result.stderr
-    if exit_code == 0:
-        success_message = (
-            "Successfully published crate %s (%s) in %.1fs"
-            if options.live
-            else "Dry-run publish succeeded for crate %s (%s) in %.1fs"
-        )
-        LOGGER.info(
-            success_message, crate.name, state.position(crate), result.elapsed_seconds
-        )
+    if result.exit_code != 0:
+        publish_failures._handle_publish_failure(crate, result, state=state)
         return
-    cargo_result = CargoSubprocessResult(
-        exit_code=exit_code,
-        stdout=stdout,
-        stderr=stderr,
+    success_message = (
+        "Successfully published crate %s (%s) in %.1fs"
+        if options.live
+        else "Dry-run publish succeeded for crate %s (%s) in %.1fs"
     )
-    already_published_failure: CargoAlreadyPublishedFailure | None = (
-        parse_already_published_failure(cargo_result)
+    LOGGER.info(
+        success_message, crate.name, state.position(crate), result.elapsed_seconds
     )
-    if already_published_failure is not None:
-        LOGGER.warning(
-            "Crate %s @ %s is already published; skipping",
-            crate.name,
-            crate.version,
+    if options.verifier is not None:
+        # `cargo publish` packages again, live or not. A live difference cannot
+        # be undone, so it fails the run loudly; a dry-run one is refused
+        # before the real upload is attempted.
+        options.verifier.check_archive(
+            crate,
+            _resolve_staged_crate_root(
+                crate, state.plan, state.preparation.staging_root
+            ),
+            UPLOADED if options.live else DRY_RUN_PUBLISH,
         )
-        return
-    lookup_failure = parse_index_lookup_failure(
-        crate_name=crate.name,
-        subcommand="publish",
-        result=cargo_result,
-    )
-    if lookup_failure is not None:
-        # cargo publish --dry-run packages internally and hits the same
-        # crates.io index lookup as cargo package, so honour the override
-        # consistently across both phases.
-        _handle_index_missing_version(lookup_failure, plan=plan, options=options)
-        return
-
-    message = _format_cargo_failure_message(
-        "publish", crate.name, exit_code, (stdout, stderr)
-    )
-    LOGGER.error(message)
-    raise PublishError(message)
 
 
 def _execute_live_publication_pipeline(
@@ -295,6 +263,9 @@ def _execute_live_publication_pipeline(
             LOGGER.exception(*_live_pipeline_abort_log_args(crate, completed, plan))
             raise PublishPreflightError(str(exc)) from exc
         except PublishPreflightError:
+            # Includes every PublishError subclass, so an archive check that
+            # fails (unavailable, conflict, uploaded mismatch) logs the abort
+            # context too.
             LOGGER.exception(*_live_pipeline_abort_log_args(crate, completed, plan))
             raise
         LOGGER.info("Live pipeline: completed crate %s", crate.name)

@@ -74,6 +74,10 @@ branch, recording the plan, progress, decisions, and retrospective for a change.
   before mutation][adr-012] - accepted policy for canonical-root lexical
   checks, component-wise confinement, read-only `--no-deps` discovery, and
   prepare-then-commit.
+- [ADR-013: Verify archives against caller-supplied digests before
+  upload][adr-013] - accepted design for `lading publish --expect-digests`:
+  validation before staging, three comparison points, locked builds, and the
+  crates.io-only scope.
 
 ## Reference documents
 
@@ -110,5 +114,6 @@ branch, recording the plan, progress, decisions, and retrospective for a change.
 [adr-010]: adrs/adr-0010-adopt-nose-duplication-gate.md
 [adr-011]: adrs/adr-0011-cyclopts-4-cli-result-and-diagnostic-boundary.md
 [adr-012]: adrs/adr-0012-confine-bump-write-targets.md
+[adr-013]: adrs/adr-0013-verify-archives-against-expected-digests.md
 [execplan-regenerate-lockfiles]: execplans/regenerate-lockfiles.md
 [execplan-issue-370]: execplans/issue-370-bump-documentation-pass-skips-workspace-dependencies-and-target-specific-dependency-tables.md

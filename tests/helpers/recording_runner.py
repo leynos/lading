@@ -139,4 +139,4 @@ class RecordingCommandRunner:
         """
         from lading import cli
 
-        monkeypatch.setattr(cli, "_select_runner", lambda: self)
+        monkeypatch.setattr(cli, "_select_runner", lambda *_args, **_kwargs: self)

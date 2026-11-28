@@ -768,6 +768,213 @@ The instrumentation never fails a run. When `RUSTC_WRAPPER` is unset or does
 not name an `sccache` binary, or an sccache query fails part-way through,
 `lading publish` logs a WARNING, stops querying, and carries on.
 
+#### Checking archives against recorded digests
+
+`cargo publish` packages a crate again and uploads the result, so nothing ties
+the uploaded bytes to archives checked earlier. A release workflow that
+packages in a job with no registry credential, records each archive's SHA-256,
+and publishes from a second job that holds one can narrow that gap with
+`--expect-digests`, which checks the packaged archive before publication and
+detects a difference in the archive `cargo publish` uploads only after the
+upload, when it cannot be undone:
+
+```bash
+lading publish --live --expect-digests digests.txt
+```
+
+`digests.txt` is `sha256sum` output: one
+`<64 hex digits>  <name>-<version>.crate` entry per line, with two spaces
+between the digest and the name. Blank lines are ignored; hex digits may be
+either case.
+
+```plaintext
+3f4a0c9e5b7d1a2866c1e0b9d5a47f3c2e8b6a1d09f7c4e2b5a3d8c1f6e0a9b4  wireframe-0.4.0.crate
+a1b2c3d4e5f60718293a4b5c6d7e8f9001122334455667788990aabbccddeeff  wireframe_testing-0.4.0.crate
+```
+
+A relative path resolves against the workspace root. Lading reads and validates
+the file before it runs the pre-flight, stages the workspace, packages, or
+uploads anything, and refuses to continue when:
+
+- the file cannot be read, or a line is malformed, or a name appears twice;
+- a publishable crate in the plan has no entry for its
+  `<name>-<version>.crate`;
+- an entry names an archive that is not one of the plan's, including a crate
+  excluded by `publish.exclude`, or another version of a planned crate.
+
+With the option set, lading then checks each crate's archive at four points and
+records an outcome for it:
+
+1. **Before packaging, when the version is already on crates.io.** Lading
+   downloads the published archive from `static.crates.io` and compares it. An
+   identical archive means a previous run of the same release got this far, so
+   lading logs that the identical archive is already published and skips the
+   crate. A different archive fails the run as a conflict, naming both digests;
+   a published version cannot be replaced, so the remedy is a new version.
+   Either way neither `cargo package` nor `cargo publish` runs for that crate,
+   so the published bytes decide whatever a local build would produce, and a
+   rerun of an interrupted release resumes safely. A dry run looks the version
+   up once, before packaging, and skips both of that crate's dry-run steps.
+2. **After `cargo package`.** The archive Cargo wrote in the staged workspace is
+   hashed and compared. A difference stops the run before `cargo publish` runs
+   for that crate or any crate after it, and the error names the crate, the
+   expected digest, and the actual digest. In a dry run the same check applies
+   to every archive that is packaged.
+3. **After a successful `cargo publish`.** `cargo publish` packages the crate
+   again and writes the archive it uses to the target directory's `package`
+   folder, and lading compares that file too. After a live publish the upload
+   cannot be undone, so a difference is reported as an error saying the
+   uploaded bytes differ from the expectation, which makes the run fail loudly.
+   After `cargo publish --dry-run` a difference is a mismatch, reported before
+   any live upload is attempted.
+4. **Dry runs that cannot package.** When `--allow-unpublished-workspace-deps`
+   downgrades a failed `cargo package` to a warning because a sibling version
+   is not yet published, there is no archive to compare. That crate is reported
+   as unverified, never as verified.
+5. **Archives that cannot be reached.** When the archive Cargo wrote cannot be
+   located or read, when the crates.io lookup gives up after its retries, or
+   when Cargo reports a version as published that crates.io does not serve, the
+   crate is recorded as unavailable and the run stops. Lading cannot tell
+   whether that crate is safe, so it never guesses.
+
+Each crate's outcome (`verified`, `already published and identical`, `conflict`,
+`mismatch`, `unverified`, or `unavailable`) is logged as it is decided,
+counted under [`publish.archive_check`](#publisharchive_check), and listed in
+the publish summary:
+
+```plaintext
+Archive checks against /work/digests.txt:
+- wireframe 0.4.0: already published and identical (skipping cargo publish)
+- wireframe_testing 0.4.0: verified (uploaded archive matches)
+```
+
+Lading locates the archive by asking `cargo metadata` for the staged
+workspace's target directory, so `CARGO_TARGET_DIR` and Cargo configuration are
+honoured rather than assuming `target/`. It also passes `--locked` to both
+`cargo package` and `cargo publish`, because a digest only means something
+against a fixed lockfile: a lockfile that no longer matches the manifests now
+fails the run instead of being updated in the staged tree. Without
+`--expect-digests`, neither flag is passed and behaviour is unchanged.
+
+Only crates.io is supported, because the comparison in step 1 downloads from
+it. Lading refuses `--expect-digests` early, with a clear error and before it
+stages anything, when the effective default registry is not `crates-io`. It
+follows Cargo's own order to find it: `CARGO_REGISTRY_DEFAULT`, then
+`[registry] default` in `.cargo/config.toml` (or the legacy `.cargo/config`) in
+the directory Cargo runs in and each ancestor, nearest first, then
+`config.toml` in `$CARGO_HOME` (default `~/.cargo`). Publication runs from each
+crate's own directory, so the search starts from the workspace root and from
+every publishable crate's root, and a member's own `.cargo/config.toml` counts.
+The same check runs again from the staged workspace and each staged crate root
+after staging and before anything is packaged, because their parent directories
+differ from the checkout's. Where a directory holds both `.cargo/config` and
+`.cargo/config.toml`, Cargo reads only the extensionless `config`, and so does
+lading. It also refuses when a publishable crate's `publish` key lists
+registries without `crates-io`. A configuration file that exists but cannot be
+read is an error, not a guess. As defence in depth, lading also passes
+`--registry crates-io` to both `cargo package` and `cargo publish`, so nothing
+it failed to see can send the upload elsewhere.
+
+Workspace discovery runs `cargo metadata --locked` for the same reason as the
+`--locked` flags above, so a stale `Cargo.lock` stops the run before anything
+else happens rather than being updated first.
+
+The digests describe archives built from one commit. A package built in a
+checkout and one built by lading in its staged copy normally agree, but lading
+does not promise it: if they differ, the run stops at the first crate with the
+mismatch error rather than uploading either. `--keep-staging` retains lading's
+own archive under the staged workspace's target directory for comparison.
+
+With `--expect-digests`, lading always hides the exact values of
+`CARGO_REGISTRY_TOKEN` and `CARGO_REGISTRIES_<NAME>_TOKEN` from everything it
+relays from a subprocess to the console, every log record and error lading
+prints (a filter on the log handlers and the error printer catch what a
+specific formatter missed), the command line and the debug environment log it
+writes, the spawn errors it raises, the failure messages it builds from
+captured output, the arguments quoted in a failed auxiliary pre-flight
+command's error, and the output of the workspace discovery a programmatic
+caller triggers. What lading parses, such as `cargo metadata` JSON, is captured
+exactly as written and never altered. Without `--expect-digests` none of this
+applies and lading behaves as before, even with a token in its environment. The
+values come from lading's environment, from the same variables in a pre-flight
+`env_overrides` entry, and from the `registry.token` and
+`registries.<name>.token` keys of `$CARGO_HOME/credentials.toml` (or the legacy
+`credentials`). A relative `CARGO_HOME` is resolved as Cargo resolves it, from
+each command's own working directory, so lading reads the credentials file each
+command will use just before running it. When a command's own environment sets
+`HOME` but not `CARGO_HOME`, as a pre-flight `env` override can, its file is
+read from `$HOME/.cargo` on Unix, as Cargo itself does. If the pre-flight
+builds, a build script, or Cargo print one, it appears as `<redacted>` on the
+console, in the logs, and in error messages. If a value could be confused with
+that placeholder, such as a named-registry token that is just `redacted`,
+lading uses a placeholder built from a character no value contains, such as
+`<********>`, instead. An unreadable credentials file adds no values and logs a
+warning that does not quote it.
+
+The limits are plain. Only those exact values are replaced, not patterns, so a
+credential that reaches the output in a changed form, such as encoded, is not
+caught. Credentials that an external Cargo credential provider supplies never
+pass through lading, so lading cannot know them and cannot redact them. A
+programmatic caller of `publish.run` must pass
+`PublishOptions.cargo_environment` (lading refuses to run with digests without
+it), and its default runner then hides the same values.
+
+A workflow that records digests in one job and publishes in another:
+
+```yaml
+jobs:
+  package:
+    runs-on: ubuntu-latest   # no registry credential
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo package --locked --workspace
+      - run: |
+          cd target/package
+          sha256sum *.crate > ../../digests.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: digests
+          path: digests.txt
+
+  publish:
+    needs: package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write         # lets the job request an OIDC token
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/download-artifact@v4
+        with:
+          name: digests
+      # Installed before the token exists, so nothing it installs sees it.
+      - run: python -m pip install lading
+      # Exchanges the OIDC token for a short-lived crates.io token. The crate
+      # must have a Trusted Publishing configuration for this workflow.
+      - uses: rust-lang/crates-io-auth-action@v1
+        id: auth
+      # The token reaches this step, and only this step.
+      - run: lading publish --live --expect-digests digests.txt
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+```
+
+The `publish` job is the only one that holds a credential. Lading checks the
+`cargo package` archive against what the `package` job recorded before
+publishing it (in a dry run, the archive `cargo publish --dry-run` packages as
+well), and skips a version whose identical archive is already on crates.io. It
+cannot check the archive `cargo publish` packages again for the real upload
+until that upload has happened: a difference introduced then is detected only
+after the upload, when it cannot be undone. The token is exchanged after lading
+is installed and is exposed to the `lading publish` step alone, but that step
+still runs the pre-flight builds and Cargo's verification build with the token
+in their environment; `--skip-preflight` removes the first of these. The
+packaging commands are an illustration, and the action tags should be pinned to
+commit hashes in a real workflow: use whatever produces the archives your
+release uploads.
+
 #### Dry-run limitations with unpublished workspace dependencies
 
 `cargo package` validates dependency versions against the live crates.io index,
@@ -1240,6 +1447,36 @@ sibling workspace dependency is downgraded to a warning because
 - `subcommand` — the Cargo subcommand that failed (`package` or `publish`).
 - `missing_crate` — the name of the workspace dependency absent from the index.
 
+#### `publish.archive_check`
+
+Incremented once for each archive outcome decided under `--expect-digests`.
+Labels:
+
+- `outcome` — `verified`, `already_published`, `conflict`, `mismatch`,
+  `unverified`, or `unavailable` (the archive could not be located, read, or
+  fetched from crates.io). A crate that is packaged, found already published,
+  and so skipped counts as `verified` and then `already_published`; a crate
+  that is uploaded counts as `verified` at packaging and again after the upload.
+
+#### `publish.archive_fetch`
+
+Incremented once for each attempt to download a published archive from
+crates.io under `--expect-digests`, so the sum over its labels is the number of
+attempts. Labels:
+
+- `result` — `succeeded` (the archive was downloaded and hashed),
+  `not_published` (crates.io has no such version), `retried` (the attempt
+  failed transiently and another follows), or `unavailable` (the final attempt
+  failed and the lookup gave up). The counter never carries a URL, crate name,
+  or error text.
+
+A retry also logs a warning naming the attempt, the elapsed milliseconds, and
+the milliseconds of the 180-second budget left. A lookup that gives up logs one
+error line with the number of attempts, the elapsed milliseconds, and a failure
+category (`http_status`, `timeout`, `network`, `incomplete_body`,
+`budget_exhausted`, `oversized_response`, or `other`), and the crate's
+[`publish.archive_check`](#publisharchive_check) outcome is `unavailable`.
+
 ### `[preflight]`
 
 - `skip`: boolean, default `false`. Skip the pre-flight auxiliary builds,
@@ -1285,6 +1522,17 @@ the duration of the command.
 supplies the default for the flag, which lets a CI workflow skip the repeat
 without editing the command line it invokes. See
 [Skipping a pre-flight the caller has already run](#skipping-a-pre-flight-the-caller-has-already-run).
+
+### `--expect-digests`
+
+`lading publish --expect-digests PATH` checks each archive's SHA-256 against the
+`sha256sum`-format file at `PATH`: a packaged archive that differs is refused
+before publication, and a difference in the archive `cargo publish` uploads is
+detected only after the upload. It passes `--locked` to `cargo package` and
+`cargo publish`, compares an already-published version with the file instead of
+silently skipping it, and supports crates.io only. A relative `PATH` resolves
+against the workspace root. See
+[Checking archives against recorded digests](#checking-archives-against-recorded-digests).
 
 ### `--sccache-stats` and `--sccache-stats-json`
 

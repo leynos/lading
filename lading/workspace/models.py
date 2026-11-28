@@ -65,6 +65,9 @@ class WorkspaceCrate(msgspec.Struct, frozen=True, kw_only=True):
     publish: bool
     readme_is_workspace: bool
     dependencies: tuple[WorkspaceDependency, ...]
+    # The registries the manifest's ``publish`` key names, or ``None`` when it
+    # does not restrict them (absent, or a boolean).
+    registries: tuple[str, ...] | None = None
 
 
 class WorkspaceGraph(msgspec.Struct, frozen=True, kw_only=True):

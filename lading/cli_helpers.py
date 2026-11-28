@@ -20,6 +20,7 @@ from .cli_options import (
     WORKSPACE_ROOT_REQUIRED_MESSAGE,
 )
 from .commands.publish_skip import SkipPreflightDecision, SkipPreflightSource
+from .utils.log_redaction import protect_handler
 
 # Keep the established log channel: operators and tests filter on it.
 LOGGER = logging.getLogger("lading.cli")
@@ -271,6 +272,7 @@ def _configure_logging(stream: typ.TextIO | None = None) -> None:
         handler = logging.StreamHandler(stream)
         handler.name = _LADING_HANDLER_NAME
         root_logger.addHandler(handler)
+        protect_handler(handler)
     else:
         handler = existing_handler
     if stream is not None and isinstance(handler, logging.StreamHandler):

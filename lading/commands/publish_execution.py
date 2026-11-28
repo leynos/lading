@@ -22,6 +22,7 @@ from pathlib import Path
 
 from lading.commands.publish_errors import PublishPreflightError
 from lading.runtime import CommandSpawnError
+from lading.runtime.redacting_runner import redacting_runner
 from lading.runtime.subprocess_runner import (
     subprocess_runner as _default_subprocess_runner,
 )
@@ -29,6 +30,7 @@ from lading.utils import metrics
 
 if typ.TYPE_CHECKING:
     from lading.runtime import CommandRunner
+    from lading.utils.secret_scope import SecretScope
 
 # Duration of each per-crate cargo invocation, labelled by ``subcommand``
 # (``package`` or ``publish``) and ``crate``. One observation per invocation,
@@ -42,6 +44,27 @@ def _publish_error(message: str) -> PublishPreflightError:
     return PublishPreflightError(message)
 
 
+def _map_errors(runner: CommandRunner) -> CommandRunner:
+    """Wrap ``runner`` so argument and spawn failures become publish errors."""
+
+    def invoke(
+        command: cabc.Sequence[str],
+        *,
+        cwd: Path | None = None,
+        env: cabc.Mapping[str, str] | None = None,
+        echo_stdout: bool = True,
+    ) -> tuple[int, str, str]:
+        """Execute ``command`` and return the exit status and decoded streams."""
+        try:
+            return runner(command, cwd=cwd, env=env, echo_stdout=echo_stdout)
+        except ValueError as exc:
+            raise _publish_error(str(exc)) from exc
+        except CommandSpawnError as exc:
+            raise _publish_error(str(exc)) from exc
+
+    return invoke
+
+
 def _invoke(
     command: cabc.Sequence[str],
     *,
@@ -50,14 +73,28 @@ def _invoke(
     echo_stdout: bool = True,
 ) -> tuple[int, str, str]:
     """Execute ``command`` and return the exit status and decoded streams."""
-    try:
-        return _default_subprocess_runner(
-            command, cwd=cwd, env=env, echo_stdout=echo_stdout
-        )
-    except ValueError as exc:
-        raise _publish_error(str(exc)) from exc
-    except CommandSpawnError as exc:
-        raise _publish_error(str(exc)) from exc
+    return _map_errors(_default_subprocess_runner)(
+        command, cwd=cwd, env=env, echo_stdout=echo_stdout
+    )
+
+
+def redacting_invoke(
+    scope: SecretScope, *, cargo_home: Path | None = None
+) -> CommandRunner:
+    """Return the default publish runner with ``scope``'s secrets hidden.
+
+    Returns
+    -------
+    CommandRunner
+        Behaves like :func:`_invoke`, with the same error mapping. The
+        scope's secrets (and registry tokens a call brings) are hidden from
+        what it relays to the console and logs. The captured stdout and
+        stderr it returns are raw, exactly as the child wrote them, because
+        lading parses them; a message built from them must go through the
+        active redaction helpers (:meth:`SecretScope.redact` or
+        :func:`lading.utils.secret_scope.redact_active`) before it is shown.
+    """
+    return _map_errors(redacting_runner(scope, cargo_home=cargo_home))
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -128,4 +165,5 @@ __all__ = [
     "_TimedCargoResult",
     "_invoke",
     "_run_timed_cargo",
+    "redacting_invoke",
 ]

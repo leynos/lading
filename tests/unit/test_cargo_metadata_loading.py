@@ -253,6 +253,8 @@ def test_load_workspace_invokes_metadata(
 
     def _fake_load_cargo_metadata(
         workspace_root: Path | str | None = None,
+        *,
+        query: object = None,
     ) -> dict[str, typ.Any]:
         """Return the canned metadata payload, ignoring the workspace root."""
         return metadata

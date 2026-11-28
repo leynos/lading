@@ -3,6 +3,8 @@
 import re
 from pathlib import Path
 
+from lading.utils.secret_scope import redact_active
+
 _STDERR_PATTERN = re.compile(r"(/[^\s)]+\.stderr)")
 
 
@@ -74,7 +76,9 @@ def _append_compiletest_diagnostics(
     lines = [message, "Compiletest stderr artefacts:"]
     for artefact in artefacts:
         lines.extend(_format_artefact_diagnostics(artefact, tail_lines))
-    return "\n".join(lines)
+    # Artefact paths and file tails come from the filesystem, not from a runner,
+    # so they are redacted here as well.
+    return redact_active("\n".join(lines))
 
 
 __all__ = [

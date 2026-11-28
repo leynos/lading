@@ -17,10 +17,10 @@ across the CLI adapter and the command module.
 """
 
 import collections.abc as cabc
-import importlib
 import os
 import typing as typ
 from contextlib import AbstractContextManager, nullcontext
+from functools import partial
 from pathlib import Path
 
 from cyclopts import Parameter
@@ -31,6 +31,7 @@ from .cli_app import create_app
 from .cli_entrypoint import _dispatch_and_print as _dispatch_and_print
 from .cli_entrypoint import _dispatch_with_diagnostics as _dispatch_with_diagnostics
 from .cli_entrypoint import main as main
+from .cli_environment import hidden_environment
 from .cli_helpers import _LADING_HANDLER_NAME as _LADING_HANDLER_NAME
 from .cli_helpers import LOG_LEVEL_ENV_VAR as LOG_LEVEL_ENV_VAR
 from .cli_helpers import _configure_logging as _configure_logging
@@ -61,6 +62,9 @@ from .cli_options import (
     DryRunFlag as DryRunFlag,
 )
 from .cli_options import (
+    ExpectDigestsOption as ExpectDigestsOption,
+)
+from .cli_options import (
     ForbidDirtyFlag as ForbidDirtyFlag,
 )
 from .cli_options import (
@@ -84,10 +88,13 @@ from .cli_options import (
 from .cli_options import (
     WorkspaceRootOption as WorkspaceRootOption,
 )
+from .cli_runner import _CMD_MOX_STUB_ENV as _CMD_MOX_STUB_ENV
+from .cli_runner import _select_runner as _select_runner
 from .commands import publish_staging as publish_staging
-from .runtime import CommandRunner, subprocess_runner
+from .runtime import subprocess_runner as subprocess_runner
 from .utils import normalize_workspace_root
 from .utils.confinement import BumpPreflightError as BumpPreflightError
+from .utils.secret_scope import use_secrets
 from .workspace import (
     WorkspaceGraph,
     load_bump_workspace,
@@ -98,31 +105,17 @@ from .workspace import (
 )
 from .workspace import metadata as metadata_module
 
-_CMD_MOX_STUB_ENV = "LADING_USE_CMD_MOX_STUB"
-_CMD_MOX_TRUTHY_VALUES = frozenset({"1", "true", "yes", "on"})
+if typ.TYPE_CHECKING:
+    from .commands.publish_cargo_config import CargoEnvironment
+    from .runtime import CommandRunner
+    from .utils.secret_scope import SecretScope
+
 
 # ``python -m lading.cli`` executes this module a second time as ``__main__``
 # after ``lading/__init__`` imported it. Registering the command decorators on
 # the shared application twice raises a collision, so the second execution
 # registers on a throwaway application; dispatch still uses the shared one.
 app = _shared_app if __name__ == "lading.cli" else create_app()
-
-
-def _select_runner() -> CommandRunner:
-    """Return the command runner selected for this CLI invocation."""
-    stub_value = os.environ.get(_CMD_MOX_STUB_ENV, "")
-    if stub_value.lower() in _CMD_MOX_TRUTHY_VALUES:
-        try:
-            module = importlib.import_module("lading.testing.cmd_mox_runner")
-        except ModuleNotFoundError as exc:
-            message = (
-                f"{_CMD_MOX_STUB_ENV} is set, but the cmd-mox test runner "
-                "could not be imported. Install the test dependencies or unset "
-                f"{_CMD_MOX_STUB_ENV}."
-            )
-            raise SystemExit(message) from exc
-        return typ.cast("CommandRunner", module.cmd_mox_runner)
-    return subprocess_runner
 
 
 type WorkspaceLoader = cabc.Callable[[Path], WorkspaceGraph]
@@ -135,8 +128,8 @@ def _run_with_context(
         str,
     ],
     *,
-    command_runner: CommandRunner | None = None,
     workspace_loader: WorkspaceLoader | None = None,
+    environment: CargoEnvironment | None = None,
 ) -> str:
     """Execute ``runner`` with configuration and workspace data.
 
@@ -146,30 +139,60 @@ def _run_with_context(
         Canonical workspace root.
     runner : cabc.Callable[[Path, LadingConfig, WorkspaceGraph, CommandRunner], str]
         Command body invoked with the loaded configuration and workspace.
-    command_runner : CommandRunner | None
-        Explicit runner; ``None`` selects the CLI runner.
     workspace_loader : WorkspaceLoader | None
         Workspace discovery function. ``None`` uses :func:`load_workspace`;
         bump passes the confined, read-only loader.
+    environment : CargoEnvironment | None
+        Given only for a digest-checked publish, which both makes the default
+        discovery run ``cargo metadata --locked`` (so a stale lockfile fails
+        rather than being updated before the publish begins) and always hides
+        ``environment.secrets``.
 
     Returns
     -------
     str
         The command's rendered summary.
     """
-    active_runner = command_runner or _select_runner()
-    configuration_scope: AbstractContextManager[object] = nullcontext()
+    home = None if environment is None else environment.cargo_home
+    hidden: AbstractContextManager[SecretScope | None] = (
+        nullcontext() if environment is None else use_secrets(environment.secrets)
+    )
+    # Only a digest-checked publish locks discovery; every other command keeps
+    # the plain loader exactly as before.
+    loader = workspace_loader or (
+        load_workspace if environment is None else partial(load_workspace, locked=True)
+    )
+    # Entered before the configuration is loaded: a configuration error can
+    # quote `lading.toml`, which may hold a token, and leaving the scope
+    # sanitizes it.
+    with hidden as scope:
+        # The runner is given the open scope, which it extends with the tokens
+        # each command brings, so they stay hidden from later messages.
+        active_runner = _select_runner(scope, cargo_home=home)
+        configuration, configuration_scope = _command_configuration(workspace_root)
+        with configuration_scope, metadata_module.use_command_runner(active_runner):
+            workspace_model = loader(workspace_root)
+            return runner(workspace_root, configuration, workspace_model, active_runner)
+
+
+def _command_configuration(
+    workspace_root: Path,
+) -> tuple[config.LadingConfig, AbstractContextManager[object]]:
+    """Return the active configuration and the scope that installs it.
+
+    An already-active configuration needs no new scope; one loaded here must be
+    installed for the duration of the command.
+
+    Returns
+    -------
+    tuple[config.LadingConfig, AbstractContextManager[object]]
+        The configuration, and a no-op or the scope that installs it.
+    """
     try:
-        configuration = config.current_configuration()
+        return config.current_configuration(), nullcontext()
     except config.ConfigurationNotLoadedError:
-        # Freshly loaded configuration must be installed for the duration of
-        # the command; an already-active configuration needs no new scope.
         configuration = config.load_configuration(workspace_root)
-        configuration_scope = config.use_configuration(configuration)
-    loader = load_workspace if workspace_loader is None else workspace_loader
-    with configuration_scope, metadata_module.use_command_runner(active_runner):
-        workspace_model = loader(workspace_root)
-        return runner(workspace_root, configuration, workspace_model, active_runner)
+        return configuration, config.use_configuration(configuration)
 
 
 @app.command
@@ -301,7 +324,9 @@ def publish(
         measurement, resolved by the publish command), and
         ``--keep-staging``, which retains the staged workspace copy and logs
         where it was left. The copy is removed when the publish ends unless
-        that flag is given (issue #269).
+        that flag is given (issue #269). ``--expect-digests PATH`` names a
+        ``sha256sum``-format file; every archive is then checked against it
+        before upload, and cargo runs with ``--locked`` (issue #419).
 
     Returns
     -------
@@ -316,19 +341,26 @@ def publish(
     True
     """
     resolved = normalize_workspace_root(workspace_root)
+    is_checked = flags.expect_digests is not None
+    # Resolved only when digests are expected, so an ordinary publish neither
+    # reads Cargo's credentials file nor changes behaviour.
+    environment = hidden_environment(os.environ) if is_checked else None
     return _run_with_context(
         resolved,
         lambda root, configuration, workspace, command_runner: commands.publish.run(
             root,
             configuration,
             workspace,
-            options=_publish_options(flags, command_runner),
+            options=_publish_options(flags, command_runner, environment),
         ),
+        environment=environment,
     )
 
 
 def _publish_options(
-    flags: PublishFlags, command_runner: CommandRunner
+    flags: PublishFlags,
+    command_runner: CommandRunner,
+    environment: CargoEnvironment | None = None,
 ) -> commands.publish.PublishOptions:
     """Translate the CLI flag bundle into the publish command's options."""
     return commands.publish.PublishOptions(
@@ -351,6 +383,10 @@ def _publish_options(
         # --keep-staging is the negative of the option it sets: retaining the
         # staged copy is the exception, so the flag names the exception.
         cleanup=not flags.keep_staging,
+        expect_digests=flags.expect_digests,
+        # Read here, at the composition root, so the publish command stays
+        # free of ambient state. Only an expectation run consults it.
+        cargo_environment=environment,
         command_runner=command_runner,
     )
 

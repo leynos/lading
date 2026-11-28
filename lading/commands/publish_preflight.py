@@ -48,6 +48,8 @@ from lading.commands.publish_lockfile_preflight import _validate_lockfile_freshn
 from lading.commands.publish_skip import SkipPreflightDecision, resolve_skip_preflight
 from lading.utils import metrics
 from lading.utils.process import append_detail, command_detail, with_detail
+from lading.utils.redaction import ordered_secrets, redact_text, registry_token_values
+from lading.utils.secret_scope import use_secrets
 
 if typ.TYPE_CHECKING:
     from lading.commands.lockfile_repository import LockfileInspectionRepository
@@ -78,24 +80,48 @@ def _build_preflight_environment(
     return env
 
 
+@dc.dataclass(frozen=True, slots=True)
+class _AuxBuildContext:
+    """How auxiliary builds run, and which values must stay out of their errors."""
+
+    runner: CommandRunner
+    env: cabc.Mapping[str, str] | None
+    secrets: tuple[str, ...] = ()
+
+    def hidden(self) -> tuple[str, ...]:
+        """Return the known secrets plus registry tokens in ``env``, longest first."""
+        return ordered_secrets((*self.secrets, *registry_token_values(self.env or {})))
+
+
 def _run_aux_build_commands(
     workspace_root: Path,
     commands: tuple[tuple[str, ...], ...],
     *,
-    runner: CommandRunner,
-    env: cabc.Mapping[str, str] | None,
+    context: _AuxBuildContext,
 ) -> None:
-    """Execute auxiliary build commands prior to cargo pre-flight runs."""
+    """Execute auxiliary build commands prior to cargo pre-flight runs.
+
+    A failed command's own arguments appear in the error and the log, so both
+    are scrubbed of known secrets before either is emitted.
+
+    Raises
+    ------
+    PublishPreflightError
+        If an auxiliary command exits non-zero.
+    """
     for command in commands:
-        exit_code, stdout, stderr = runner(command, cwd=workspace_root, env=env)
+        exit_code, stdout, stderr = context.runner(
+            command, cwd=workspace_root, env=context.env
+        )
         if exit_code != 0:
-            rendered = " ".join(command)
-            message = with_detail(
+            hidden = context.hidden()
+            rendered = redact_text(" ".join(command), hidden)
+            message = append_detail(
                 f"Auxiliary build command failed with exit code {exit_code}: "
                 f"{rendered}",
-                stdout,
-                stderr,
+                command_detail(stdout, stderr, secrets=hidden),
                 separator="; ",
+                secrets=hidden,
             )
             LOGGER.error(message)
             raise PublishPreflightError(message)
@@ -232,6 +258,9 @@ class PreflightRequest:
         Optional explicit decision, with its provenance, about skipping the
         auxiliary builds and the cargo check/test pair. When ``None`` the
         ``[preflight] skip`` setting decides.
+    secrets:
+        Known secret values to keep out of failure messages that quote a
+        command's arguments.
 
     Examples
     --------
@@ -245,9 +274,26 @@ class PreflightRequest:
     runner: CommandRunner | None = None
     clock: cabc.Callable[[], float] = time.perf_counter
     skip: SkipPreflightDecision | None = None
+    secrets: tuple[str, ...] | None = None
 
 
-def _run_preflight_checks(
+def _run_preflight_checks(workspace_root: Path, request: PreflightRequest) -> None:
+    """Run the pre-flight, hiding known and override-supplied registry tokens.
+
+    With ``request.secrets`` set (a digest-checked run), messages built from
+    captured output also hide any registry token the pre-flight's own
+    environment overrides carry. See :func:`_run_checks` for the checks.
+    """
+    if request.secrets is None:
+        _run_checks(workspace_root, request)
+        return
+    overrides = request.configuration.preflight.env_overrides
+    hidden = (*request.secrets, *registry_token_values(dict(overrides)))
+    with use_secrets(hidden):
+        _run_checks(workspace_root, request)
+
+
+def _run_checks(
     workspace_root: Path,
     request: PreflightRequest,
 ) -> None:
@@ -296,8 +342,7 @@ def _run_preflight_checks(
         _run_aux_build_commands(
             workspace_root,
             preflight_config.aux_build,
-            runner=command_runner,
-            env=base_env,
+            context=_AuxBuildContext(command_runner, base_env, request.secrets or ()),
         )
         _validate_lockfile_freshness(
             workspace_root,

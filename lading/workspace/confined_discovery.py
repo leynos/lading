@@ -37,7 +37,7 @@ from lading.workspace.implicit_members import (
     validate_implicit_member_manifests,
 )
 from lading.workspace.member_declarations import expand_member_patterns
-from lading.workspace.metadata import load_cargo_metadata
+from lading.workspace.metadata import MetadataQuery, load_cargo_metadata
 from lading.workspace.metadata_validation import validate_reported_member_manifests
 
 if typ.TYPE_CHECKING:  # pragma: no cover - import-time typing aids only
@@ -96,7 +96,9 @@ def load_bump_workspace(
     members, excludes = _read_workspace_tables(root)
     declared = expand_member_patterns(root, members, excludes)
     validate_implicit_member_manifests(root, declared, _literal_exclusions(excludes))
-    metadata = load_cargo_metadata(root, runner=runner, no_deps=True)
+    metadata = load_cargo_metadata(
+        root, runner=runner, query=MetadataQuery(no_deps=True)
+    )
     _require_cargo_workspace_root(root, metadata)
     reported = validate_reported_member_manifests(root, metadata)
     _cross_check_declared_members(declared, reported)

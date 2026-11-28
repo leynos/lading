@@ -34,6 +34,8 @@ from lading.workspace.models import (
 
 def load_workspace(
     workspace_root: Path | str | None = None,
+    *,
+    locked: bool = False,
 ) -> WorkspaceGraph:
     """Return a :class:`WorkspaceGraph` constructed from ``cargo metadata``.
 
@@ -41,6 +43,9 @@ def load_workspace(
     ----------
     workspace_root : Path | str | None
         Directory to run ``cargo metadata`` in; ``None`` uses cargo's default.
+    locked : bool
+        Whether discovery runs ``cargo metadata --locked``, so a stale
+        ``Cargo.lock`` fails rather than being updated.
 
     Returns
     -------
@@ -72,9 +77,9 @@ def load_workspace(
     >>> graph.crates  # doctest: +SKIP
     (...)
     """  # ruff: ignore[docstring-extraneous-exception]  # propagated from load_cargo_metadata/build_workspace_graph
-    from lading.workspace.metadata import load_cargo_metadata
+    from lading.workspace.metadata import MetadataQuery, load_cargo_metadata
 
-    metadata = load_cargo_metadata(workspace_root)
+    metadata = load_cargo_metadata(workspace_root, query=MetadataQuery(locked=locked))
     return build_workspace_graph(metadata)
 
 
@@ -178,6 +183,7 @@ def _build_crate(
         publish=publish,
         readme_is_workspace=readme_is_workspace,
         dependencies=dependencies,
+        registries=_coerce_publish_registries(package.get("publish")),
     )
 
 
@@ -383,6 +389,15 @@ def _coerce_publish_setting(value: object, package_id: str) -> bool:
         f"publish setting for package {package_id!r} must be false, a list, or null"
     )
     raise WorkspaceModelError(message)
+
+
+def _coerce_publish_registries(value: object) -> tuple[str, ...] | None:
+    """Return the registry names a ``publish`` list holds, else ``None``."""
+    if isinstance(value, str | bytes | bytearray) or not isinstance(
+        value, cabc.Sequence
+    ):
+        return None
+    return tuple(item for item in value if isinstance(item, str))
 
 
 def _extract_readme_workspace_flag(package_table: object) -> bool:

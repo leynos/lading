@@ -647,6 +647,12 @@ reason = "Import preamble only: both modules use os, pathlib and collections.abc
 [[tool.duplication_gate.allow]]
 members = ["lading/commands/bump_manifest_rewrite_filesystem.py::_is_existing_literal_candidate", "scripts/format_markdown.py::_present"]
 reason = "Keep the manifest resolver and PEP 723 formatter presence probes separate: callers preserve distinct domain errors, and importing application utilities would couple the standalone formatter to the lading package."
+[[tool.duplication_gate.allow]]
+members = ["lading/commands/publish_failures.py", "lading/commands/bump_pipeline.py"]
+reason = "Type-checking import blocks, each listing the types that module alone needs in the conventional grouped order. The publish failure handlers and the bump pipeline share no behaviour; merging their blocks would create a shared typing module that couples publish and bump, which is the cross-layer coupling these blocks exist to avoid."
+[[tool.duplication_gate.allow]]
+members = ["lading/commands/publish_pipeline.py", "lading/commands/bump_prepare_manifest_rewrites.py"]
+reason = "Type-checking import blocks only: each lists the pathlib, workspace and command types that module alone annotates with, in the conventional grouped order. The publish pipeline and the bump manifest-rewrite preparation share no behaviour; a shared typing module would couple publish and bump, the cross-layer coupling these blocks avoid."
 [tool.df12_skylos]
 roots = ["lading"]
 python = "3.14"
@@ -708,6 +714,66 @@ full_name = [
     "lading.commands.publish_staging._handle_termination.frame",
 ]
 reason = "signal.signal invokes this handler with the interrupted frame; the parameter is required by the handler protocol and explicitly discarded."
+
+[[tool.skylos.dead_code.entrypoints]]
+type = "method"
+full_name = [
+    "lading.commands.publish_archive_check.ArchiveVerifier.check_archive",
+    "lading.commands.publish_archive_check.ArchiveVerifier.is_already_published",
+    "lading.commands.publish_archive_check.ArchiveVerifier.outcome_of",
+    "lading.commands.publish_archive_check.ArchiveVerifier.mark_unverified",
+    "lading.commands.publish_archive_check.ArchiveVerifier.fetch_published_digest",
+    "lading.commands.publish_archive_check.ArchiveVerifier.settle_published",
+    "lading.commands.publish_archive_check.ArchiveVerifier.confirm_already_published",
+    "lading.commands.publish_archive_check.ArchiveVerifier._record",
+    "lading.commands.publish_archive_check.ArchiveVerifier._digest_archive",
+    "lading.commands.publish_digests.ExpectedDigests.digest_for_filename",
+    "lading.commands.publish_digests.ExpectedDigests.digest_for",
+]
+reason = "publish_pipeline and publish.run call these through the optional `_PublishExecutionOptions.verifier` attribute, which the dead-code scan does not resolve to the class."
+
+[[tool.skylos.dead_code.entrypoints]]
+type = "method"
+full_name = [
+    "lading.commands.publish_archive_check._Comparison.describe",
+]
+reason = "The verifier's check_archive and settle_published format their mismatch messages with it."
+
+[[tool.skylos.dead_code.entrypoints]]
+type = "class"
+full_name = [
+    "lading.commands.publish_errors.ArchiveUnavailableError",
+    "lading.commands.publish_archive_check._Comparison",
+]
+reason = "The verifier and the target locator raise ArchiveUnavailableError when an archive cannot be located or compared, and the verifier builds a _Comparison for every digest check; the dead-code scan does not resolve either through the verifier's entry-point methods."
+
+[[tool.skylos.dead_code.entrypoints]]
+type = "method"
+full_name = [
+    "lading.utils.redaction.SecretRedactor.flush",
+]
+reason = "relay_decoded flushes the held-back tail through its optional redactor at end of stream, which the dead-code scan does not resolve."
+
+[[tool.skylos.dead_code.entrypoints]]
+type = "method"
+full_name = [
+    "lading.commands.publish_registry._Retry.wait_for_next",
+]
+reason = "fetch_crates_io_digest decides each retry through it; the dead-code scan does not resolve the call on the constructed value."
+
+[[tool.skylos.dead_code.entrypoints]]
+type = "method"
+full_name = [
+    "lading.commands.publish_archive_outcomes.LoggingObserver.outcome_decided",
+]
+reason = "The verifier announces each outcome through the ArchiveObserver port; the dead-code scan does not resolve the call on the injected observer."
+
+[[tool.skylos.dead_code.entrypoints]]
+type = "method"
+full_name = [
+    "lading.utils.log_redaction._Switchable.is_disabled",
+]
+reason = "_unwrapped reaches both through the _Hook protocol when it skips switched-off wrappers at removal."
 
 [tool.setuptools.packages.find]
 include = [

@@ -11,20 +11,31 @@ per-crate execution to :mod:`lading.commands.publish_pipeline`; the latter uses
 import dataclasses as dc
 import logging
 import typing as typ
+from contextlib import nullcontext
+from functools import partial
 from pathlib import Path
 
 from lading import config as config_module
-from lading.commands import publish_pipeline, publish_preflight, publish_staging
-from lading.commands.publish_errors import PublishPreflightError
+from lading.commands import (
+    publish_digest_run,
+    publish_pipeline,
+    publish_preflight,
+    publish_registry,
+    publish_staging,
+)
+from lading.commands.publish_errors import ExpectedDigestsError, PublishPreflightError
 from lading.commands.publish_manifest import _apply_strip_patch_strategy
+from lading.commands.publish_plan import PublishPlan, format_plan, plan_publication
 from lading.commands.publish_plan import PublishPlanError as PublishPlanError
-from lading.commands.publish_plan import format_plan, plan_publication
 from lading.utils.path import normalize_workspace_root
+from lading.workspace import metadata as metadata_module
 
 if typ.TYPE_CHECKING:
+    from lading.commands.publish_archive_check import ArchiveVerifier
+    from lading.commands.publish_cargo_config import CargoEnvironment
     from lading.commands.publish_skip import SkipPreflightDecision
-    from lading.config import LadingConfig
     from lading.runtime import CommandRunner
+    from lading.utils.secret_scope import SecretScope
     from lading.workspace import WorkspaceGraph
 
 LOGGER = logging.getLogger(__name__)
@@ -67,6 +78,20 @@ class PublishOptions:
         Optional explicit decision, with its provenance, about skipping the
         preflight auxiliary builds and the cargo check/test pair. When
         ``None``, the ``[preflight] skip`` setting decides.
+    expect_digests : Path | None
+        Optional ``sha256sum``-format file of expected archive digests
+        (``--expect-digests``). A relative path resolves against the workspace
+        root. When set, every archive is checked against it before upload,
+        ``--locked`` is passed to cargo, and the run is limited to crates.io.
+    cargo_environment : CargoEnvironment | None
+        The Cargo environment resolved by the caller: ``CARGO_REGISTRY_DEFAULT``,
+        Cargo's home directory, and the registry token values to hide from
+        subprocess output. Required with ``expect_digests``, which refuses to
+        run when it is missing rather than guess from less information;
+        ``publish.run`` never reads the ambient environment itself.
+    published_digest_fetcher : PublishedDigestFetcher | None
+        Optional replacement for the crates.io archive download, so tests
+        never reach the network. Only used with ``expect_digests``.
     """
 
     allow_dirty: bool = True
@@ -74,18 +99,21 @@ class PublishOptions:
     build_directory: Path | None = None
     preserve_symlinks: bool = True
     cleanup: bool = True
-    configuration: LadingConfig | None = None
+    configuration: config_module.LadingConfig | None = None
     workspace: WorkspaceGraph | None = None
     command_runner: CommandRunner | None = None
     allow_unpublished_workspace_deps: bool = False
     sccache_stats: bool = False
     sccache_stats_json: Path | None = None
     skip_preflight: SkipPreflightDecision | None = None
+    expect_digests: Path | None = None
+    cargo_environment: CargoEnvironment | None = None
+    published_digest_fetcher: publish_registry.PublishedDigestFetcher | None = None
 
 
 def _ensure_configuration(
-    configuration: LadingConfig | None, workspace_root: Path
-) -> LadingConfig:
+    configuration: config_module.LadingConfig | None, workspace_root: Path
+) -> config_module.LadingConfig:
     """Return the active configuration, loading it from disk when required."""
     if configuration is not None:
         return configuration
@@ -96,15 +124,24 @@ def _ensure_configuration(
 
 
 def _ensure_workspace(
-    workspace: WorkspaceGraph | None, workspace_root: Path
+    workspace: WorkspaceGraph | None, workspace_root: Path, *, locked: bool = False
 ) -> WorkspaceGraph:
-    """Return the workspace graph rooted at ``workspace_root``."""
+    """Return the workspace graph rooted at ``workspace_root``.
+
+    ``locked`` makes discovery fail on a stale lockfile rather than update it.
+
+    Returns
+    -------
+    WorkspaceGraph
+        ``workspace`` when given, otherwise the discovered graph.
+    """
     if workspace is not None:
         return workspace
     from lading.workspace import WorkspaceModelError, load_workspace
 
+    discover = partial(load_workspace, locked=True) if locked else load_workspace
     try:
-        return load_workspace(workspace_root)
+        return discover(workspace_root)
     except FileNotFoundError as exc:  # pragma: no cover - defensive
         message = f"Workspace root not found: {workspace_root}"
         raise WorkspaceModelError(message) from exc
@@ -120,6 +157,14 @@ def _validate_publication_options(options: PublishOptions) -> None:
         )
         LOGGER.error(message)
         raise PublishPreflightError(message)
+    if options.expect_digests is not None and options.cargo_environment is None:
+        message = (
+            "--expect-digests needs the Cargo environment resolved by the "
+            "caller: pass PublishOptions.cargo_environment (the command line "
+            "does this). Lading does not read the ambient environment here, and "
+            "guessing could miss an alternate default registry."
+        )
+        raise ExpectedDigestsError(message)
     if options.allow_unpublished_workspace_deps:
         LOGGER.info(
             "Allowing unpublished workspace dependencies during dry-run publish"
@@ -128,7 +173,7 @@ def _validate_publication_options(options: PublishOptions) -> None:
 
 def _preflight_request(
     options: PublishOptions,
-    configuration: LadingConfig,
+    configuration: config_module.LadingConfig,
     runner: CommandRunner,
 ) -> publish_preflight.PreflightRequest:
     """Bundle the pre-flight inputs this publish run was configured with."""
@@ -137,12 +182,109 @@ def _preflight_request(
         configuration=configuration,
         runner=runner,
         skip=options.skip_preflight,
+        # `None` leaves the pre-flight exactly as it was without digests.
+        secrets=None
+        if options.expect_digests is None or options.cargo_environment is None
+        else options.cargo_environment.secrets,
     )
+
+
+def _execution_options(
+    options: PublishOptions, verifier: ArchiveVerifier | None
+) -> publish_pipeline._PublishExecutionOptions:
+    """Translate the public options into the pipeline's execution flags."""
+    return publish_pipeline._PublishExecutionOptions(
+        live=options.live,
+        allow_dirty=options.allow_dirty,
+        allow_unpublished_workspace_deps=options.allow_unpublished_workspace_deps,
+        sccache_stats=options.sccache_stats,
+        sccache_stats_json=options.sccache_stats_json,
+        verifier=verifier,
+    )
+
+
+def _render_summary(
+    plan_message: str,
+    staged: publish_staging.StagedWorkspace,
+    verifier: ArchiveVerifier | None,
+) -> str:
+    """Join the plan, staging fate, and archive checks into the run summary.
+
+    Called after the staging block ends, not inside it: the removal happens as
+    the block exits and can fail, so asking about it from within would report
+    a tree as gone whenever `shutil.rmtree` raised.
+
+    Returns
+    -------
+    str
+        The plan, then the staging summary, then any archive-check lines.
+    """
+    lines = publish_staging._format_preparation_summary(
+        staged.preparation, retained=staged.retained
+    )
+    if verifier is not None:
+        lines = (*lines, "", *publish_digest_run.archive_summary(verifier))
+    return f"{plan_message}\n\n" + "\n".join(lines)
+
+
+@dc.dataclass(frozen=True, slots=True)
+class _Planning:
+    """What it takes to plan publication, so it can be done at either point."""
+
+    workspace: WorkspaceGraph | None
+    configuration: config_module.LadingConfig
+    workspace_root: Path
+    # Discovery must not update Cargo.lock when digests are expected.
+    locked: bool = False
+    # Runs workspace discovery when this plan has to discover it, so metadata
+    # output passes through the same redaction as every other command.
+    runner: CommandRunner | None = None
+
+    def plan(self) -> PublishPlan:
+        """Plan publication for the workspace (discovering it when needed)."""
+        scope = (
+            nullcontext()
+            if self.runner is None
+            else metadata_module.use_command_runner(self.runner)
+        )
+        with scope:
+            workspace = _ensure_workspace(
+                self.workspace, self.workspace_root, locked=self.locked
+            )
+        return plan_publication(
+            workspace, self.configuration, workspace_root=self.workspace_root
+        )
+
+
+def _dispatch_reporting(
+    plan: PublishPlan,
+    preparation: publish_staging.PublishPreparation,
+    options: publish_pipeline._PublishExecutionOptions,
+    runner: CommandRunner,
+) -> None:
+    """Dispatch publication, logging the archive checks if it fails.
+
+    A failed run returns no summary, so the outcomes decided before the
+    failure would otherwise be visible only as scattered log lines. The
+    boundary is :class:`PublishPreflightError`, which every archive-check
+    failure, :class:`~lading.commands.publish_errors.PublishError` subclasses
+    included, derives from.
+    """
+    try:
+        publish_pipeline._dispatch_publication(
+            plan, preparation, options=options, runner=runner
+        )
+    except PublishPreflightError:
+        if options.verifier is not None:
+            LOGGER.exception(
+                "\n".join(publish_digest_run.archive_summary(options.verifier))
+            )
+        raise
 
 
 def run(
     workspace_root: Path,
-    configuration: LadingConfig | None = None,
+    configuration: config_module.LadingConfig | None = None,
     workspace: WorkspaceGraph | None = None,
     *,
     options: PublishOptions | None = None,
@@ -167,48 +309,74 @@ def run(
     str
         Human-readable publication plan and staged-workspace summary.
     """
+    given = PublishOptions() if options is None else options
+    # The explicit arguments win over the options' own fields.
+    effective_options = dc.replace(
+        given,
+        configuration=configuration or given.configuration,
+        workspace=workspace or given.workspace,
+    )
+    # Opened before anything is logged or validated: the start log, the option
+    # checks and every error leaving this function are inside the scope.
+    with publish_digest_run.hidden_secrets(effective_options) as scope:
+        return _publish(workspace_root, effective_options, scope)
+
+
+def _publish(
+    workspace_root: Path,
+    effective_options: PublishOptions,
+    scope: SecretScope | None,
+) -> str:
+    """Plan, stage, and execute publication; see :func:`run`.
+
+    ``scope`` is the digest run's open secret scope, which its runners extend.
+
+    Returns
+    -------
+    str
+        Human-readable publication plan and staged-workspace summary.
+    """
     root_path = normalize_workspace_root(workspace_root)
     LOGGER.info("Starting publish workflow for workspace %s", root_path)
-    effective_options = PublishOptions() if options is None else options
     _validate_publication_options(effective_options)
     active_configuration = _ensure_configuration(
-        configuration or effective_options.configuration, root_path
+        effective_options.configuration, root_path
     )
-    command_runner = effective_options.command_runner or publish_pipeline._invoke
+    command_runner = publish_digest_run.command_runner(effective_options, scope)
+    planning = _Planning(
+        effective_options.workspace,
+        active_configuration,
+        root_path,
+        locked=effective_options.expect_digests is not None,
+        runner=publish_digest_run.discovery_runner(effective_options, scope),
+    )
+    # With digests, the plan is needed to validate them, and that must happen
+    # before the pre-flight, whose auxiliary builds can package crates.
+    plan, verifier = publish_digest_run.digest_checks(
+        effective_options, planning.plan, command_runner, root_path
+    )
     publish_preflight._run_preflight_checks(
         root_path,
         _preflight_request(effective_options, active_configuration, command_runner),
     )
-    active_workspace = _ensure_workspace(
-        workspace or effective_options.workspace, root_path
-    )
-    plan = plan_publication(
-        active_workspace, active_configuration, workspace_root=root_path
-    )
+    plan = plan or planning.plan()
     # The staged tree lives no longer than this block: a publish that raises
     # or is interrupted must not leave its copy of the workspace behind.
     with publish_staging.staged_workspace(plan, options=effective_options) as staged:
         _apply_strip_patch_strategy(
             staged.staging_root, plan, active_configuration.publish.strip_patches
         )
-        execution_options = publish_pipeline._PublishExecutionOptions(
-            live=effective_options.live,
-            allow_dirty=effective_options.allow_dirty,
-            allow_unpublished_workspace_deps=effective_options.allow_unpublished_workspace_deps,
-            sccache_stats=effective_options.sccache_stats,
-            sccache_stats_json=effective_options.sccache_stats_json,
+        publish_digest_run.refuse_staged_defaults(
+            plan, staged.staging_root, effective_options
         )
-        publish_pipeline._dispatch_publication(
-            plan, staged.preparation, options=execution_options, runner=command_runner
+        _dispatch_reporting(
+            plan,
+            staged.preparation,
+            _execution_options(effective_options, verifier),
+            command_runner,
         )
         plan_message = format_plan(
             plan, strip_patches=active_configuration.publish.strip_patches
         )
-    # Summarised after the block, not inside it. The removal happens as the
-    # block exits, and a removal can fail: asking `effective_options.cleanup`
-    # from within would report a tree as gone whenever `shutil.rmtree` raised.
-    summary_lines = publish_staging._format_preparation_summary(
-        staged.preparation, retained=staged.retained
-    )
     LOGGER.info("Publish workflow completed successfully for workspace %s", root_path)
-    return f"{plan_message}\n\n" + "\n".join(summary_lines)
+    return _render_summary(plan_message, staged, verifier)
