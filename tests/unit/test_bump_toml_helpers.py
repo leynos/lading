@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 from tomlkit import parse as parse_toml
 
-from lading.commands import bump_toml
+from lading.commands import bump_toml, bump_toml_dependencies
 
 
 def test_select_table_returns_nested_table() -> None:
@@ -215,3 +215,90 @@ def test_assign_version_still_inserts_a_missing_version() -> None:
     assert table["version"] == "2.0.0", (
         "manifest assignment must write the target version"
     )
+
+
+def test_update_dependency_table_matches_keys_only() -> None:
+    """``update_dependency_table`` ignores a ``package`` field rename.
+
+    The documentation pass resolves aliases before calling this helper, so the
+    shared helper must stay an exact-key operation for manifest callers.
+    """
+    document = parse_toml(
+        "[dependencies]\n"
+        'alias = { package = "alpha", version = "1.0.0" }\n'
+        'alpha = { package = "unrelated", version = "3.0.0" }\n'
+    )
+    table = bump_toml.select_table(document, ("dependencies",))
+    assert table is not None, "the dependencies table must resolve"
+
+    changed = bump_toml_dependencies.update_dependency_table(table, {"alias"}, "2.0.0")
+
+    assert changed is True, "the exactly named key must be updated"
+    rendered = document.as_string()
+    assert 'alias = { package = "alpha", version = "2.0.0" }' in rendered, (
+        "the named key must receive the target version"
+    )
+    assert 'alpha = { package = "unrelated", version = "3.0.0" }' in rendered, (
+        "a differently keyed entry must be left untouched"
+    )
+
+
+def test_update_dependency_entry_mutates_dotted_proxy_entry() -> None:
+    """A dotted dependency entry is a proxy whose ``version`` is rewritten."""
+    document = parse_toml(
+        '[dependencies]\nalias.package = "alpha"\nalias.version = "1.0.0"\n'
+    )
+    table = document["dependencies"]
+
+    changed = bump_toml_dependencies.update_dependency_entry(
+        table, "alias", table["alias"], "2.0.0"
+    )
+
+    assert changed is True, "a dotted dependency entry must report a change"
+    rendered = document.as_string()
+    assert 'alias.version = "2.0.0"' in rendered, (
+        "the dotted version line must be rewritten in place"
+    )
+    assert 'alias.package = "alpha"' in rendered, (
+        "the dotted package line must be preserved"
+    )
+    assert 'alias.version = "1.0.0"' not in rendered, (
+        "the previous dotted version must not survive"
+    )
+
+
+@pytest.mark.parametrize(
+    ("snippet", "expected_changed"),
+    [
+        pytest.param(
+            '[dependencies]\nalias.package = "alpha"\nalias.version = "2.0.0"\n',
+            False,
+            id="already-current",
+        ),
+        pytest.param(
+            '[dependencies]\nalias.package = "alpha"\n',
+            False,
+            id="missing-version",
+        ),
+        pytest.param(
+            '[dependencies]\nalias.package = "alpha"\nalias.version = 1\n',
+            False,
+            id="non-string-version",
+        ),
+    ],
+)
+def test_update_dependency_entry_dotted_no_op_rules(
+    snippet: str, *, expected_changed: bool
+) -> None:
+    """A dotted entry follows the same no-op rules as other entry shapes."""
+    document = parse_toml(snippet)
+    table = document["dependencies"]
+
+    changed = bump_toml_dependencies.update_dependency_entry(
+        table, "alias", table["alias"], "2.0.0"
+    )
+
+    assert changed is expected_changed, (
+        "the dotted entry must report a change only when a string version differs"
+    )
+    assert document.as_string() == snippet, "a no-op must leave the snippet verbatim"

@@ -12,6 +12,7 @@ import typing as typ
 from contextlib import suppress
 
 from tomlkit import string
+from tomlkit.container import OutOfOrderTableProxy
 from tomlkit.items import InlineTable, Item, Table
 
 from lading.commands.bump_toml import TableLike, select_table, value_as_string
@@ -113,15 +114,17 @@ def prepare_version_replacement(
 
 
 def assign_dependency_version_field(
-    container: InlineTable | Table,
+    container: TableLike,
     target_version: str,
 ) -> bool:
     """Update the ``version`` key of ``container`` if present.
 
     Parameters
     ----------
-    container : InlineTable | Table
-        The dependency table whose ``version`` key is updated in place.
+    container : TableLike
+        The dependency table whose ``version`` key is updated in place. An
+        :class:`~tomlkit.container.OutOfOrderTableProxy` covers dependencies
+        written with dotted keys (``alias.package`` and ``alias.version``).
     target_version : str
         The target version to apply.
 
@@ -164,6 +167,8 @@ def update_dependency_entry(
         The dependency name identifying the entry within ``container``.
     entry : object
         The current entry value, either a nested table or a scalar requirement.
+        Dotted keys (``alias.package`` and ``alias.version``) present the entry
+        as an :class:`~tomlkit.container.OutOfOrderTableProxy`.
     target_version : str
         The target version to apply.
 
@@ -181,7 +186,7 @@ def update_dependency_entry(
     >>> table["alpha"]
     '2.0.0'
     """
-    if isinstance(entry, InlineTable | Table):
+    if isinstance(entry, InlineTable | Table | OutOfOrderTableProxy):
         return assign_dependency_version_field(entry, target_version)
     replacement = prepare_version_replacement(entry, target_version)
     if replacement is None:

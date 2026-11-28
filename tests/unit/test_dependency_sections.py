@@ -5,6 +5,9 @@ Issue #103: the section names live once in
 mapping in ``bump`` and the snippet rewriting in ``bump_docs`` must stay in
 agreement with it.
 
+Issue #369: a documented dependency is identified by its ``package`` field
+when present and by its key otherwise, matching the manifest pass.
+
 Issue #370: the documentation pass must reach the same dependency locations as
 the manifest pass, so the property below also generates ``[workspace.*]`` and
 ``[target.<spec>.*]`` tables.
@@ -14,7 +17,8 @@ import collections.abc as cabc
 import typing as typ
 
 import hypothesis.strategies as st
-from hypothesis import given, settings
+import pytest
+from hypothesis import example, given, settings
 from tomlkit import parse as parse_toml
 
 from lading.commands import bump_docs, bump_manifests, bump_toml, bump_toml_dependencies
@@ -139,3 +143,248 @@ def test_multi_section_manifest_rewrite_snapshot(
     assert snapshot == document.as_string(), (
         "the rewritten manifest must match the recorded snapshot"
     )
+
+
+# Each case names the dependency header a fence carries and the exact text the
+# bump to 2.0.0 must produce. The header is the whole entry, so the expected
+# text differs only in the version it pins.
+_IDENTITY_CASES: typ.Final[tuple[tuple[str, str, str, bool], ...]] = (
+    (
+        "inline-alias",
+        '[dependencies]\nalias = { package = "alpha", version = "1.0.0" }\n',
+        '[dependencies]\nalias = { package = "alpha", version = "2.0.0" }\n',
+        True,
+    ),
+    (
+        "nested-table-alias",
+        '[dependencies.alias]\npackage = "alpha"\nversion = "1.0.0"\n',
+        '[dependencies.alias]\npackage = "alpha"\nversion = "2.0.0"\n',
+        True,
+    ),
+    (
+        "dotted-alias",
+        '[dependencies]\nalias.package = "alpha"\nalias.version = "1.0.0"\n',
+        '[dependencies]\nalias.package = "alpha"\nalias.version = "2.0.0"\n',
+        True,
+    ),
+    (
+        "key-collides-with-other-package",
+        '[dependencies]\nalpha = { package = "unrelated", version = "3.0.0" }\n',
+        '[dependencies]\nalpha = { package = "unrelated", version = "3.0.0" }\n',
+        False,
+    ),
+    (
+        "dotted-fields-interleaved",
+        (
+            '[dependencies]\nalias.package = "alpha"\n'
+            'other = "1.0.0"\n'
+            'alias.version = "1.0.0"\n'
+        ),
+        (
+            '[dependencies]\nalias.package = "alpha"\n'
+            'other = "1.0.0"\n'
+            'alias.version = "2.0.0"\n'
+        ),
+        True,
+    ),
+    (
+        "key-based-string",
+        '[dependencies]\nalpha = "1.0.0"\n',
+        '[dependencies]\nalpha = "2.0.0"\n',
+        True,
+    ),
+    (
+        "key-based-inline-table",
+        '[dependencies]\nalpha = { version = "1.0.0", features = ["default"] }\n',
+        '[dependencies]\nalpha = { version = "2.0.0", features = ["default"] }\n',
+        True,
+    ),
+    (
+        "key-matches-its-own-package",
+        '[dependencies]\nalpha = { package = "alpha", version = "1.0.0" }\n',
+        '[dependencies]\nalpha = { package = "alpha", version = "2.0.0" }\n',
+        True,
+    ),
+    (
+        "multiple-aliases",
+        (
+            '[dependencies]\nfirst = { package = "alpha", version = "1.0.0" }\n'
+            'second = { package = "alpha", version = "1.0.0" }\n'
+        ),
+        (
+            '[dependencies]\nfirst = { package = "alpha", version = "2.0.0" }\n'
+            'second = { package = "alpha", version = "2.0.0" }\n'
+        ),
+        True,
+    ),
+    (
+        "empty-package-is-unidentifiable",
+        '[dependencies]\nalias = { package = "", version = "1.0.0" }\n',
+        '[dependencies]\nalias = { package = "", version = "1.0.0" }\n',
+        False,
+    ),
+    (
+        "non-string-package-is-unidentifiable",
+        '[dependencies]\nalias = { package = 1, version = "1.0.0" }\n',
+        '[dependencies]\nalias = { package = 1, version = "1.0.0" }\n',
+        False,
+    ),
+    (
+        "empty-package-with-matching-key",
+        '[dependencies]\nalpha = { package = "", version = "1.0.0" }\n',
+        '[dependencies]\nalpha = { package = "", version = "1.0.0" }\n',
+        False,
+    ),
+    (
+        "non-string-package-with-matching-key",
+        '[dependencies]\nalpha = { package = 1, version = "1.0.0" }\n',
+        '[dependencies]\nalpha = { package = 1, version = "1.0.0" }\n',
+        False,
+    ),
+    (
+        "alias-already-current",
+        '[dependencies]\nalias = { package = "alpha", version = "2.0.0" }\n',
+        '[dependencies]\nalias = { package = "alpha", version = "2.0.0" }\n',
+        False,
+    ),
+    (
+        "inline-comment-preserved",
+        '[dependencies]\nalias = { package = "alpha", version = "1.0.0" }  # pinned\n',
+        '[dependencies]\nalias = { package = "alpha", version = "2.0.0" }  # pinned\n',
+        True,
+    ),
+    (
+        "dotted-comment-preserved",
+        '[dependencies]\nalias.package = "alpha"\nalias.version = "1.0.0"  # pinned\n',
+        '[dependencies]\nalias.package = "alpha"\nalias.version = "2.0.0"  # pinned\n',
+        True,
+    ),
+)
+
+
+@pytest.mark.parametrize(
+    ("test_id", "snippet", "expected", "expected_changed"),
+    _IDENTITY_CASES,
+    ids=[case[0] for case in _IDENTITY_CASES],
+)
+def test_dependency_identity_uses_package_then_key(
+    test_id: str,
+    snippet: str,
+    expected: str,
+    *,
+    expected_changed: bool,
+) -> None:
+    """A documented dependency is identified by ``package`` then by its key."""
+    document = parse_toml(snippet)
+
+    changed = bump_docs.update_toml_snippet_dependencies(document, ("alpha",), "2.0.0")
+
+    assert changed is expected_changed, (
+        f"{test_id}: the rewrite changed flag must be {expected_changed}"
+    )
+    assert document.as_string() == expected, (
+        f"{test_id}: the rewritten fence must match the expected text"
+    )
+
+
+def test_out_of_order_section_alias_is_updated() -> None:
+    """An out-of-order dependency section is traversed for aliases."""
+    snippet = (
+        '[dependencies.alias]\npackage = "alpha"\nversion = "1.0.0"\n'
+        "[other]\nx = 1\n"
+        '[dependencies.beta]\npackage = "beta"\nversion = "1.0.0"\n'
+    )
+    document = parse_toml(snippet)
+
+    changed = bump_docs.update_toml_snippet_dependencies(document, ("alpha",), "2.0.0")
+
+    assert changed, "the out-of-order section must yield the aliased entry"
+    rendered = document.as_string()
+    assert 'version = "2.0.0"' in rendered, "the aliased entry must reach the target"
+    assert 'package = "beta"' in rendered, "the unrelated entry must stay untouched"
+    assert rendered.count('version = "1.0.0"') == 1, (
+        "only the unrelated entry may keep its version"
+    )
+
+
+def test_decoy_section_alias_is_not_updated() -> None:
+    """Sections outside the canonical vocabulary are never rewritten."""
+    snippet = (
+        '[decoy-dependencies]\nalias = { package = "alpha", version = "1.0.0" }\n'
+        '[tooling]\nalias = { package = "alpha", version = "1.0.0" }\n'
+    )
+    document = parse_toml(snippet)
+
+    changed = bump_docs.update_toml_snippet_dependencies(document, ("alpha",), "2.0.0")
+
+    assert changed is False, "a decoy section must not report a change"
+    assert document.as_string() == snippet, "the decoy sections must stay verbatim"
+
+
+# TOML bare keys admit ASCII letters, digits, underscores, and dashes only.
+_IDENTITY_TEXT = st.text(
+    alphabet="abcdefghijklmnopqrstuvwxyz0123456789-_",
+    min_size=1,
+    max_size=8,
+)
+_PACKAGE_VALUE = st.one_of(
+    st.none(),
+    st.just(""),
+    st.integers(min_value=0, max_value=99),
+    _IDENTITY_TEXT,
+)
+
+
+def _render_package(package: str | int) -> str:
+    """Return ``package`` as the TOML value text for an inline table."""
+    return str(package) if isinstance(package, int) else f'"{package}"'
+
+
+@settings(max_examples=80)
+@given(
+    key=_IDENTITY_TEXT,
+    package=_PACKAGE_VALUE,
+    current=st.sampled_from(("1.0.0", "2.0.0")),
+)
+@example(key="alpha", package="", current="1.0.0")
+@example(key="alpha", package=3, current="1.0.0")
+@example(key="alias", package="alpha", current="1.0.0")
+@example(key="alpha", package=None, current="2.0.0")
+def test_dependency_identity_changes_only_when_selected(
+    key: str,
+    package: str | int | None,
+    current: str,
+) -> None:
+    """A fence entry changes exactly when its identity is the target.
+
+    The key is generated independently of the package value, so the property
+    exercises keys equal to the target, packages equal to the target, empty and
+    non-string package fields, and already-current versions. A key fallback for
+    an unusable package field fails the expected-identity calculation.
+    """
+    if package is None:
+        snippet = f'[dependencies]\n{key} = {{ version = "{current}" }}\n'
+        identity: str | None = key
+    else:
+        snippet = (
+            f"[dependencies]\n{key} = {{ package = {_render_package(package)}, "
+            f'version = "{current}" }}\n'
+        )
+        identity = package if isinstance(package, str) and package else None
+
+    document = parse_toml(snippet)
+    changed = bump_docs.update_toml_snippet_dependencies(document, ("alpha",), "2.0.0")
+
+    expected_changed = identity == "alpha" and current != "2.0.0"
+    assert changed is expected_changed, (
+        f"key={key!r} package={package!r} current={current!r} identity={identity!r}"
+    )
+    if expected_changed:
+        expected = snippet.replace(f'"{current}"', '"2.0.0"', 1)
+        assert document.as_string() == expected, (
+            "only the version value may change in a rewritten entry"
+        )
+    else:
+        assert document.as_string() == snippet, (
+            "an unselected or already-current entry must stay byte-identical"
+        )

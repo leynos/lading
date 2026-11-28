@@ -43,6 +43,32 @@ def test_an_unchanged_fence_is_copied_verbatim() -> None:
     )
 
 
+def test_a_documented_alias_and_a_colliding_key_are_distinguished() -> None:
+    """A fence alias is bumped while a key that renames another package is not.
+
+    This is the issue #369 reproducer: ``alias`` renames ``alpha`` and must
+    receive the target version, while ``alpha`` renames ``unrelated`` and must
+    keep its own version.
+    """
+    text = (
+        "```toml\n"
+        "[dependencies]\n"
+        'alias = { package = "alpha", version = "1.0.0" }\n'
+        'alpha = { package = "unrelated", version = "3.0.0" }\n'
+        "```\n"
+    )
+
+    updated, changed = bump_docs_fences.rewrite_markdown_toml_fences(
+        text, {"alpha"}, "2.0.0"
+    )
+
+    assert changed, "the documented alias must be rewritten"
+    expected = text.replace('version = "1.0.0"', 'version = "2.0.0"', 1)
+    assert updated == expected, (
+        "the alias must gain the target version and the collision must not"
+    )
+
+
 def test_a_changed_list_fence_keeps_the_list_marker() -> None:
     """A list item's fence keeps its marker and continuation indentation."""
     text = '- ```toml\n  [dependencies]\n  alpha = "0.1.0"\n  ```\n'

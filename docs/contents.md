@@ -43,6 +43,9 @@ branch, recording the plan, progress, decisions, and retrospective for a change.
   for rewriting `[workspace.*]` and `[target.<spec>.*]` dependency tables in
   documentation fences; the target tables are documentation-only, while the
   workspace tables match the manifest pass.
+- [Bump documentation dependency identity](execplans/issue-369-bump-documentation-pass-matches-dependency-keys-not-packages-so-renamed-dependencies-are-missed-or-misfire.md)
+  - delivered plan for identifying documented dependencies by their `package`
+  field rather than their key during a bump.
 
 ## Decision records
 

@@ -9,7 +9,7 @@ from tomlkit import items as tk_items
 from tomlkit import parse as parse_toml
 
 from lading import config as config_module
-from lading.commands import bump
+from lading.commands import bump, bump_manifests
 from lading.workspace import WorkspaceDependency, WorkspaceGraph
 from tests.helpers.cwd import chdir_for_test
 from tests.helpers.workspace_builders import (
@@ -212,6 +212,45 @@ def test_run_updates_renamed_internal_dependency_versions(
     )
     assert dependency_entry["package"].value == "alpha", (
         "aliased dependency should retain its 'package' rename"
+    )
+
+
+def test_render_manifest_updates_only_selected_dotted_dependency(
+    tmp_path: pathlib.Path,
+) -> None:
+    """Dotted manifest entries follow exact-key selection, not the package field.
+
+    The fixture separates the two rules in both directions. ``alpha-core`` is
+    selected only by its key because its ``package`` names an unrelated
+    package, while ``alpha`` is selected only by a ``package`` rule because its
+    key is not a target. A package-based selector would invert both outcomes.
+    """
+    manifest_path = tmp_path / "Cargo.toml"
+    manifest_path.write_text(
+        '[package]\nname = "demo"\nversion = "0.1.0"\n\n'
+        "[dependencies]\n"
+        'alpha-core.package = "unrelated"\n'
+        'alpha-core.version = "1.0.0"\n'
+        'alpha.package = "alpha-core"\n'
+        'alpha.version = "1.0.0"\n',
+        encoding="utf-8",
+    )
+
+    rendered = bump_manifests.render_manifest(
+        manifest_path,
+        (),
+        "2.0.0",
+        bump_manifests.ManifestRenderOptions(
+            dependency_sections={"dependencies": {"alpha-core"}}
+        ),
+    )
+
+    assert rendered is not None, "the selected dotted dependency must be rewritten"
+    assert 'alpha-core.version = "2.0.0"' in rendered, (
+        "the exactly named dotted dependency must reach the target version"
+    )
+    assert 'alpha.version = "1.0.0"' in rendered, (
+        "a key whose package names the target must stay untouched"
     )
 
 
