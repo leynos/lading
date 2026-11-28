@@ -251,6 +251,9 @@ def _open_and_hash(
             deadline.check()  # Connecting and reading headers used the budget too.
             return _hash_response(response, url=url, deadline=deadline)
     except urllib.error.HTTPError as error:
+        # The error owns the response, which `urlopen` raised before the `with`
+        # could close it; the status and headers stay readable once closed.
+        error.close()
         if error.code == http.HTTPStatus.NOT_FOUND:
             return None
         raise

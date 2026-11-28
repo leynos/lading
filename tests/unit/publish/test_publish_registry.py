@@ -4,6 +4,7 @@ import contextlib
 import http.client
 import io
 import typing as typ
+import urllib.error
 import urllib.request
 
 import pytest
@@ -83,6 +84,25 @@ def test_retries_are_bounded() -> None:
 
     assert len(script.requests) == 3, "every attempt must be made before giving up"
     assert len(script.sleeps) == 2, "no pause after the final attempt"
+
+
+def test_http_error_responses_are_closed_on_every_status_path() -> None:
+    """A 404, a retried 503 and a final 503 each close the body they own."""
+    bodies = [io.BytesIO(b"error page") for _ in range(4)]
+    not_found = Script(http_error(404, bodies[0]))
+    exhausted = Script(*(http_error(503, body) for body in bodies[1:]))
+
+    assert fetch_crates_io_digest("a", "1.0.0", transport=not_found.transport()) is (
+        None
+    ), "a 404 still means not published"
+    with pytest.raises(PublishedArchiveUnavailableError) as excinfo:
+        fetch_crates_io_digest("a", "1.0.0", transport=exhausted.transport())
+
+    assert all(body.closed for body in bodies), "every error response is closed"
+    cause = excinfo.value.__cause__
+    assert isinstance(cause, urllib.error.HTTPError), "the last error stays the cause"
+    assert cause.code == 503, "and keeps its status"
+    assert len(exhausted.requests) == 3, "a 503 is still retried"
 
 
 def test_permanent_failure_is_not_retried() -> None:

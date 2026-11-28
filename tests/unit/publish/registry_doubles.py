@@ -49,10 +49,10 @@ class Script:
         return self._steps.pop(0)
 
 
-def http_error(code: int) -> urllib.error.HTTPError:
-    """Return an HTTP error with status ``code``."""
+def http_error(code: int, body: io.BytesIO | None = None) -> urllib.error.HTTPError:
+    """Return an HTTP error with status ``code``, owning ``body`` if given."""
     return urllib.error.HTTPError(
-        "https://example.invalid", code, "x", email.message.Message(), None
+        "https://example.invalid", code, "x", email.message.Message(), body
     )
 
 
