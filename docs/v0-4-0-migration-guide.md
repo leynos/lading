@@ -12,9 +12,8 @@ published Python surface, `staged_workspace` and `prepare_workspace` gain a
 keyword-only `stage_exclude` parameter that defaults to `(".git",)`, so
 programmatic staging no longer copies `.git` unless the caller passes
 `stage_exclude=()`. An environment already running 3.14 that only reads
-successful output needs no
-action beyond the version bump itself, unless a published crate relies on the
-old Git-aware file selection; see
+successful output needs no action beyond the version bump itself, unless a
+published crate relies on the old Git-aware file selection; see
 [Publish staging exclusions](#publish-staging-exclusions).
 
 When 0.4.0 is released, its tagged build will also be published to PyPI as a

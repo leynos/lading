@@ -332,8 +332,6 @@ def test_publish_config_stage_exclude_rejects_invalid_patterns(
     )
 
 
-
-
 def test_bump_config_from_mapping_parses_lockfile_fields() -> None:
     """BumpConfig.from_mapping normalizes lockfile settings."""
     mapping = {

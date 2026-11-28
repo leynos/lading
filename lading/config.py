@@ -63,40 +63,6 @@ BUMP_TOML_KEYS: typ.Final[frozenset[str]] = frozenset({
 BUMP_DOCUMENTATION_TOML_KEYS: typ.Final[frozenset[str]] = frozenset({"globs"})
 
 
-import functools
-from lading import toml_coerce
-from lading.stage_exclude_policy import StageExcludeError, normalize_stage_exclude
-
-"""Configuration loading for the :mod:`lading` toolkit."""
-if typ.TYPE_CHECKING:  # pragma: no cover - type checking only
-    from pathlib import Path
-CONFIG_FILENAME = "lading.toml"
-<<<<<<< ours
-||||||| original
-StripPatchesSetting = typ.Literal["all", "per-crate"] | bool
-#: Paths staging omits when ``publish.stage_exclude`` is not configured.
-#: ``.git`` is large, and no packaging step reads the copy: Cargo only uses a
-#: checkout for provenance, which the published crate records as
-#: ``.cargo_vcs_info.json`` (issue #262). ``target`` is deliberately not
-#: excluded: some workspaces package artefacts from it.
-DEFAULT_STAGE_EXCLUDE: typ.Final[tuple[str, ...]] = (".git",)
-=======
-StripPatchesSetting = typ.Literal["all", "per-crate"] | bool
-#: Paths staging omits when ``publish.stage_exclude`` is not configured.
-#: ``.git`` is large, and no lading step reads the copy. Cargo does read a
-#: checkout, so omitting it changes file selection: without one, ``cargo
-#: package`` skips dot-named entries, ignores ``.gitignore``, and records no
-#: ``.cargo_vcs_info.json`` provenance (issue #262). ``target`` is deliberately
-#: not excluded: some workspaces package artefacts from it.
-DEFAULT_STAGE_EXCLUDE: typ.Final[tuple[str, ...]] = (".git",)
->>>>>>> theirs
-CONFIG_ROOT_TOML_KEYS: typ.Final[frozenset[str]] = frozenset({
-})
-BUMP_TOML_KEYS: typ.Final[frozenset[str]] = frozenset({
-})
-BUMP_DOCUMENTATION_TOML_KEYS: typ.Final[frozenset[str]] = frozenset({"globs"})
-
-
 @dc.dataclass(frozen=True, slots=True)
 class DocumentationConfig:
     """Configuration for documentation updates triggered by ``bump``."""
