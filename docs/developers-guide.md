@@ -1695,19 +1695,19 @@ and neither route may silently accept a pattern that can never match.
 configuration nor the command layer: `normalize_stage_exclude` strips one
 trailing slash from each pattern and rejects a bare string, blank,
 `!`-prefixed, absolute, backslash-separated, and `.`, `..` or empty-segment
-spellings. `lading.config._stage_exclude` translates its `StageExcludeError`
-into `ConfigurationError` for a bad file, and `_stage` applies it before the
-temporary directory exists, translating it into `PublishPreparationError` and
-logging the normalized tuple. `match_stage_exclude` therefore only ever sees
-relative, normalized paths.
+spellings. `lading.config_publish_preflight._stage_exclude` translates its
+`StageExcludeError` into `ConfigurationError` for a bad file, and `_stage`
+applies it before the temporary directory exists, translating it into
+`PublishPreparationError` and logging the normalized tuple.
+`match_stage_exclude` therefore only ever sees relative, normalized paths.
 
 `_stage` copies the workspace and returns the result; it records no telemetry.
 `_recorded_stage` wraps it, classifies the attempt (`success`, `rejected` for a
 refused exclusion or unsafe staging path, `inspection_failed` for an unreadable
 workspace, `failed` for a copy error), and hands the outcome and elapsed time
 to a `StageRecorder`. A refused configuration raises
-`_StagingConfigurationRefused`, a `PublishPreparationError` subclass, so a copy
-failure wrapped as `PublishPreparationError` is not mistaken for a bad
+`_StagingConfigurationRefusedError`, a `PublishPreparationError` subclass, so a
+copy failure wrapped as `PublishPreparationError` is not mistaken for a bad
 configuration. `staged_workspace` and `prepare_workspace` take a keyword-only
 `telemetry` argument, a `StagingTelemetry` value object from
 `lading.commands.publish_staging_telemetry` holding the clock and recorder,

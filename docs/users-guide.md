@@ -118,18 +118,18 @@ either narrow `include` so it omits the file, or remove it with
 default. Setting `include` makes Cargo ignore `exclude` entirely, so preserve
 the exclusion behaviour with negated patterns in the new list instead of
 copying entries across: an existing `exclude = ["secret.env"]` becomes
-`include = ["**", "!secret.env"]`. Because the source checkout still applies
-Git-aware selection, check the file list on the staged tree: run
-`lading publish --keep-staging` in dry-run mode, which logs the retained path,
-and run `cargo package --list` in that staged crate. To keep the old Git-aware
-selection, including gitignore handling and VCS provenance, set
-`stage_exclude = []` when the workspace root contains `.git`. A workspace
-nested inside a parent repository never receives the parent's `.git`, so the
-opt-out does not restore Git-aware selection there. A live publish whose
-effective exclusions remove `.git` logs a warning before it copies, because an
-upload cannot be undone: a yanked version still holds the files it published.
-`--forbid-dirty` is unaffected either way: it inspects the source workspace's
-Git status before staging begins.
+`include = ["**", "!.*", "!secret.env"]`, where `!.*` keeps hidden files such as
+`.env` out. Because the source checkout still applies Git-aware selection,
+check the file list on the staged tree: run `lading publish --keep-staging` in
+dry-run mode, which logs the retained path, and run `cargo package --list` in
+that staged crate. To keep the old Git-aware selection, including gitignore
+handling and VCS provenance, set `stage_exclude = []` when the workspace root
+contains a `.git` directory. A workspace nested inside a parent repository
+never receives the parent's `.git`, so the opt-out does not restore Git-aware
+selection there. A live publish whose effective exclusions remove `.git` logs a
+warning before it copies, because an upload cannot be undone: a yanked version
+still holds the files it published. `--forbid-dirty` is unaffected either way:
+it inspects the source workspace's Git status before staging begins.
 
 ## Reclaiming space from earlier versions
 

@@ -1,4 +1,4 @@
 # serializer version: 1
 # name: test_live_publish_warning_message_is_pinned
-  "Live publish staging excludes .git, so cargo will not apply .gitignore when selecting package files; a file Git ignores whose name does not start with a dot can be uploaded. A live upload cannot be undone. Set publish.stage_exclude = [] to keep Git-aware selection when the workspace root contains .git; a nested workspace never receives a parent repository's .git."
+  "Live publish staging excludes .git, so cargo will not apply .gitignore when selecting package files; a file Git ignores whose name does not start with a dot can be uploaded. A live upload cannot be undone. Set publish.stage_exclude = [] to keep Git-aware selection when the workspace root contains a .git directory; a nested workspace never receives a parent repository's .git."
 # ---

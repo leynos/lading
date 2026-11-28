@@ -133,7 +133,7 @@ def _normalize_build_directory(
     workspace_root = workspace_root.resolve(strict=True)
     if candidate.is_relative_to(workspace_root):
         message = "Publish build directory cannot reside within the workspace root"
-        raise PublishPreparationError(message)
+        raise _StagingConfigurationRefusedError(message)
 
     try:
         candidate.mkdir(parents=True, exist_ok=True)
@@ -243,8 +243,8 @@ def _warn_if_live_publish_loses_git_selection(
         ".gitignore when selecting package files; a file Git ignores whose "
         "name does not start with a dot can be uploaded. A live upload cannot "
         "be undone. Set publish.stage_exclude = [] to keep Git-aware selection "
-        "when the workspace root contains .git; a nested workspace never "
-        "receives a parent repository's .git."
+        "when the workspace root contains a .git directory; a nested workspace "
+        "never receives a parent repository's .git."
     )
 
 

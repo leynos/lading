@@ -301,6 +301,94 @@ def test_a_failing_recorder_does_not_break_staging(
     assert not staged.staging_root.exists(), "cleanup must still remove the tree"
 
 
+def _clock_failing_after_start(reads: cabc.Iterator[float]) -> cabc.Callable[[], float]:
+    """Return a clock that yields one start time and then fails."""
+
+    def fail_after_start() -> float:
+        """Return the start time once, then fail as an exhausted clock does."""
+        try:
+            return next(reads)
+        except StopIteration:
+            message = "clock unavailable"
+            raise RuntimeError(message) from None
+
+    return fail_after_start
+
+
+def test_a_clock_that_fails_on_the_second_read_keeps_the_refusal(
+    preparation_fixtures: PreparationFixtures,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A clock that fails after the start must not replace a refusal."""
+    plan = _plan(preparation_fixtures)
+    build_directory = preparation_fixtures.tmp_path / "build"
+    options = publish.PublishOptions(build_directory=build_directory)
+    telemetry = publish_staging_telemetry.StagingTelemetry(
+        clock=_clock_failing_after_start(iter([100.0]))
+    )
+
+    with (
+        pytest.raises(publish_staging.PublishPreparationError),
+        publish_staging.staged_workspace(
+            plan, options=options, stage_exclude=("alpha",), telemetry=telemetry
+        ),
+    ):
+        pass
+
+    assert any(
+        "telemetry failed" in record.getMessage() for record in caplog.records
+    ), "the clock failure must be logged rather than replace the refusal"
+
+
+def test_a_clock_that_fails_on_the_second_read_completes_the_copy(
+    preparation_fixtures: PreparationFixtures,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A clock that fails after the start must not stop the copy."""
+    plan = _plan(preparation_fixtures)
+    build_directory = preparation_fixtures.tmp_path / "build"
+    options = publish.PublishOptions(build_directory=build_directory, cleanup=False)
+    telemetry = publish_staging_telemetry.StagingTelemetry(
+        clock=_clock_failing_after_start(iter([100.0]))
+    )
+
+    with publish_staging.staged_workspace(
+        plan, options=options, telemetry=telemetry
+    ) as staged:
+        assert staged.staging_root.is_dir(), "the copy must complete"
+
+    assert any(
+        "telemetry failed" in record.getMessage() for record in caplog.records
+    ), "the clock failure must be logged"
+    shutil.rmtree(staged.staging_root)
+
+
+def test_a_build_directory_inside_the_workspace_is_rejected(
+    preparation_fixtures: PreparationFixtures,
+) -> None:
+    """A staging path inside the workspace is a refused configuration."""
+    plan = _plan(preparation_fixtures)
+    build_directory = plan.workspace_root / "staging"
+    options = publish.PublishOptions(build_directory=build_directory)
+
+    with (
+        pytest.raises(publish_staging.PublishPreparationError),
+        publish_staging.staged_workspace(plan, options=options),
+    ):
+        pass
+
+    assert (
+        metrics.counter_value(
+            publish_staging_telemetry.STAGING_METRIC, outcome="rejected"
+        )
+        == 1
+    ), "an unsafe staging path is a configuration refusal, not a copy failure"
+    assert (
+        metrics.duration_stats(publish_staging_telemetry.STAGING_DURATION_METRIC).count
+        == 1
+    ), "the refusal must still record its duration"
+
+
 def test_a_failing_clock_does_not_block_staging(
     preparation_fixtures: PreparationFixtures,
 ) -> None:

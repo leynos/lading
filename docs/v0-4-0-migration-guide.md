@@ -306,18 +306,20 @@ so it omits the file, or remove it with `stage_exclude`, before a live publish.
 Setting `include` makes Cargo ignore `exclude` entirely, so preserve the
 exclusion behaviour with negated patterns in the new list instead of copying
 entries across: an existing `exclude = ["secret.env"]` becomes
-`include = ["**", "!secret.env"]`. Audit any such file that sits inside a
-publishable crate before relying on the default. The source checkout still
-applies Git-aware selection, so check the file list on the staged tree: run
-`lading publish --keep-staging` in dry-run mode, which logs the retained path,
-and run `cargo package --list` in that staged crate. The default rules for
-`include` and `exclude` are described in the
+`include = ["**", "!.*", "!secret.env"]`, where `!.*` keeps hidden files such as
+`.env` out. Audit any such file that sits inside a publishable crate before
+relying on the default. The source checkout still applies Git-aware selection,
+so check the file list on the staged tree: run `lading publish --keep-staging`
+in dry-run mode, which logs the retained path, and run `cargo package --list`
+in that staged crate. The default rules for `include` and `exclude` are
+described in the
 [Cargo manifest documentation](https://doc.rust-lang.org/cargo/reference/manifest.html#the-exclude-and-include-fields).
 A live publish that stages without `.git` logs a warning before copying,
 because an upload cannot be undone.
 
 Projects that do not publish are unaffected. To keep the 0.3.x behaviour for a
-workspace whose root contains `.git` and depends on Git-aware selection, set:
+workspace whose root contains a `.git` directory and depends on Git-aware
+selection, set:
 
 <!-- tested-example: migration-staging-exclude-opt-out -->
 ```toml
@@ -326,11 +328,12 @@ stage_exclude = []
 ```
 
 An empty list copies `.git` and every other file again, restoring Git-based
-file selection and VCS provenance when `.git` sits at the workspace root, at
-the cost of the copy time the default avoids. A workspace nested inside a
-parent repository never receives the parent's `.git`, so the opt-out does not
-restore Git-aware selection there. Programmatic callers of `staged_workspace` or
-`prepare_workspace` opt out the same way, by passing `stage_exclude=()`; see
+file selection and VCS provenance when a `.git` directory sits at the workspace
+root, at the cost of the copy time the default avoids. A workspace nested
+inside a parent repository never receives the parent's `.git`, so the opt-out
+does not restore Git-aware selection there. Programmatic callers of
+`staged_workspace` or `prepare_workspace` opt out the same way, by passing
+`stage_exclude=()`; see
 [Programmatic publish staging](users-guide.md#programmatic-publish-staging).
 Excluding a path that would remove a required manifest is rejected before
 staging begins.
