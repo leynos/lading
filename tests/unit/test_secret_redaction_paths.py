@@ -5,6 +5,8 @@ import sys
 import typing as typ
 from pathlib import Path
 
+import pytest
+
 from lading import cli, cli_environment
 from lading.commands import publish, publish_digest_run, publish_pipeline
 from lading.commands.publish_cargo_config import CargoEnvironment
@@ -17,8 +19,6 @@ from lading.utils.secret_scope import SecretScope
 
 if typ.TYPE_CHECKING:
     import collections.abc as cabc
-
-    import pytest
 
 _FROM_FILE = "file-credential-9f8e7d6c5b4a"
 _FROM_NAMED = "named-credential-1a2b3c4d5e6f"
@@ -45,7 +45,7 @@ def test_credentials_file_tokens_are_found_in_both_names(tmp_path: Path) -> None
         tmp_path, "credentials", f'[registries.internal]\ntoken = "{_FROM_NAMED}"\n'
     )
 
-    assert credential_file_tokens(tmp_path) == tuple(
+    assert credential_file_tokens(tmp_path, redact=str) == tuple(
         sorted((_FROM_FILE, _FROM_NAMED), key=lambda value: (-len(value), value))
     ), "tokens from both file names must be collected"
 
@@ -57,7 +57,9 @@ def test_unreadable_credentials_file_warns_without_its_contents(
     caplog.set_level(logging.WARNING)
     _write_credentials(tmp_path, "credentials.toml", f'token = "{_FROM_FILE}\n[oops')
 
-    assert not credential_file_tokens(tmp_path), "a malformed file contributes none"
+    assert not credential_file_tokens(tmp_path, redact=str), (
+        "a malformed file contributes none"
+    )
     assert "Ignoring unreadable Cargo credentials file" in caplog.text, (
         "the failure must be reported"
     )
@@ -66,8 +68,8 @@ def test_unreadable_credentials_file_warns_without_its_contents(
 
 def test_missing_home_or_file_contributes_nothing(tmp_path: Path) -> None:
     """No Cargo home, or no credentials file, is simply no values."""
-    assert not credential_file_tokens(None), "no home means no values"
-    assert not credential_file_tokens(tmp_path), "no file means no values"
+    assert not credential_file_tokens(None, redact=str), "no home means no values"
+    assert not credential_file_tokens(tmp_path, redact=str), "no file means no values"
 
 
 def test_composition_root_collects_environment_and_file_tokens(tmp_path: Path) -> None:
@@ -217,3 +219,33 @@ def test_the_logged_working_directory_hides_the_secret(
     assert _FROM_NAMED not in caplog.text, "the logged cwd must be scrubbed"
     assert "Running external command" in caplog.text, "the command must still be logged"
     assert str(workdir.resolve()) in stdout, "the process must have run in the real cwd"
+
+
+@pytest.mark.parametrize(
+    ("configured", "command_env"),
+    [
+        ((_FROM_FILE,), {}),
+        ((), {"CARGO_REGISTRY_TOKEN": _FROM_FILE}),
+    ],
+    ids=["configured_secret", "command_environment_secret"],
+)
+def test_credentials_file_warning_hides_known_secrets_in_its_path(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+    configured: tuple[str, ...],
+    command_env: dict[str, str],
+) -> None:
+    """A home named after a known token is hidden, outside any open scope."""
+    caplog.set_level(logging.WARNING)
+    home = tmp_path / f"home-{_FROM_FILE}"
+    _write_credentials(home, "credentials.toml", "[oops")
+
+    redacting_runner(SecretScope(configured))(
+        _echoing("done"), env={**command_env, "CARGO_HOME": str(home)}
+    )
+
+    assert "Ignoring unreadable Cargo credentials file" in caplog.text, (
+        "the unreadable file must still be reported"
+    )
+    assert _FROM_FILE not in caplog.text, "the warning must hide the token"
+    assert REDACTED in caplog.text, "and show the redaction in its place"

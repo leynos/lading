@@ -52,7 +52,7 @@ def test_a_command_hides_the_token_of_its_own_relative_cargo_home(
     first = _directory_with_token(tmp_path, "first", _FIRST)
     second = _directory_with_token(tmp_path, "second", _SECOND)
     # What the entry point collects from its own directory, the first one.
-    collected = credential_file_tokens(first / _HOME)
+    collected = credential_file_tokens(first / _HOME, redact=str)
     logger = logging.getLogger("lading.commands.publish")
 
     with use_secrets(collected) as scope:

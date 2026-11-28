@@ -8,8 +8,11 @@ the entry point adds them to the values it hides from subprocess output.
 
 A file that cannot be read or parsed contributes nothing and produces a
 warning that names the file and the kind of failure but never repeats its
-contents. Credentials a Cargo credential provider fetches on demand never pass
-through lading at all, so they cannot be found here or hidden.
+contents. The caller passes the redaction for that path, because a path can
+itself hold a token (a ``CARGO_HOME`` named after one) and the warning is
+written before this file's own tokens are known. Credentials a Cargo
+credential provider fetches on demand never pass through lading at all, so
+they cannot be found here or hidden.
 
 Examples
 --------
@@ -21,16 +24,20 @@ Examples
 ...         '[registry]\ntoken = "abc"\n[registries.x]\ntoken = "def"\n',
 ...         encoding="utf-8",
 ...     )
-...     credential_file_tokens(home)
+...     credential_file_tokens(home, redact=str)
 ('abc', 'def')
 """
 
 import collections.abc as cabc
 import logging
 import tomllib
+import typing as typ
 from pathlib import Path
 
 from lading.toml_coerce import optional_string_field
+
+if typ.TYPE_CHECKING:
+    from lading.utils.exception_redaction import Redact
 
 LOGGER = logging.getLogger(__name__)
 _CREDENTIAL_FILES = ("credentials", "credentials.toml")
@@ -50,13 +57,18 @@ def _tokens_in(document: cabc.Mapping[str, object]) -> list[str]:
     return [token for table in tables if (token := _token_of(table))]
 
 
-def credential_file_tokens(cargo_home: Path | None) -> tuple[str, ...]:
+def credential_file_tokens(
+    cargo_home: Path | None, *, redact: Redact
+) -> tuple[str, ...]:
     """Return the token values stored in Cargo home's credentials files.
 
     Parameters
     ----------
     cargo_home : Path | None
         Cargo's home directory, or ``None`` when there is none.
+    redact : Redact
+        Hides the secrets already known from the path an unreadable-file
+        warning names.
 
     Returns
     -------
@@ -78,7 +90,7 @@ def credential_file_tokens(cargo_home: Path | None) -> tuple[str, ...]:
             # reported.
             LOGGER.warning(
                 "Ignoring unreadable Cargo credentials file %s (%s)",
-                path,
+                redact(str(path)),
                 type(exc).__name__,
             )
             continue

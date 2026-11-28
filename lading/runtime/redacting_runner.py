@@ -99,8 +99,11 @@ def redacting_runner(
         echo_stdout: bool = True,
     ) -> tuple[int, str, str]:
         """Execute ``command`` through the subprocess adapter."""
+        # Hidden before the credentials file is read: a warning about it
+        # names a path that can hold one of these values.
+        scope.hide(registry_token_values(env or {}))
         home = invocation_cargo_home(cargo_home, cwd, env)
-        scope.hide((*registry_token_values(env or {}), *credential_file_tokens(home)))
+        scope.hide(credential_file_tokens(home, redact=scope.redact))
         context = SubprocessContext(
             cwd=cwd, env=env, echo_stdout=echo_stdout, secrets=scope.secrets
         )

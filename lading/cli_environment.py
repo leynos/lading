@@ -9,6 +9,7 @@ command, a scope that hides those token values from everything lading prints.
 """
 
 import collections.abc as cabc
+import functools
 import os
 import sys
 from contextlib import AbstractContextManager, contextmanager, nullcontext
@@ -16,7 +17,7 @@ from pathlib import Path
 
 from lading.commands.publish_cargo_config import CargoEnvironment
 from lading.runtime.credentials import credential_file_tokens
-from lading.utils.redaction import registry_token_values
+from lading.utils.redaction import redact_text, registry_token_values
 from lading.utils.secret_scope import redact_active, use_secrets
 
 # Cargo's own variable naming the registry `cargo publish` targets by default.
@@ -98,7 +99,11 @@ def cargo_environment(environment: cabc.Mapping[str, str]) -> CargoEnvironment:
         The resolved environment.
     """
     home = cargo_home(environment)
-    secrets = {*registry_token_values(environment), *credential_file_tokens(home)}
+    known = registry_token_values(environment)
+    found = credential_file_tokens(
+        home, redact=functools.partial(redact_text, secrets=known)
+    )
+    secrets = {*known, *found}
     return CargoEnvironment(
         default_registry=environment.get(CARGO_REGISTRY_DEFAULT_ENV_VAR),
         cargo_home=home,
