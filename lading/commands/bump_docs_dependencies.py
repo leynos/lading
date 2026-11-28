@@ -113,9 +113,7 @@ def _update_target_tables(
         table = bump_toml.select_table(target_root, (selector,))
         if table is None:
             continue
-        if _update_dependency_tables(
-            table, (), dependency_targets, target_version
-        ):
+        if _update_dependency_tables(table, (), dependency_targets, target_version):
             changed = True
     return changed
 

@@ -37,12 +37,13 @@ when that field is present, and by its key otherwise, matching the manifest
 pass. On the issue's reproducer,
 `rewrite_markdown_toml_fences(text, {"alpha"}, "2.0.0")` bumps the alias and
 leaves the unrelated package untouched. Manifest key selection, the `[package]`
-and `[workspace.package]` version fields, and the documentation section scope
-(top-level `[dependencies]`, `[dev-dependencies]`, and `[build-dependencies]`
-only) are unchanged. The shared entry dispatch is widened as the plan requires,
-so a dotted manifest entry that exact-key selection already chose now has its
-`version` field mutated where it was previously skipped; selection itself is
-unchanged and a regression test pins that boundary.
+and `[workspace.package]` version fields are unchanged. The documentation pass
+keeps the location scope that `main` gained while this branch was open:
+top-level sections, their `[workspace.*]` counterparts, and `[target.<spec>.*]`
+tables. The shared entry dispatch is widened as the plan requires, so a dotted
+manifest entry that exact-key selection already chose now has its `version`
+field mutated where it was previously skipped; selection itself is unchanged
+and a regression test pins that boundary.
 
 ## Conformance basis
 
@@ -66,7 +67,7 @@ ISSUE-369-REQ-inline        -> EP-M1 -> tests/unit/test_dependency_sections.py
 ISSUE-369-REQ-dotted        -> EP-M1 -> tests/unit/test_bump_toml_helpers.py
 ISSUE-369-REQ-pipeline      -> EP-M1 -> tests/unit/test_bump_documentation_updates.py
 ISSUE-369-REQ-cli           -> EP-M1 -> tests/bdd/features/cli.feature
-ISSUE-369-REQ-implementation -> EP-M2 -> lading/commands/bump_docs_fences.py
+ISSUE-369-REQ-implementation -> EP-M2 -> lading/commands/bump_docs_dependencies.py
 ISSUE-369-REQ-mutation      -> EP-M2 -> lading/commands/bump_toml.py
 ISSUE-369-REQ-migration     -> EP-M3 -> docs/users-guide.md
 ISSUE-369-REQ-design        -> EP-M3 -> docs/lading-design.md
@@ -84,10 +85,12 @@ sources. The bump command lives in `lading/commands/`:
   `DocumentationUpdateRequest.updated_crates`.
 - `bump_docs.py` — documentation glob expansion; re-exports the fence helpers
   from `bump_docs_fences.py`.
-- `bump_docs_fences.py` — Markdown fence discovery and TOML rewriting.
-  `update_toml_snippet_dependencies` currently calls
-  `bump_toml.update_dependency_table(table, dependency_targets, ...)`, which
-  matches entry keys directly.
+- `bump_docs_dependencies.py` — dependency-section rewriting inside fences. It
+  visits top-level, `[workspace.*]`, and `[target.<spec>.*]` tables and, after
+  this change, selects each entry by its `package` identity or key before
+  calling `bump_toml.update_dependency_table`.
+- `bump_docs_fences.py` — Markdown fence discovery; re-exports
+  `update_toml_snippet_dependencies` from `bump_docs_dependencies.py`.
 - `bump_toml.py` — shared TOML helpers. `update_dependency_table` iterates
   names and calls `update_dependency_entry`, which dispatches `InlineTable` and
   `Table` entries to `assign_dependency_version_field` and treats everything
@@ -126,9 +129,10 @@ follows, verified by direct probing:
    unidentifiable: never fall back to its key, and never raise.
 3. Preserve manifest key selection, the `[package]` and `[workspace.package]`
    handling, exact rendering (field order, dotted syntax, comments, trivia),
-   idempotence, and the scope limit to the three top-level canonical sections.
-   A dotted manifest entry already selected by its exact key now receives its
-   version through the widened dispatch; selection itself does not change.
+   idempotence, and the post-rebase location scope: top-level sections, their
+   `[workspace.*]` counterparts, and `[target.<spec>.*]` tables. A dotted
+   manifest entry already selected by its exact key now receives its version
+   through the widened dispatch; selection itself does not change.
 4. Support mutating dotted-key dependency entries (an `OutOfOrderTableProxy`)
    and dependency sections that are themselves out-of-order proxies.
 5. Cover the behaviour with unit, pipeline, and CLI behavioural tests, and
@@ -148,14 +152,14 @@ documentation snippets.
   `update_toml_snippet_versions`, `update_toml_snippet_dependencies`, and
   `update_documentation_files` (the last is re-exported by `bump_docs.py`).
 - No new runtime dependency. `tomlkit>=0.15,<0.16` is already declared.
-- New and edited code modules aim at the 400-line ceiling. Four edited files
-  already exceeded it at the base: `bump_docs_fences.py` 411 lines,
-  `bump_toml.py` 532 lines, `tests/bdd/steps/test_bump_steps.py` 424 lines, and
-  `tests/unit/test_bump_manifest_updates.py` 414 lines. The change grows them
-  to 453, 547, 447, and 453 respectively without a module split; the
-  `bump_toml.py` growth includes the expanded module docstring requested by the
-  pre-merge documentation check. The exception is recorded in the decision log.
-  Ruff complexity ceiling 8; Pylint maximum five positional arguments.
+- New and edited code modules aim at the 400-line ceiling. After the rebase
+  onto `main` (`ba6ebc9d`), three touched files already exceed it:
+  `bump_toml.py` 587 to 602 lines, `tests/bdd/steps/test_bump_steps.py` 487 to
+  510, and `tests/unit/test_bump_manifest_updates.py` 414 to 453. The new
+  `bump_docs_dependencies.py` grows from 122 to 167 and `bump_docs_fences.py`
+  returns to 384 after `main` moved the dependency helpers out. The exception
+  is recorded in the decision log. Ruff complexity ceiling 8; Pylint maximum
+  five positional arguments.
 - Prose uses en-GB-oxendict spelling.
 - Implementation proceeds under the user's explicit instruction to implement
   the supplied coding plan; the plan's milestones are authoritative.
@@ -163,7 +167,8 @@ documentation snippets.
 ## Tolerances (exception triggers)
 
 Budgets are measured as net lines (additions minus deletions) against the
-current `HEAD` (`656506d5`). ExecPlan files are excluded from every count.
+rebase target (`ba6ebc9d`) for the final candidate; earlier figures used the
+pre-rebase base (`656506d5`). ExecPlan files are excluded from every count.
 
 - Files: more than 15 non-ExecPlan files changed. The original budget of 10
   was revised on 2026-11-27 after the implementation reached 15 files: two
@@ -192,9 +197,9 @@ increase. Any further threshold breach requires escalation.
   `get`, and mutation goes through the widened `_TableLike` helper.
 - Risk: iterating `items()` on a section could include entries that are not
   dependency declarations (for example the section itself when nested
-  differently). Severity: low. Likelihood: low. Mitigation: only top-level
-  canonical sections are selected, and non-table entries are identified by key,
-  matching previous behaviour.
+  differently). Severity: low. Likelihood: low. Mitigation: only canonical
+  dependency locations are selected, and non-table entries are identified by
+  key, matching previous behaviour.
 - Risk: a present-but-empty `package` key might be intended to fall back to
   the key. Severity: low. Likelihood: low. Mitigation: the issue and this plan
   specify that a present `package` field is authoritative, so the entry is
@@ -264,6 +269,13 @@ increase. Any further threshold breach requires escalation.
   showed the alias and the package-name spelling as two dependencies in one
   manifest, which Cargo rejects because they resolve to the same package. The
   examples are now separate code blocks.
+- [x] (2026-11-28) Rebased the 11-commit series onto `main` (`ba6ebc9d`) with
+  Git's text merge, bypassing the user-wide Weave selection for this unattended
+  replay. Conflicts in the moved dependency helpers and documentation were
+  resolved by porting the identity rule into `bump_docs_dependencies.py`,
+  retaining `main`'s workspace and target scope, and keeping both sides' tests
+  and scenarios. Full gates pass: 2017 tests, 114 snapshots; all hosted checks
+  rerun after the push.
 - [ ] Reply in the review thread, request approval, and merge PR #422 once it
   reaches equilibrium.
 
@@ -286,6 +298,12 @@ increase. Any further threshold breach requires escalation.
   double-quoted. This normalization predates the change and applies equally to
   scalar, inline-table, and dotted entries; it is not a new rendering
   regression, and the tests use double-quoted versions throughout.
+- Observation: while this branch was open, `main` moved
+  `update_toml_snippet_dependencies` into
+  `lading/commands/bump_docs_dependencies.py` and broadened its scope to
+  `[workspace.*]` and `[target.<spec>.*]` tables (#370). The rebase therefore
+  places the identity rule in that module and applies it at every visited
+  location; `bump_docs_fences.py` no longer owns dependency rewriting.
 - Observation (assessment round 1 and 2): CodeRabbit read the shared dispatch
   widening as a manifest-behaviour change and the plan's file budget as
   breached. Both are addressed in the decision log rather than dismissed.
@@ -317,16 +335,20 @@ increase. Any further threshold breach requires escalation.
   isolates the per-section concern and keeps the public function small.
 - Decision: test rendered text rather than tomlkit types. Rationale: the
   contract is the rewritten Markdown, not the parser's internal shape.
-- Decision: record a revised file tolerance (10 to 14) and a module-size
-  deviation rather than splitting the four affected files in this change.
-  Rationale: `bump_docs_fences.py` (411), `bump_toml.py` (532),
-  `tests/bdd/steps/test_bump_steps.py` (424), and
-  `tests/unit/test_bump_manifest_updates.py` (414) already exceeded 400 lines
-  at the base; the change grows them to 453, 547, 447, and 453 respectively,
-  and a split would enlarge the review diff beyond the issue. The
-  `bump_toml.py` growth includes the expanded module docstring requested by the
-  pre-merge documentation check. This is a recorded deviation, not a silent
-  increase; the user guide and design note still state the behaviour.
+- Decision: record a revised file tolerance (10 to 15) and a module-size
+  deviation rather than splitting the affected files in this change. Rationale:
+  after the rebase, `bump_toml.py` (587), `tests/bdd/steps/test_bump_steps.py`
+  (487), and `tests/unit/test_bump_manifest_updates.py` (414) already exceeded
+  400 lines at the target; the change grows them to 602, 510, and 453. The
+  `bump_docs_dependencies.py` integration reaches 167 lines and
+  `bump_docs_fences.py` is back to 384 after `main` moved the dependency
+  helpers. A split would enlarge the review diff beyond the issue. This is a
+  recorded deviation, not a silent increase.
+- Decision: after the rebase, keep identity selection in
+  `bump_docs_dependencies.py` and retain `main`'s workspace and target
+  traversal. Rationale: #370 relocated the dependency pass and defined that
+  scope; duplicating the traversal in the fence module would drift. The plan's
+  original top-level-only scope is superseded by the merged upstream design.
 - Decision: keep the documented quote-style normalization as pre-existing
   behaviour. Rationale: `prepare_version_replacement` has always re-created
   string requirements, so changing it belongs to a separate rendering change
@@ -402,7 +424,8 @@ Invariants:
 2. Identity is the `package` field when present, and the key otherwise.
 3. A present-but-unusable `package` field (empty or non-string) yields no
    identity, so the entry is neither bumped nor used as a fallback key.
-4. Entries outside the three canonical top-level sections never change.
+4. Entries outside the canonical locations (top-level, `[workspace.*]`, and
+   `[target.<spec>.*]` sections) never change.
 5. `[package].version` and `[workspace.package].version` handling is
    independent of dependency identity.
 6. Rendering is idempotent, and unchanged fences are byte-identical.
@@ -523,3 +546,7 @@ issue's expected behaviour and the section scope.
   corrected `bump_toml.py` to 547 lines (including the expanded module
   docstring), recorded the 1,759-test result, and added the pre-merge repair
   and property-test evidence. Status remains `IN PROGRESS` until PR #422 merges.
+- 2026-11-28: Rebased onto `main` (`ba6ebc9d`). Updated the location scope,
+  module ownership, file sizes, budget base, and evidence; recorded the rebase
+  integration decisions and the upstream refactor observation. Status remains
+  `IN PROGRESS` until PR #422 merges.
