@@ -68,6 +68,24 @@ def test_loader_reads_a_marked_example_after_a_list_fence_outdent(
     )
 
 
+def test_loader_keeps_an_enclosing_list_when_a_quote_ends(
+    tmp_path: Path,
+) -> None:
+    """A quote indented into a list preserves the list for later lines."""
+    path = write_document(
+        tmp_path,
+        "- item\n  > quote\n  <!-- tested-example: demo -->\n"
+        "    ```bash\n    echo ok\n    ```\n",
+    )
+
+    examples = load_tested_examples(path)
+
+    assert set(examples) == {"demo"}, (
+        "the list indentation must survive the nested quote"
+    )
+    assert examples["demo"].body == "echo ok", "the example must be parsed"
+
+
 @pytest.mark.parametrize(
     ("document", "identifier"),
     [

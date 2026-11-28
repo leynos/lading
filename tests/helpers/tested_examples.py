@@ -129,13 +129,28 @@ def _container_indent(state: _LoadState, raw: str) -> int:
         The content indentation of the enclosing list item, or ``0``.
     """
     depth = quote_depth(raw)
-    if depth != state.container_depth:
-        # A quote that starts or ends outside the current list does not
-        # continue it, so the levels it leaves behind are stale.
-        state.list_levels.clear()
-        state.container_depth = depth
+    if depth > state.container_depth:
+        _enter_container(state, raw)
+    elif depth < state.container_depth:
+        _leave_container(state, depth)
+    state.container_depth = depth
     levels = state.list_levels.setdefault(depth, [])
     return list_context(raw, levels)
+
+
+def _enter_container(state: _LoadState, raw: str) -> None:
+    """Continue or discard the enclosing list when a quote starts."""
+    outer = state.list_levels.get(state.container_depth)
+    container = outer[-1] if outer else 0
+    if indentation(raw) < container:
+        # An outdented quote does not continue the list.
+        state.list_levels.pop(state.container_depth, None)
+
+
+def _leave_container(state: _LoadState, depth: int) -> None:
+    """Drop list levels scoped to containers deeper than ``depth``."""
+    for stale in [key for key in state.list_levels if key > depth]:
+        del state.list_levels[stale]
 
 
 def _load_marked(state: _LoadState, index: int, marker: _MarkerContext) -> int:

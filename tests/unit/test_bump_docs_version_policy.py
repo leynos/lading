@@ -334,8 +334,8 @@ def test_inline_package_tables_are_left_alone() -> None:
 def test_block_package_with_inline_workspace_updates_only_the_package() -> None:
     """An inline workspace table is not traversed even when the gate passes."""
     snippet = (
-        '[package]\nname = "alpha"\nversion = "0.1.0"\n\n'
-        'workspace = { package = { version = "0.1.0" } }\n'
+        'workspace = { package = { version = "0.1.0" } }\n\n'
+        '[package]\nname = "alpha"\nversion = "0.1.0"\n'
     )
 
     updated, changed = rewrite(snippet)

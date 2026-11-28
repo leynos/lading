@@ -301,9 +301,9 @@ Scenario: Bumping restricts documentation version rewriting to bumped crates
   sanctioned separate atomic refactor after the functional commit, and both
   modules are now under the ceiling.
 - 2026-11-27: tolerate both budget exceptions. Final measurement against the
-  reviewed base `ba6ebc9d`: Python source and tests +2631/-1145, a net +1486
+  reviewed base `ba6ebc9d`: Python source and tests +2732/-1248, a net +1484
   against the +320-line tolerance, and `pyproject.toml` +4/-0 against the
-  zero-line configuration tolerance. Earlier figures (+702, then +1282)
+  zero-line configuration tolerance. Earlier figures (+702, +1282, then +1486)
   predated the rebases onto #423 and #353 and the review-driven hardening. The
   overage is required work rather than scope growth: the repository's 400-line
   ceiling forced the renderer, dependency-helper and fence-scanner splits;
@@ -324,6 +324,14 @@ Scenario: Bumping restricts documentation version rewriting to bumped crates
   `DEPENDENCY_SECTIONS`, `prepare_version_replacement` and
   `compose_requirement` from `bump_toml`, which produced five type errors and
   32 test failures until the imports moved to `bump_toml_dependencies`.
+- 2026-11-28: keep `render_fence` behaviour as the plan requires. A review
+  finding asked for tab-separated and list-indented block-quote markers to keep
+  their `>` markers during re-rendering. The plan's constraint says not to
+  change `render_fence`, and the limitation predates this work, so the
+  quote-prefix pattern is restored to its original form and the two renderer
+  tests that pinned the changed behaviour are removed. The loader's own
+  Markdown scanner keeps its separate CommonMark handling, which is test
+  support rather than shipped rendering.
 - 2026-11-28: correct the virtual-root guidance after review. A virtual
   manifest has no `[package]` table, so advising readers to add a bumped crate's
   `[package].name` to a virtual-root example would describe a different

@@ -180,47 +180,6 @@ def test_a_tab_indented_list_fence_uses_column_indentation() -> None:
     )
 
 
-def test_a_tab_between_block_quote_markers_is_preserved() -> None:
-    """A tab between nested quote markers keeps both markers."""
-    text = '>\t> ```toml\n>\t> [dependencies]\n>\t> alpha = "0.1.0"\n>\t> ```\n'
-
-    updated, changed = bump_docs_fences.rewrite_markdown_toml_fences(
-        text, ("alpha",), "1.2.3"
-    )
-
-    assert changed, "the dependency version must be rewritten"
-    assert ">\t> [dependencies]" in updated, (
-        "the inner block quote must survive the continuation prefix"
-    )
-    parsed = MarkdownIt("commonmark").parse(updated)
-    fences = [token for token in parsed if token.type == "fence"]
-    assert len(fences) == 1, "the rewrite must remain one fenced block"
-    assert 'alpha = "1.2.3"' in fences[0].content, (
-        "the parsed fence must carry the rewritten TOML"
-    )
-
-
-def test_a_list_continuation_quote_keeps_its_markers() -> None:
-    """An indented quote inside a list keeps its markers when rendered."""
-    text = (
-        "- item\n\n"
-        "    > ```toml\n"
-        "    > [dependencies]\n"
-        '    > alpha = "0.1.0"\n'
-        "    > ```\n"
-    )
-
-    updated, changed = bump_docs_fences.rewrite_markdown_toml_fences(
-        text, ("alpha",), "1.2.3"
-    )
-
-    assert changed, "the dependency version must be rewritten"
-    assert "    > [dependencies]" in updated, (
-        "the indented block quote must survive the continuation prefix"
-    )
-    assert '> alpha = "1.2.3"' in updated, "the quoted requirement must be rewritten"
-
-
 _FENCE_OPENER = st.sampled_from([
     "```toml",
     "````toml",
