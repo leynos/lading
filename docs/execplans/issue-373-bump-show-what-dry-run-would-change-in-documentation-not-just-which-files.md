@@ -53,8 +53,9 @@ compatibility.
 
 - Do not change the rewrite policy produced by
   `bump_docs_fences.rewrite_markdown_toml_fences` or
-  `update_toml_snippet_versions`. Do not fix the #368 behaviour that inserts a
-  version into unrelated snippets; the new output must expose it.
+  `update_toml_snippet_versions`. #368 was fixed on main by #424 after this
+  plan was written; do not reintroduce the old insertion behaviour, and keep
+  the diff reporting every change the current policy makes.
 - Preserve the prepare-then-commit architecture introduced by ADR-012. Every
   write is proposed on `PlanBuilder` before `commit_plan` mutates anything.
 - Keep the default output exactly when `--diff` is absent. Existing syrupy
@@ -73,10 +74,10 @@ compatibility.
 
 ## Tolerances (exception triggers)
 
-The comparison base is `origin/main` at `ba6ebc9d`, the commit this plan was
-last rebased onto. At that base the change spans 52 non-ExecPlan files and
-substantially exceeds the file and code triggers below; D11 records the
-accepted overrun. ExecPlan files are excluded from every size count.
+The comparison base is `origin/main` at `6768763c`, the commit this plan was
+last rebuilt on. At that base the change spans 48 non-ExecPlan files and 1,855
+net Python lines, which exceeds the file and code triggers below; D11 records
+the accepted overrun. ExecPlan files are excluded from every size count.
 
 - Files: if the implementation changes more than 15 non-ExecPlan files, stop
   and escalate.
@@ -94,10 +95,10 @@ The user's instructions remove any wallclock limit, so no time tolerance is set.
 
 ## Risks
 
-- Risk: the diff exposes the #368 rewrite and reviewers read it as a regression
-  introduced here. Severity: medium. Likelihood: high. Mitigation: state the
-  non-goal in ADR-013, the users' guide, and this plan; add a snapshot where an
-  unrelated `[package]` table gains a version.
+- Risk: the diff exposed the #368 rewrite and reviewers read it as a regression
+  introduced here. Severity: medium. Likelihood: high. Resolution: #424 fixed
+  the policy on main, so the obsolete disclosure text, test, and snapshot are
+  retired here.
 - Risk: main's ADR-012 refactor changes the documentation preparation surface
   while this branch is open. Severity: high. Likelihood: certain (it happened).
   Mitigation: port the feature onto `prepare_documentation_updates` and
@@ -265,10 +266,11 @@ The user's instructions remove any wallclock limit, so no time tolerance is set.
   `run` validates before the write-locked root resolution so a live rejection
   never depends on the directory existing.
 - D17. Record an authorized size exception for
-  `tests/bdd/steps/test_bump_steps.py`. Rationale: it is 487 lines at the
-  comparison base and 488 here, and this change only widens the bump step's
-  option capture; splitting the shared BDD step module belongs in a separate
-  maintenance change.
+  `tests/bdd/steps/test_bump_steps.py`. Rationale: it is 329 lines at the
+  current comparison base and 330 here, and this change only widens the bump
+  step's option capture; the earlier 487/488 figures referred to the previous
+  base before #424 moved most bump steps into `bump_output_steps.py`. Splitting
+  the remaining shared BDD step module belongs in a separate maintenance change.
 
 ## Outcomes & retrospective
 

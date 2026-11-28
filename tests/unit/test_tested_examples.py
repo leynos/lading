@@ -101,3 +101,17 @@ def test_inline_code_with_a_backtick_fence_lookalike_is_not_a_fence(
     assert not load_tested_examples(path), (
         "a backtick run inside an info string must not open a fence"
     )
+
+
+def test_marked_example_preserves_non_newline_characters(tmp_path: Path) -> None:
+    """A literal U+2028 inside a fence body is content, not a line boundary."""
+    body = 'value = "before\u2028after"'
+    guide = tmp_path / "guide.md"
+    guide.write_text(
+        f"<!-- tested-example: sample -->\n```python\n{body}\n```\n",
+        encoding="utf-8",
+    )
+
+    examples = load_tested_examples(guide)
+
+    assert examples["sample"].body == body, "U+2028 must survive the example loader"

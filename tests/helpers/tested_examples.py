@@ -31,6 +31,9 @@ __all__ = ["MarkedExample", "load_tested_examples"]
 _MARKER: typ.Final[re.Pattern[str]] = re.compile(
     r"^<!--\s*tested-example:\s*([a-z0-9-]+)\s*-->$"
 )
+_SOURCE_LINE: typ.Final[re.Pattern[str]] = re.compile(
+    r"[^\r\n]*(?:\r\n|\r|\n)|[^\r\n]+$"
+)
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -81,7 +84,10 @@ def load_tested_examples(
         malformed or not followed by a fence, a fence is unterminated, or an
         identifier is duplicated.
     """
-    lines = path.read_text(encoding="utf-8").splitlines()
+    lines = [
+        line.rstrip("\r\n")
+        for line in _SOURCE_LINE.findall(path.read_text(encoding="utf-8"))
+    ]
     state = _LoadState(
         lines=lines,
         path=path,

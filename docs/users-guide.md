@@ -380,9 +380,10 @@ guaranteed to be accepted by `git apply`.
 
 The diff reports the rewrite; it does not change it. The unrelated `[package]`
 insertion reported as [#368](https://github.com/leynos/lading/issues/368) is
-fixed in this release: the documentation pass rewrites versions only inside
-fences that belong to bumped crates. The diff still shows every change the
-rewrite makes.
+fixed in this release: a fence's package version changes only when its
+`[package].name` names a bumped crate. Dependency requirements are rewritten
+independently, so a fence without a matching package name can still change. The
+diff still shows every change the rewrite makes.
 
 A later stage can rewrite a path the documentation stage also touched: a crate
 README adopted through workspace transposition is copied after the

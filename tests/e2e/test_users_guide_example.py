@@ -48,7 +48,7 @@ def test_users_guide_bump_diff_example(tmp_path: Path, entry_point: list[str]) -
     )
     example = examples.get(_EXAMPLE_IDENTIFIER)
     assert example is not None, f"the users' guide must mark {_EXAMPLE_IDENTIFIER}"
-    body = example.body.splitlines()
+    body = example.body.split("\n")
     assert body, "the example fence must not be empty"
     assert body[0].startswith("$ "), (
         f"the example must start with a shell prompt, got {body[0]!r}"
