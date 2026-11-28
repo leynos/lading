@@ -266,7 +266,7 @@ def strip_list_items(
     container = container_indent
     columns: list[int] = []
     while (match := _list_item(remainder, container)) is not None:
-        content_start = _list_content_start(remainder, match)
+        content_start = _list_content_start(remainder, match, base)
         base = _column_after(remainder[:content_start], base)
         columns.append(base)
         remainder = remainder[content_start:]
@@ -315,10 +315,12 @@ def list_item_end(content: str, container_indent: int = 0) -> int | None:
     return _list_content_start(content, match) if match is not None else None
 
 
-def _list_content_start(content: str, match: re.Match[str]) -> int:
+def _list_content_start(
+    content: str, match: re.Match[str], base_column: int = 0
+) -> int:
     """Return the offset where a matched list item's content begins."""
     marker_end = match.start("space")
-    marker_column = _column_after(content[:marker_end])
+    marker_column = _column_after(content[:marker_end], base_column)
     padding_width = _column_after(match.group("space"), marker_column)
     if padding_width - marker_column > MAX_LIST_PADDING:
         # CommonMark assigns one space as padding and treats the rest as

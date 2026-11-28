@@ -174,3 +174,13 @@ def test_strip_list_items_rejects_code_after_a_marker() -> None:
     assert unmarked_fence_delimiter("-     - ```text", 0) is None, (
         "the indented remainder is literal code, not a fence"
     )
+
+
+def test_nested_list_padding_is_measured_from_the_accumulated_column() -> None:
+    """Inner marker padding is measured from where that marker starts."""
+    assert unmarked_fence_delimiter("- - \t~~~text", 0) is None, (
+        "five padding columns after the inner marker leave indented code"
+    )
+    assert unmarked_fence_delimiter("- -\t~~~text", 0) == ("~", 3), (
+        "a tab directly after the inner marker still opens a fence"
+    )

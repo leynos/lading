@@ -24,6 +24,24 @@ def test_loader_keeps_an_enclosing_list_when_a_quote_ends(
     assert examples["demo"].body == "echo ok", "the example must be parsed"
 
 
+def test_loader_retains_ancestor_levels_containing_a_quote(
+    tmp_path: Path,
+) -> None:
+    """A quote may leave an inner list while staying inside the outer one."""
+    path = write_document(
+        tmp_path,
+        "- outer\n  - inner\n  > quote\n"
+        "  <!-- tested-example: demo -->\n    ```bash\n    echo ok\n    ```\n",
+    )
+
+    examples = load_tested_examples(path)
+
+    assert set(examples) == {"demo"}, (
+        "the outer list level must survive the nested quote"
+    )
+    assert examples["demo"].body == "echo ok", "the example must be parsed"
+
+
 def test_loader_keeps_a_list_inside_an_outer_quote(tmp_path: Path) -> None:
     """List indentation is measured after stripping the outer quote."""
     path = write_document(
