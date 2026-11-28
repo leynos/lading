@@ -12,12 +12,21 @@ from lading.config_validation import (
     validate_mapping_keys,
 )
 from lading.exceptions import ConfigurationError
+from lading.stage_exclude_policy import StageExcludeError, normalize_stage_exclude
 
 StripPatchesSetting = typ.Literal["all", "per-crate"] | bool
+
+#: Paths staging omits when ``publish.stage_exclude`` is not configured.
+#: ``.git`` is large, and no packaging step reads the copy: Cargo only uses a
+#: checkout for provenance, which the published crate records as
+#: ``.cargo_vcs_info.json`` (issue #262). ``target`` is deliberately not
+#: excluded: some workspaces package artefacts from it.
+DEFAULT_STAGE_EXCLUDE: typ.Final[tuple[str, ...]] = (".git",)
 
 PUBLISH_TOML_KEYS: typ.Final[frozenset[str]] = frozenset({
     "exclude",
     "order",
+    "stage_exclude",
     "strip_patches",
 })
 PREFLIGHT_TOML_KEYS: typ.Final[frozenset[str]] = frozenset({
@@ -41,12 +50,15 @@ class PublishConfig:
         Crate names omitted from publication.
     order : tuple[str, ...]
         Preferred ordering for publishable crates.
+    stage_exclude : tuple[str, ...]
+        Workspace-relative entries staging omits from the copy.
     strip_patches : StripPatchesSetting
         Strategy for removing workspace-only patch entries.
     """
 
     exclude: tuple[str, ...] = ()
     order: tuple[str, ...] = ()
+    stage_exclude: tuple[str, ...] = DEFAULT_STAGE_EXCLUDE
     strip_patches: StripPatchesSetting = "per-crate"
 
     @classmethod
@@ -76,12 +88,24 @@ class PublishConfig:
         ('a', 'b')
         >>> PublishConfig.from_mapping(None).strip_patches
         'per-crate'
+        >>> PublishConfig.from_mapping(None).stage_exclude
+        ('.git',)
+        >>> PublishConfig.from_mapping({"stage_exclude": []}).stage_exclude
+        ()
         """  # ruff: ignore[docstring-extraneous-exception]  # propagated from the shared mapping validators
         mapping = {} if mapping is None else mapping
         validate_mapping_keys(mapping, set(PUBLISH_TOML_KEYS), "publish")
+        # A present key replaces the default rather than adding to it, so an
+        # explicit ``[]`` can restore the old copy-everything behaviour.
+        stage_exclude = (
+            DEFAULT_STAGE_EXCLUDE
+            if "stage_exclude" not in mapping
+            else _stage_exclude(mapping.get("stage_exclude"))
+        )
         return cls(
             exclude=_string_tuple(mapping.get("exclude"), "publish.exclude"),
             order=_string_tuple(mapping.get("order"), "publish.order"),
+            stage_exclude=stage_exclude,
             strip_patches=_strip_patches(mapping.get("strip_patches")),
         )
 
@@ -204,6 +228,26 @@ class PreflightConfig:
                 mapping.get("stderr_tail_lines"), "preflight.stderr_tail_lines", 40
             ),
         )
+
+
+def _stage_exclude(value: object) -> tuple[str, ...]:
+    """Normalize the ``publish.stage_exclude`` patterns.
+
+    Returns
+    -------
+    tuple[str, ...]
+        The configured patterns, each with one trailing slash removed.
+
+    Raises
+    ------
+    ConfigurationError
+        If a pattern is not a string or cannot describe a workspace path.
+    """
+    patterns = _string_tuple(value, "publish.stage_exclude")
+    try:
+        return normalize_stage_exclude(patterns)
+    except StageExcludeError as exc:
+        raise ConfigurationError(str(exc)) from exc
 
 
 def _strip_patches(value: object) -> StripPatchesSetting:

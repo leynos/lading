@@ -643,6 +643,9 @@ reason = "Import preamble only: both modules use os, pathlib and collections.abc
 [[tool.duplication_gate.allow]]
 members = ["lading/commands/bump_manifest_rewrite_filesystem.py::_is_existing_literal_candidate", "scripts/format_markdown.py::_present"]
 reason = "Keep the manifest resolver and PEP 723 formatter presence probes separate: callers preserve distinct domain errors, and importing application utilities would couple the standalone formatter to the lading package."
+[[tool.duplication_gate.allow]]
+members = ["lading/commands/publish_stage_exclude.py", "lading/utils/confinement/glob_expansion.py"]
+reason = "Both are two-line early returns at unrelated boundaries: _validate_stage_exclude skips validation when no patterns are configured, while _consider_current_directory skips a root directory when the prefix is empty. Extracting the guard would couple the staging exclusion adapter to the bump glob walker, so the parallel stays visible here."
 [tool.df12_skylos]
 roots = ["lading"]
 python = "3.14"
@@ -704,6 +707,13 @@ full_name = [
     "lading.commands.publish_staging._handle_termination.frame",
 ]
 reason = "signal.signal invokes this handler with the interrupted frame; the parameter is required by the handler protocol and explicitly discarded."
+
+[[tool.skylos.dead_code.entrypoints]]
+type = "method"
+full_name = [
+    "lading.commands.publish_staging_telemetry._MetricsStageRecorder.record",
+]
+reason = "_recorded_stage calls this method through the StageRecorder protocol, and the default _DEFAULT_STAGE_RECORDER instance receives every staging outcome and duration."
 
 [tool.setuptools.packages.find]
 include = [
