@@ -68,7 +68,7 @@ ISSUE-369-REQ-dotted        -> EP-M1 -> tests/unit/test_bump_toml_helpers.py
 ISSUE-369-REQ-pipeline      -> EP-M1 -> tests/unit/test_bump_documentation_updates.py
 ISSUE-369-REQ-cli           -> EP-M1 -> tests/bdd/features/cli.feature
 ISSUE-369-REQ-implementation -> EP-M2 -> lading/commands/bump_docs_dependencies.py
-ISSUE-369-REQ-mutation      -> EP-M2 -> lading/commands/bump_toml.py
+ISSUE-369-REQ-mutation      -> EP-M2 -> lading/commands/bump_toml_dependencies.py
 ISSUE-369-REQ-migration     -> EP-M3 -> docs/users-guide.md
 ISSUE-369-REQ-design        -> EP-M3 -> docs/lading-design.md
 ```
@@ -158,16 +158,15 @@ snippets. The `[workspace.*]` and `[target.<spec>.*]` traversal comes from
   `update_toml_snippet_versions`, `update_toml_snippet_dependencies`, and
   `update_documentation_files` (the last is re-exported by `bump_docs.py`).
 - No new runtime dependency. `tomlkit>=0.15,<0.16` is already declared.
-- New and edited code modules aim at the 400-line ceiling. After the rebase
-  onto `main` (`ba6ebc9d`), three touched files already exceed it:
-  `bump_toml.py` 587 to 602 lines, `tests/bdd/steps/test_bump_steps.py` 487 to
-  510, and `tests/unit/test_bump_manifest_updates.py` 414 to 453.
-  `tests/unit/test_bump_documentation_updates.py` grows from 377 to 467, where
-  the plan requires the pipeline tests, and crosses the ceiling. The new
-  `bump_docs_dependencies.py` grows from 122 to 167 and `bump_docs_fences.py`
-  returns to 384 after `main` moved the dependency helpers out. The exception
-  is recorded in the decision log. Ruff complexity ceiling 8; Pylint maximum
-  five positional arguments.
+- New and edited code modules aim at the 400-line ceiling. Against the second
+  rebase target (`6768763c`), all three touched production modules stay under
+  it: `bump_toml.py` 310 to 314 lines, `bump_docs_dependencies.py` 124 to 169,
+  and `bump_toml_dependencies.py` 351 to 356. Two test files cross the ceiling:
+  `tests/unit/test_bump_manifest_updates.py` 414 to 453, and
+  `tests/unit/test_bump_documentation_updates.py` 377 to 467, where the plan
+  requires the pipeline tests. `tests/unit/test_dependency_sections.py` grows
+  from 141 to 390 and stays under. The exception is recorded in the decision
+  log. Ruff complexity ceiling 8; Pylint maximum five positional arguments.
 - Prose uses en-GB-oxendict spelling.
 - Implementation proceeds under the user's explicit instruction to implement
   the supplied coding plan; the plan's milestones are authoritative.
@@ -175,15 +174,16 @@ snippets. The `[workspace.*]` and `[target.<spec>.*]` traversal comes from
 ## Tolerances (exception triggers)
 
 Budgets are measured as net lines (additions minus deletions) against the
-rebase target (`ba6ebc9d`) for the final candidate; earlier figures used the
-pre-rebase base (`656506d5`). ExecPlan files are excluded from every count.
+second rebase target (`6768763c`) for the current candidate; earlier figures
+used `656506d5` and `ba6ebc9d` and are retained as history. ExecPlan files are
+excluded from every count.
 
 - Files: more than 15 non-ExecPlan files changed. The original budget of 10
-  was revised on 2026-11-27 after the implementation reached 15 files: two
-  production modules, five unit-test files, one snapshot, three BDD files, and
-  four documentation files. Each addition answers a specific review or
-  pre-merge check; dropping a required test or document to meet 10 would weaken
-  the delivery.
+  was revised on 2026-11-27 after the implementation reached 15 files. Against
+  the second rebase target the surface is three production modules, five
+  unit-test files, one snapshot, two BDD files, and four documentation files.
+  Each addition answers a specific review or pre-merge check; dropping a
+  required test or document to meet 10 would weaken the delivery.
 - Code: more than 750 net lines across production code and tests.
 - Configuration: more than 20 net lines (none expected).
 - Documentation: more than 150 net lines excluding ExecPlan files.
@@ -202,7 +202,7 @@ increase. Any further threshold breach requires escalation.
 - Risk: tomlkit's `OutOfOrderTableProxy` may not expose the same mapping
   protocol in every shape. Severity: medium. Likelihood: low. Mitigation: the
   shapes were probed directly; the identity helper only relies on `in` and
-  `get`, and mutation goes through the widened `_TableLike` helper.
+  `get`, and mutation goes through the widened `TableLike` helper.
 - Risk: iterating `items()` on a section could include entries that are not
   dependency declarations (for example the section itself when nested
   differently). Severity: low. Likelihood: low. Mitigation: only canonical
@@ -289,6 +289,13 @@ increase. Any further threshold breach requires escalation.
   developer's guide still said the module delegates to
   `update_dependency_sections`; the paragraph now states the per-table identity
   selection and the exact-key updater.
+- [x] (2026-11-28) Rebased again onto `main` (`6768763c`), which split the
+  dependency helpers into `bump_toml_dependencies.py`. Resolved the conflicts
+  by importing the section vocabulary and exact-key updater from the new
+  module, moving the `OutOfOrderTableProxy` dispatch and `TableLike` annotation
+  with them, and skipping the superseded BDD helper-extraction commit because
+  upstream had already extracted those steps. Full gates pass: 2090 tests, 115
+  snapshots; hosted checks pass on the second-rebase head.
 - [ ] Reply in the review thread, request approval, and merge PR #422 once it
   reaches equilibrium.
 
@@ -351,15 +358,15 @@ increase. Any further threshold breach requires escalation.
   contract is the rewritten Markdown, not the parser's internal shape.
 - Decision: record a revised file tolerance (10 to 15) and a module-size
   deviation rather than splitting the affected files in this change. Rationale:
-  after the rebase, `bump_toml.py` (587), `tests/bdd/steps/test_bump_steps.py`
-  (487), and `tests/unit/test_bump_manifest_updates.py` (414) already exceeded
-  400 lines at the target; the change grows them to 602, 510, and 453.
-  `tests/unit/test_bump_documentation_updates.py` (377 to 467) crosses the
-  ceiling; the plan places the pipeline tests in that file, so the exception is
-  recorded here rather than moving them to a new module. The
-  `bump_docs_dependencies.py` integration reaches 167 lines and
-  `bump_docs_fences.py` is back to 384 after `main` moved the dependency
-  helpers. A split would enlarge the review diff beyond the issue. This is a
+  against the second rebase target (`6768763c`), the production modules stay
+  under 400 lines (`bump_toml.py` 314, `bump_docs_dependencies.py` 169,
+  `bump_toml_dependencies.py` 356). `tests/unit/test_bump_manifest_updates.py`
+  (414 to 453) already exceeded the ceiling at the target, and
+  `tests/unit/test_bump_documentation_updates.py` (377 to 467) crosses it; the
+  plan places the pipeline tests in that file, so the exception is recorded
+  here rather than moving them to a new module. Earlier rebase figures
+  (`bump_toml.py` 602, `tests/bdd/steps/test_bump_steps.py` 510) are retained
+  as history. A split would enlarge the review diff beyond the issue. This is a
   recorded deviation, not a silent increase.
 - Decision: after the rebase, keep identity selection in
   `bump_docs_dependencies.py` and retain `main`'s workspace and target
@@ -411,7 +418,8 @@ Assigned requirements: `ISSUE-369-REQ-implementation`, `-mutation`.
   in the final tree.
 - Dispatch `OutOfOrderTableProxy` entries through the table-like branch of
   `update_dependency_entry`, and widen `assign_dependency_version_field` to
-  `_TableLike`.
+  `TableLike`. The second rebase moved both helpers to
+  `bump_toml_dependencies.py`.
 - Update docstrings for identity selection and section scope.
 
 Acceptance: all EP-M1 tests pass; `make check-fmt`, `make lint`,
@@ -512,9 +520,10 @@ make markdownlint: 0 issues in 0 files (spelling gate clean)
 make nixie: All diagrams validated successfully
 make lint: 10.00/10 (Ruff, Interrogate, Skylos, duplication, Pylint)
 make typecheck: All checks passed
-make test: 2017 passed, 29 skipped, 114 snapshots
-hosted: build-dist, lint-test, CodeScene, and Gecko pass on the rebased head
+make test: 2090 passed, 29 skipped, 115 snapshots  (second rebase)
+hosted: build-dist, lint-test, CodeScene, and Gecko pass on the second-rebase head
 cs check: 10.00 for bump_docs_dependencies.py and test_dependency_sections.py
+first rebase (historical): 2017 passed, 29 skipped, 114 snapshots
 ```
 
 Lessons:
@@ -577,3 +586,6 @@ issue's expected behaviour and the section scope.
   relocated dependency pass and the retained workspace/target scope.
 - 2026-11-28: Recorded the formal review outcome and corrected the stale
   developer-guide paragraph identified by its pre-merge check.
+- 2026-11-28: Recorded the second rebase onto `6768763c`: updated the target,
+  file breakdown, module sizes, mutation trace, and verification evidence, and
+  recorded the helper-split integration and the superseded BDD commit.
