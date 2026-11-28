@@ -1456,6 +1456,25 @@ Labels:
   and so skipped counts as `verified` and then `already_published`; a crate
   that is uploaded counts as `verified` at packaging and again after the upload.
 
+#### `publish.archive_fetch`
+
+Incremented once for each attempt to download a published archive from
+crates.io under `--expect-digests`, so the sum over its labels is the number of
+attempts. Labels:
+
+- `result` — `succeeded` (the archive was downloaded and hashed),
+  `not_published` (crates.io has no such version), `retried` (the attempt
+  failed transiently and another follows), or `unavailable` (the final attempt
+  failed and the lookup gave up). The counter never carries a URL, crate name,
+  or error text.
+
+A retry also logs a warning naming the attempt, the elapsed milliseconds, and
+the milliseconds of the 180-second budget left. A lookup that gives up logs one
+error line with the number of attempts, the elapsed milliseconds, and a failure
+category (`http_status`, `timeout`, `network`, `incomplete_body`,
+`budget_exhausted`, `oversized_response`, or `other`), and the crate's
+[`publish.archive_check`](#publisharchive_check) outcome is `unavailable`.
+
 ### `[preflight]`
 
 - `skip`: boolean, default `false`. Skip the pre-flight auxiliary builds,

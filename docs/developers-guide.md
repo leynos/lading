@@ -1865,8 +1865,8 @@ miss is out-of-plan and fatal, in-plan but still fatal, or in-plan and
 downgraded by `allow_unpublished_workspace_deps` during dry-run publication.
 
 `publish_digests.py`, `publish_archive_check.py`, `publish_archive_outcomes.py`,
-`publish_target_dir.py`, `publish_registry.py` and `publish_registry_reads.py`
-implement `--expect-digests` (issue
+`publish_target_dir.py`, `publish_registry.py`, `publish_registry_reads.py` and
+`publish_registry_telemetry.py` implement `--expect-digests` (issue
 [#419](https://github.com/leynos/lading/issues/419); [ADR-013](adrs/adr-0013-verify-archives-against-expected-digests.md)).
 `publish_digests` is the pure half: `parse_digest_text`,
 `load_expected_digests` and `validate_against_plan` turn the file into
@@ -1977,27 +1977,31 @@ connecting, reads, closing and retry waits, a `Content-Length` check and
 bounded retries (a short or interrupted body, including `IncompleteRead`, is
 retried), and tests substitute a fake. `publish_registry_reads` owns the time
 side of that download: the `Deadline` one lookup shares across its attempts and
-`read_chunk`, which reads the body one bounded chunk at a time. Each underlying
-socket read is bounded by a socket timeout of the 60 s request timeout or the
-budget left, whichever is less, so a stalled body costs one request timeout and
-is retried while budget remains, reading with `read1`; that does not bound one
-`read1` call, since CPython's chunked reader can make several reads in one
-while it consumes the trailers, nor closing. The budget is therefore not a
-strict bound on elapsed time: deadline checks once the body is read and the
-response closed, before a digest or a 404's `None` is returned, reject a result
-that arrives after expiry, so expiry is never reported as either, but they
-cannot interrupt a `read1` or a close already in progress. The new errors
-(`ExpectedDigestsError`, `ArchiveMismatchError`, `UploadedArchiveMismatchError`,
-`PublishedArchiveConflictError`) live in `publish_errors`;
-`ArchiveUnavailableError` and `PublishedArchiveUnavailableError` sit beside the
-code that raises them. `tests/e2e/test_publish_expect_digests_cli.py` covers
-the option through the real `lading` process, with a stub `cargo`
-(`tests/e2e/helpers/stub_cargo.py`) on `PATH` and a loopback server standing in
-for the archive host (the process is started through a launcher that points the
-downloader at it, so nothing reaches crates.io).
-`tests/helpers/publish_digests.py` provides `FakeCargo`, `FakeRegistry`, and
-`PublishRig`, which drive `publish.run` in process without a subprocess or
-socket; the behavioural scenarios in
+`read_chunk`, which reads the body one bounded chunk at a time.
+`publish_registry_telemetry.FetchTelemetry` counts each attempt under
+`publish.archive_fetch`, logs each retry with its attempt number, elapsed
+milliseconds and remaining budget, and logs one bounded summary (attempts,
+elapsed milliseconds and `failure_category`) before a lookup gives up. Each
+underlying socket read is bounded by a socket timeout of the 60 s request
+timeout or the budget left, whichever is less, so a stalled body costs one
+request timeout and is retried while budget remains, reading with `read1`; that
+does not bound one `read1` call, since CPython's chunked reader can make
+several reads in one while it consumes the trailers, nor closing. The budget is
+therefore not a strict bound on elapsed time: deadline checks once the body is
+read and the response closed, before a digest or a 404's `None` is returned,
+reject a result that arrives after expiry, so expiry is never reported as
+either, but they cannot interrupt a `read1` or a close already in progress. The
+new errors (`ExpectedDigestsError`, `ArchiveMismatchError`,
+`UploadedArchiveMismatchError`, `PublishedArchiveConflictError`) live in
+`publish_errors`; `ArchiveUnavailableError` and
+`PublishedArchiveUnavailableError` sit beside the code that raises them.
+`tests/e2e/test_publish_expect_digests_cli.py` covers the option through the
+real `lading` process, with a stub `cargo` (`tests/e2e/helpers/stub_cargo.py`)
+on `PATH` and a loopback server standing in for the archive host (the process
+is started through a launcher that points the downloader at it, so nothing
+reaches crates.io). `tests/helpers/publish_digests.py` provides `FakeCargo`,
+`FakeRegistry`, and `PublishRig`, which drive `publish.run` in process without
+a subprocess or socket; the behavioural scenarios in
 `tests/bdd/features/publish_expect_digests.feature` use them because a download
 cannot be injected into the CLI subprocess the other publish scenarios run.
 
@@ -2354,6 +2358,7 @@ Defined metrics:
 | `lockfile.validate.duration`     | (none)                        | Duration observation around each `cargo metadata --locked` probe.                                                                                                                                                                                |
 | `publish.cargo.duration`         | `subcommand`, `crate`         | One duration observation per `cargo package` or `cargo publish` invocation in the publish pipeline, successful or not (issue #251).                                                                                                              |
 | `publish.archive_check`          | `outcome`                     | `ArchiveVerifier` decides an archive outcome under `--expect-digests`; `outcome` is `verified`, `already_published`, `conflict`, `mismatch`, `unverified`, or `unavailable` (issue #419).                                                        |
+| `publish.archive_fetch`          | `result`                      | One increment per crates.io archive download attempt under `--expect-digests` (`publish_registry_telemetry.FetchTelemetry`); `result` is `succeeded`, `not_published`, `retried`, or `unavailable`, never a URL or error text.                   |
 | `publish.sccache.query`          | `outcome`                     | One increment per sccache statistics query while instrumentation is on (`--sccache-stats`, or a `--sccache-stats-json` path, which implies it); `outcome` is `success` or `failure` (issue [#252](https://github.com/leynos/lading/issues/252)). |
 
 Duration metrics aggregate a count and total seconds per label set via

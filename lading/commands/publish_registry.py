@@ -28,7 +28,6 @@ import dataclasses as dc
 import hashlib
 import http
 import http.client
-import logging
 import re
 import time
 import typing as typ
@@ -44,8 +43,7 @@ from lading.commands.publish_registry_reads import (
     declared_length,
     read_chunk,
 )
-
-LOGGER = logging.getLogger(__name__)
+from lading.commands.publish_registry_telemetry import FetchTelemetry
 
 _ARCHIVE_HOST = "https://static.crates.io/crates"
 _USER_AGENT = "lading"
@@ -212,12 +210,11 @@ def _is_retryable(error: BaseException) -> bool:
 
 @dc.dataclass(frozen=True, slots=True)
 class _Retry:
-    """What a retry decision needs: where we are in the attempts and the budget."""
+    """What a retry decision needs: the budget, the transport and the telemetry."""
 
-    url: str
-    attempt: int
     deadline: Deadline
     transport: FetchTransport
+    telemetry: FetchTelemetry
 
     def wait_for_next(self, error: BaseException) -> bool:
         """Log and wait before the next attempt, if one is allowed.
@@ -227,20 +224,13 @@ class _Retry:
         bool
             ``False`` when attempts or the time budget are spent.
         """
-        if (
-            self.attempt >= _ATTEMPTS
-            or self.deadline.remaining() <= _RETRY_DELAY_SECONDS
-        ):
+        remaining = self.deadline.remaining()
+        telemetry: FetchTelemetry = self.telemetry
+        if telemetry.attempts >= _ATTEMPTS or remaining <= _RETRY_DELAY_SECONDS:
             return False
-        LOGGER.warning(
-            "Fetching %s failed on attempt %d of %d (%s); retrying",
-            self.url,
-            self.attempt,
-            _ATTEMPTS,
-            error,
-        )
+        telemetry.retrying(error, remaining)
         # Never wait longer than the budget has left.
-        self.transport.sleep(min(_RETRY_DELAY_SECONDS, self.deadline.remaining()))
+        self.transport.sleep(min(_RETRY_DELAY_SECONDS, remaining))
         return True
 
 
@@ -311,20 +301,45 @@ def fetch_crates_io_digest(
     PublishedArchiveUnavailableError
         If the archive cannot be fetched after retrying, the response is too
         large, or the crate name or version is not valid.
-    """  # ruff: ignore[docstring-missing-exception, docstring-extraneous-exception]  # raised through _unavailable and the URL builder
+    """
     url = crates_io_archive_url(name, version)
     active = FetchTransport() if transport is None else transport
     deadline = Deadline(
         active.clock, active.clock() + _TOTAL_BUDGET_SECONDS, _TOTAL_BUDGET_SECONDS
     )
+    telemetry = FetchTelemetry(url, active.clock, _ATTEMPTS)
+    try:
+        digest = _fetch_with_retries(url, _Retry(deadline, active, telemetry))
+    except PublishedArchiveUnavailableError as error:
+        telemetry.gave_up(error.__cause__)
+        raise
+    telemetry.finished(is_published=digest is not None)
+    return digest
+
+
+def _fetch_with_retries(url: str, retry: _Retry) -> str | None:
+    """Make attempts until one settles the lookup or retrying is spent.
+
+    Returns
+    -------
+    str | None
+        The digest, or ``None`` for a version crates.io does not have.
+
+    Raises
+    ------
+    PublishedArchiveUnavailableError
+        If a failure is permanent, or the attempts or the budget run out.
+    """  # ruff: ignore[docstring-missing-exception, docstring-extraneous-exception]  # raised through _unavailable
     failure: BaseException | None = None
-    for attempt in range(1, _ATTEMPTS + 1):
+    telemetry: FetchTelemetry = retry.telemetry
+    for _ in range(_ATTEMPTS):
+        telemetry.attempt_started()
         try:
-            return _attempt(url, active, deadline)
+            return _attempt(url, retry.transport, retry.deadline)
         except (OSError, http.client.IncompleteRead) as error:
             if not _is_retryable(error):
                 raise _unavailable(url, error) from error
             failure = error
-            if not _Retry(url, attempt, deadline, active).wait_for_next(error):
+            if not retry.wait_for_next(error):
                 break
     raise _unavailable(url, failure) from failure
