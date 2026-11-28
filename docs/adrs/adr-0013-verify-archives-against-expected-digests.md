@@ -78,9 +78,9 @@ with one `<64 hex digits>  <name>-<version>.crate` entry per line.
 - **Dry runs.** The package check applies to every archive packaged. A crate
   whose packaging is downgraded to a warning is recorded as unverified.
 - **Reporting.** Each crate ends with one outcome (`verified`,
-  `already published and identical`, `conflict`, `mismatch`, `unverified`),
-  logged when decided, counted under `publish.archive_check`, and listed in the
-  publish summary.
+  `already published and identical`, `conflict`, `mismatch`, `unverified`,
+  `unavailable`), logged when decided, counted under `publish.archive_check`,
+  and listed in the publish summary.
 - **Registry.** Only crates.io is supported. The option is refused when
   `CARGO_REGISTRY_DEFAULT` names another registry or a publishable crate's
   `publish` key omits `crates-io`; `WorkspaceCrate.registries` carries that
@@ -99,12 +99,13 @@ with one `<64 hex digits>  <name>-<version>.crate` entry per line.
   `CARGO_REGISTRIES_<NAME>_TOKEN` (from the environment or a pre-flight
   override) and the tokens in Cargo's credentials file are replaced in what
   lading shows: the mirrored subprocess output, the logged command line and
-  environment, spawn errors, and messages built from captured output through
-  the shared failure formatters. Captured streams stay raw because lading
-  parses them, and without the option the plain runner is used as before. The
-  limit: credentials an external Cargo credential provider supplies never pass
-  through lading, so they cannot be redacted, and only exact values are
-  replaced.
+  environment, spawn errors, and messages built from captured output, which are
+  hidden where they leave lading (log records, exceptions leaving a secret
+  scope, and the command line's printer). Captured streams stay raw because
+  lading parses them, and without the option the plain runner is used as
+  before. The limit: credentials an external Cargo credential provider supplies
+  never pass through lading, so they cannot be redacted, and only exact values
+  are replaced.
 
 The verifier rides on `_PublishExecutionOptions` rather than on the pipeline
 state, so `--locked` follows from its presence and the helper signatures keep

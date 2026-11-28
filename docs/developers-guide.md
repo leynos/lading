@@ -1198,10 +1198,10 @@ from the private modules.
 
 `lading/workspace/confined_discovery.py` owns bump discovery.
 `load_bump_workspace` validates the declared member and exclusion patterns
-before any Cargo invocation, calls `load_cargo_metadata` with `no_deps=True`,
-and validates every reported member manifest before `build_workspace_graph`
-reads it. Publish discovery is unchanged and continues to use
-`lading.workspace.load_workspace`.
+before any Cargo invocation, calls `load_cargo_metadata` with
+`query=MetadataQuery(no_deps=True)`, and validates every reported member
+manifest before `build_workspace_graph` reads it. Publish discovery is
+unchanged and continues to use `lading.workspace.load_workspace`.
 
 `lading/commands/bump_plan.py` owns the frozen `BumpPlan`/`PlannedWrite`
 models, the `PlanBuilder` proposal sink, the deterministic commit order, and the
@@ -1557,6 +1557,19 @@ and returns the parsed JSON mapping. Any execution errors or invalid output
 raise `CargoMetadataError` with a descriptive message, so callers can present
 actionable feedback to users.
 
+Its keyword-only `query` parameter takes a
+`lading.workspace.metadata.MetadataQuery(no_deps, manifest_path, locked)`, a
+frozen record of the flags one run asks for; `None` asks for the full
+dependency graph with no extra flags. `no_deps=True` adds `--no-deps`, so Cargo
+reports only the members it can read from the manifests (bump discovery uses it
+to stay read-only and cheap). `manifest_path` adds `--manifest-path`, so Cargo
+resolves the workspace containing that manifest (lockfile planning uses it).
+`locked=True` adds `--locked`: Cargo then refuses to update a stale
+`Cargo.lock` and exits non-zero instead, which surfaces as
+`CargoMetadataInvocationError`. `MetadataQuery.command()` returns the argument
+tuple, for example
+`('cargo', 'metadata', '--format-version', '1', '--no-deps', '--locked')`.
+
 ### Workspace graph model
 
 `load_workspace` converts the raw metadata into a strongly typed
@@ -1576,6 +1589,16 @@ print([crate.name for crate in workspace.crates])
 The builder reads each crate manifest with `tomlkit` to detect
 `readme.workspace = true` directives while preserving document structure for
 future round-tripping.
+
+`load_workspace(workspace_root=None, *, locked=False)` takes a keyword-only
+`locked` flag, passed through as `MetadataQuery(locked=locked)`. With
+`locked=True` discovery runs `cargo metadata --locked`, so a `Cargo.lock` that
+no longer matches the manifests fails discovery with
+`CargoMetadataInvocationError` rather than being rewritten. Only
+`lading publish --expect-digests` sets it (the command line binds it with
+`functools.partial(load_workspace, locked=True)`), because a recorded digest
+only means something against a fixed lockfile; every other caller keeps the
+default and discovery behaves as before.
 
 ## Programmatic publish options
 
@@ -1993,15 +2016,16 @@ reject a result that arrives after expiry, so expiry is never reported as
 either, but they cannot interrupt a `read1` or a close already in progress. The
 new errors (`ExpectedDigestsError`, `ArchiveMismatchError`,
 `UploadedArchiveMismatchError`, `PublishedArchiveConflictError`) live in
-`publish_errors`; `ArchiveUnavailableError` and
-`PublishedArchiveUnavailableError` sit beside the code that raises them.
-`tests/e2e/test_publish_expect_digests_cli.py` covers the option through the
-real `lading` process, with a stub `cargo` (`tests/e2e/helpers/stub_cargo.py`)
-on `PATH` and a loopback server standing in for the archive host (the process
-is started through a launcher that points the downloader at it, so nothing
-reaches crates.io). `tests/helpers/publish_digests.py` provides `FakeCargo`,
-`FakeRegistry`, and `PublishRig`, which drive `publish.run` in process without
-a subprocess or socket; the behavioural scenarios in
+`publish_errors`, as does `ArchiveUnavailableError`;
+`PublishedArchiveUnavailableError` sits beside the fetcher in
+`publish_registry`. `tests/e2e/test_publish_expect_digests_cli.py` covers the
+option through the real `lading` process, with a stub `cargo`
+(`tests/e2e/helpers/stub_cargo.py`) on `PATH` and a loopback server standing in
+for the archive host (the process is started through a launcher that points the
+downloader at it, so nothing reaches crates.io).
+`tests/helpers/publish_digests.py` provides `FakeCargo`, `FakeRegistry`, and
+`PublishRig`, which drive `publish.run` in process without a subprocess or
+socket; the behavioural scenarios in
 `tests/bdd/features/publish_expect_digests.feature` use them because a download
 cannot be injected into the CLI subprocess the other publish scenarios run.
 
@@ -2290,6 +2314,15 @@ canonical error-message shape is
 `{field} must be {expected}; received {type(value).__name__}.` and is pinned by
 property and snapshot tests in `tests/unit/test_toml_coerce.py`.
 
+`optional_string_field(table, key) -> str | None` is the lenient counterpart
+for documents read without validation, such as Cargo's credentials file. It
+takes no `error` keyword and never raises: it returns `table[key]` when `table`
+is a mapping holding a string there, and `None` when `table` is not a mapping
+(a scalar or a list where a table should be), when the key is missing, or when
+the value is not a string. `lading.runtime.credentials` uses it to read
+`registry.token` and `registries.<name>.token`, so a malformed entry
+contributes no token rather than failing the run.
+
 ### Module size extractions (issue 108)
 
 To keep source files within the 400-line guideline, the following
@@ -2330,6 +2363,23 @@ responsibilities live in dedicated modules, imported by their original homes:
 - `lading.cli_environment` — the Cargo environment of a digest-checked publish
   and the scope that hides its registry tokens; `cli_entrypoint` prints errors
   and results through it.
+- `lading.utils.secret_scope` — `use_secrets` and the `SecretScope` it yields:
+  the exact token values a digest-checked run hides, handed explicitly to the
+  redacting runners, plus `redact_active` for the remaining sinks. While a
+  scope is open it installs the log hooks and sanitizes exceptions that leave
+  it.
+- `lading.utils.log_redaction` — the process-wide logging hooks
+  (`RecordFactory`, `MakeRecordPatch`, `RedactingFilter`, installed and removed
+  together through `LogRedaction`) that redact every record while a secret
+  scope is open. It is the one deliberate exception to the rule that the
+  library leaves global logging state alone, and it takes the redaction as a
+  function, so it depends on no scope machinery.
+- `lading.runtime.credentials` —
+  `credential_file_tokens(cargo_home, *, redact)` reads `registry.token` and
+  `registries.<name>.token` from Cargo's `credentials.toml` and legacy
+  `credentials` files. An unreadable or malformed file contributes nothing and
+  logs a warning naming only the path, redacted with the caller's function, and
+  the failure type, never the contents.
 
 ### In-process metrics (`lading.utils.metrics`)
 
