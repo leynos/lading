@@ -1941,11 +1941,13 @@ if none is left. The marker depends only on the set of secrets, so
 until later input settles it (a Hypothesis property checks the equivalence).
 The runner captures each stream raw and filters only the mirrored text
 (`stream_relay.relay_decoded` with a `RelayCapture`). Messages built from
-captured output are redacted centrally: `use_secrets` activates the values for
-the run and `command_detail` and `append_detail` (and so `with_detail` and the
-metadata error) call `redact_active`. The spawn error, the logged command line
-and the debug environment log redact by value too. As a backstop, `use_secrets`
-sanitizes an exception that propagates out of its scope
+captured output are hidden where they leave lading rather than where they are
+built: `command_detail` and `append_detail` are pure and redact only the
+`secrets` a caller passes explicitly (the auxiliary-build failure passes its
+known values), and every other such message, the metadata error included, is
+hidden by the sinks below. The spawn error, the logged command line and the
+debug environment log redact by value too. `use_secrets` sanitizes an exception
+that propagates out of its scope
 (`lading.utils.exception_redaction.sanitize_exception`: strings at any depth of
 `args` and attributes, notes and the whole cause and context chain, in place,
 (containers that contain themselves terminate; any traversal failure falls back
@@ -2185,13 +2187,13 @@ for the entire handler call: the active `PublishPlan`, the
 
 ### Command-failure detail helpers (`lading.utils.process`)
 
-`command_detail(stdout, stderr) -> str` returns the most informative output
-stream for a failed command: stderr stripped of whitespace when non-empty,
-otherwise stdout stripped, otherwise the empty string.
+`command_detail(stdout, stderr, *, secrets=()) -> str` returns the most
+informative output stream for a failed command: stderr stripped of whitespace
+when non-empty, otherwise stdout stripped, otherwise the empty string.
 
-`append_detail(message, detail, *, separator=": ") -> str` appends an
-_already-derived_ `detail` to `message` using `separator` only when `detail` is
-non-empty. Reach for it when the caller has already computed the detail (for
+`append_detail(message, detail, *, separator=": ", secrets=()) -> str` appends
+an _already-derived_ `detail` to `message` using `separator` only when `detail`
+is non-empty. Reach for it when the caller has already computed the detail (for
 example via `command_detail` to branch on its content) and must not derive it
 twice — `_verify_clean_working_tree` inspects the detail to decide whether to
 mention "is this a git repository?" before appending it.
@@ -2199,6 +2201,11 @@ mention "is this a git repository?" before appending it.
 `with_detail(message, stdout, stderr, *, separator=": ") -> str` is the
 convenience wrapper that derives the detail with `command_detail` and appends
 it with `append_detail` in one call.
+
+All three are pure. `command_detail` and `append_detail` replace exactly the
+`secrets` they are given and read no open secret scope, so their output depends
+only on their arguments; a message they build without secrets is hidden where
+it leaves lading, by the sinks of `lading.utils.secret_scope`.
 
 These are the canonical home for the `(stderr or stdout)` failure-detail idiom.
 Modules that render command failures (`lading.commands.lockfile`,

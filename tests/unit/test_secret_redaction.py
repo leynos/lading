@@ -202,20 +202,32 @@ def test_failure_message_and_logs_never_contain_the_token(
     assert _LEAK not in seen.out + seen.err, "no relayed stream may carry it"
 
 
-def test_failure_formatters_hide_active_secrets_in_one_place() -> None:
-    """Every message built from captured output goes through the shared helpers."""
-    with use_secrets((_LEAK,)):
-        detail = command_detail("", f"boom {_LEAK}")
+def test_failure_formatters_hide_only_their_explicit_secrets() -> None:
+    """The shared helpers redact what they are given and read no open scope."""
+    secrets = (_LEAK,)
+    detail = command_detail("", f"boom {_LEAK}", secrets=secrets)
+    appended = append_detail(f"cmd --token={_LEAK}", "x", secrets=secrets)
+    with use_secrets(secrets):
+        implicit = command_detail("", f"boom {_LEAK}")
         combined = with_detail("failed", f"out {_LEAK}", "")
-        appended = append_detail(f"cmd --token={_LEAK}", "x")
-        metadata = str(CargoMetadataInvocationError(101, "", f"bad {_LEAK}"))
 
-    for text in (detail, combined, appended, metadata):
-        assert _LEAK not in text, "no shared formatter may quote the secret"
+    for text in (detail, appended):
+        assert _LEAK not in text, "no helper may quote a secret it was given"
         assert REDACTED in text, "each must show the redaction"
-    assert _LEAK in command_detail("", f"boom {_LEAK}"), (
-        "outside a digest-checked run nothing is altered"
-    )
+    assert _LEAK in implicit, "an open scope does not change what a helper returns"
+    assert _LEAK in combined, "nor what the wrapper returns"
+
+
+def test_a_message_built_from_captures_is_hidden_where_it_leaves_the_scope() -> None:
+    """The metadata error quotes captured output raw; leaving the scope hides it."""
+    with (
+        pytest.raises(CargoMetadataInvocationError) as excinfo,
+        use_secrets((_LEAK,)),
+    ):
+        raise CargoMetadataInvocationError(101, "", f"bad {_LEAK}")
+
+    assert _LEAK not in str(excinfo.value), "the raised error must be clean"
+    assert REDACTED in str(excinfo.value), "and show the redaction"
 
 
 # A small alphabet that includes the placeholder's own characters and the first

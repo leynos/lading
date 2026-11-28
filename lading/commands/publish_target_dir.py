@@ -24,6 +24,7 @@ from pathlib import Path
 
 from lading.commands.publish_errors import ArchiveUnavailableError
 from lading.utils.process import command_detail
+from lading.utils.secret_scope import redact_active
 
 if typ.TYPE_CHECKING:
     from lading.runtime import CommandRunner
@@ -66,9 +67,11 @@ class CargoTargetLocator:
         try:
             return Path(json.loads(stdout)["target_directory"])
         except (ValueError, KeyError, TypeError) as exc:
+            # Redacted before it is cut: a sink that hid the secret later
+            # would find only a fragment of it, and leave that showing.
+            detail = redact_active(command_detail(stdout, stderr))
             message = (
                 "Cannot find the Cargo target directory to locate the packaged "
-                f"archive (cargo metadata exited {exit_code}): "
-                f"{command_detail(stdout, stderr)[:200]}"
+                f"archive (cargo metadata exited {exit_code}): {detail[:200]}"
             )
             raise ArchiveUnavailableError(message) from exc

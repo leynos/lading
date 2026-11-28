@@ -114,13 +114,14 @@ def _run_aux_build_commands(
             command, cwd=workspace_root, env=context.env
         )
         if exit_code != 0:
-            rendered = redact_text(" ".join(command), context.hidden())
-            message = with_detail(
+            hidden = context.hidden()
+            rendered = redact_text(" ".join(command), hidden)
+            message = append_detail(
                 f"Auxiliary build command failed with exit code {exit_code}: "
                 f"{rendered}",
-                stdout,
-                stderr,
+                command_detail(stdout, stderr, secrets=hidden),
                 separator="; ",
+                secrets=hidden,
             )
             LOGGER.error(message)
             raise PublishPreflightError(message)
