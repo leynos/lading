@@ -278,6 +278,11 @@ increase. Any further threshold breach requires escalation.
   retaining `main`'s workspace and target scope, and keeping both sides' tests
   and scenarios. Full gates pass: 2017 tests, 114 snapshots; all hosted checks
   rerun after the push.
+- [x] (2026-11-28) The queued formal review completed on `143d13b8` with no
+  inline findings. Its pre-merge checks passed 13 and warned that the
+  developer's guide still said the module delegates to
+  `update_dependency_sections`; the paragraph now states the per-table identity
+  selection and the exact-key updater.
 - [ ] Reply in the review thread, request approval, and merge PR #422 once it
   reaches equilibrium.
 
@@ -563,3 +568,5 @@ issue's expected behaviour and the section scope.
   that described literal key matching and proxy skipping.
 - 2026-11-28: Aligned the plan's non-goals and EP-M2/EP-M3 statements with the
   relocated dependency pass and the retained workspace/target scope.
+- 2026-11-28: Recorded the formal review outcome and corrected the stale
+  developer-guide paragraph identified by its pre-merge check.

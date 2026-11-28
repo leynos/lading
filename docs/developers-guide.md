@@ -1444,8 +1444,9 @@ exactly one place.
 Table location is a separate concern from section naming.
 `lading.commands.bump_docs_dependencies` decides which tables the documentation
 pass visits — the document root, `[workspace.*]`, and each immediate
-`[target.<spec>.*]` — and delegates the rewrite to the shared
-`bump_toml_dependencies.update_dependency_sections`. A module that needs a
+`[target.<spec>.*]` — selects each entry by its `package` identity or key, and
+delegates the exact-key rewrite to
+`bump_toml_dependencies.update_dependency_table`. A module that needs a
 different location policy belongs beside it rather than inside the section
 vocabulary.
 
