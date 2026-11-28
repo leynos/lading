@@ -1959,7 +1959,7 @@ for a digest-checked run. Every runner logs through
 identical with or without redaction; `env_redaction` is the older key-based
 masking for logged environment overrides. `publish_registry` is the injectable
 `PublishedDigestFetcher` port; `fetch_crates_io_digest` streams the archive from
-`static.crates.io` through a size cap, one 180 s time budget covering
+`static.crates.io` through a size cap, one 180 s time budget spanning
 connecting, reads, closing and retry waits, a `Content-Length` check and
 bounded retries (a short or interrupted body, including `IncompleteRead`, is
 retried), and tests substitute a fake. `publish_registry_reads` owns the time
@@ -1969,9 +1969,11 @@ socket read is bounded by a socket timeout of the 60 s request timeout or the
 budget left, whichever is less, so a stalled body costs one request timeout and
 is retried while budget remains, reading with `read1`; that does not bound one
 `read1` call, since CPython's chunked reader can make several reads in one
-while it consumes the trailers, nor closing. The total is enforced by deadline
-checks once the body is read and the response closed, before a digest or a 404's
-`None` is returned, so expiry is never reported as either. The new errors
+while it consumes the trailers, nor closing. The budget is therefore not a
+strict bound on elapsed time: deadline checks once the body is read and the
+response closed, before a digest or a 404's `None` is returned, reject a result
+that arrives after expiry, so expiry is never reported as either, but they
+cannot interrupt a `read1` or a close already in progress. The new errors
 (`ExpectedDigestsError`, `ArchiveMismatchError`, `UploadedArchiveMismatchError`,
 `PublishedArchiveConflictError`) live in `publish_errors`;
 `ArchiveUnavailableError` and `PublishedArchiveUnavailableError` sit beside the

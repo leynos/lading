@@ -50,7 +50,9 @@ LOGGER = logging.getLogger(__name__)
 _ARCHIVE_HOST = "https://static.crates.io/crates"
 _USER_AGENT = "lading"
 # One budget for the whole lookup: connecting, every read, the waits between
-# retries, and closing. Steady trickling bytes cannot stretch it.
+# retries, and closing. Each blocking read waits at most what is left, and a
+# result that arrives after expiry is rejected; a ``read1`` or a close already
+# in progress cannot be interrupted, so the bound is not strict.
 _TOTAL_BUDGET_SECONDS = 180.0
 _ATTEMPTS = 3
 _RETRY_DELAY_SECONDS = 2.0

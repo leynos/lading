@@ -87,8 +87,9 @@ def _limit_socket_wait(response: Response, seconds: float) -> None:
     timeout, capped at the budget left, is applied to the socket before every
     read and reads use ``read1``.
     That bounds each underlying read, not the total: a ``read1`` on a chunked
-    body can still make several reads while it consumes the trailers. The total
-    is enforced by the deadline checks before any result is returned. The
+    body can still make several reads while it consumes the trailers. The
+    deadline checks before a result is returned reject one that arrives late,
+    but cannot interrupt a ``read1`` or a close already in progress. The
     socket is reached through the response's file object; a response without
     one (a test double) is left alone.
     """
