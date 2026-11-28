@@ -8,7 +8,7 @@ import traceback
 import typing as typ
 
 import pytest
-from hypothesis import given
+from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from lading.commands.publish_cargo_config import CargoEnvironment
@@ -25,7 +25,6 @@ from lading.utils.redaction import (
     use_secrets,
 )
 from lading.workspace.metadata import CargoMetadataInvocationError
-from tests.helpers.hypothesis_settings import filesystem_property_settings
 from tests.helpers.publish_digests import PublishRig
 
 if typ.TYPE_CHECKING:
@@ -237,7 +236,7 @@ def _chunks(text: str, cuts: list[int]) -> list[str]:
 
 
 @given(text=_TEXTS, secrets=_SECRETS, cuts=_CUTS)
-@filesystem_property_settings(max_examples=300)
+@settings(max_examples=300)
 def test_streaming_redaction_equals_redacting_the_whole(
     text: str, secrets: list[str], cuts: list[int]
 ) -> None:
@@ -254,7 +253,7 @@ def test_streaming_redaction_equals_redacting_the_whole(
 
 
 @given(text=_TEXTS, secrets=_SECRETS)
-@filesystem_property_settings(max_examples=200)
+@settings(max_examples=200)
 def test_redaction_does_not_depend_on_the_order_of_secrets(
     text: str, secrets: list[str]
 ) -> None:
