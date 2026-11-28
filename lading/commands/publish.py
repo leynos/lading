@@ -265,7 +265,10 @@ def _dispatch_reporting(
     """Dispatch publication, logging the archive checks if it fails.
 
     A failed run returns no summary, so the outcomes decided before the
-    failure would otherwise be visible only as scattered log lines.
+    failure would otherwise be visible only as scattered log lines. The
+    boundary is :class:`PublishPreflightError`, which every archive-check
+    failure, :class:`~lading.commands.publish_errors.PublishError` subclasses
+    included, derives from.
     """
     try:
         publish_pipeline._dispatch_publication(

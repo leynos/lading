@@ -263,6 +263,9 @@ def _execute_live_publication_pipeline(
             LOGGER.exception(*_live_pipeline_abort_log_args(crate, completed, plan))
             raise PublishPreflightError(str(exc)) from exc
         except PublishPreflightError:
+            # Includes every PublishError subclass, so an archive check that
+            # fails (unavailable, conflict, uploaded mismatch) logs the abort
+            # context too.
             LOGGER.exception(*_live_pipeline_abort_log_args(crate, completed, plan))
             raise
         LOGGER.info("Live pipeline: completed crate %s", crate.name)
