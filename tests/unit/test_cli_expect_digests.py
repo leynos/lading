@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from lading import cli, cli_environment
+from lading import cli, cli_environment, config
 from lading.cli_options import PublishFlags
 from lading.commands import publish as publish_command
 
@@ -272,3 +272,20 @@ def test_direct_publish_hides_the_token_before_reading_credentials(
 
     _assert_warning_hides(caplog, "direct-credential-98fe76dc54ba")
     assert captured_options, "the stubbed publish must have run"
+
+
+def test_configuration_error_hides_the_token_of_a_digest_checked_publish(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A ``lading.toml`` key equal to a token is hidden from the raised error."""
+    leak = "cio-synthetic-token-config-0123456789"
+    monkeypatch.setenv("CARGO_HOME", str(tmp_path / "cargo-home"))
+    monkeypatch.setenv("CARGO_REGISTRY_TOKEN", leak)
+    monkeypatch.delenv(cli_environment.CARGO_REGISTRY_DEFAULT_ENV_VAR, raising=False)
+    (tmp_path / "lading.toml").write_text(f"{leak} = 1\n", encoding="utf-8")
+
+    with pytest.raises(config.ConfigurationError) as excinfo:
+        cli.publish(tmp_path, flags=PublishFlags(expect_digests=Path("digests.txt")))
+
+    assert "Unknown" in str(excinfo.value), "the unknown key must still be reported"
+    assert leak not in str(excinfo.value), "the token must not reach the caller"

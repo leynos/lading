@@ -156,22 +156,39 @@ def _run_with_context(
     home = None if environment is None else environment.cargo_home
     active_runner = _select_runner(secrets, cargo_home=home)
     hidden = nullcontext() if secrets is None else use_secrets(secrets)
-    configuration_scope: AbstractContextManager[object] = nullcontext()
-    try:
-        configuration = config.current_configuration()
-    except config.ConfigurationNotLoadedError:
-        # Freshly loaded configuration must be installed for the duration of
-        # the command; an already-active configuration needs no new scope.
-        configuration = config.load_configuration(workspace_root)
-        configuration_scope = config.use_configuration(configuration)
     # Only a digest-checked publish locks discovery; every other command keeps
     # the plain loader exactly as before.
     loader = workspace_loader or (
         load_workspace if environment is None else partial(load_workspace, locked=True)
     )
-    with configuration_scope, hidden, metadata_module.use_command_runner(active_runner):
-        workspace_model = loader(workspace_root)
-        return runner(workspace_root, configuration, workspace_model, active_runner)
+    # Entered before the configuration is loaded: a configuration error can
+    # quote `lading.toml`, which may hold a token, and leaving the scope
+    # sanitizes it.
+    with hidden:
+        configuration, configuration_scope = _command_configuration(workspace_root)
+        with configuration_scope, metadata_module.use_command_runner(active_runner):
+            workspace_model = loader(workspace_root)
+            return runner(workspace_root, configuration, workspace_model, active_runner)
+
+
+def _command_configuration(
+    workspace_root: Path,
+) -> tuple[config.LadingConfig, AbstractContextManager[object]]:
+    """Return the active configuration and the scope that installs it.
+
+    An already-active configuration needs no new scope; one loaded here must be
+    installed for the duration of the command.
+
+    Returns
+    -------
+    tuple[config.LadingConfig, AbstractContextManager[object]]
+        The configuration, and a no-op or the scope that installs it.
+    """
+    try:
+        return config.current_configuration(), nullcontext()
+    except config.ConfigurationNotLoadedError:
+        configuration = config.load_configuration(workspace_root)
+        return configuration, config.use_configuration(configuration)
 
 
 @app.command
