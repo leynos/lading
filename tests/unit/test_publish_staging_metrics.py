@@ -8,8 +8,10 @@ make a slow or refused staging attributable in the run's metric summary.
 import collections.abc as cabc
 import dataclasses as dc
 import logging
+import os
 import shutil
 import typing as typ
+from pathlib import Path
 
 import pytest
 
@@ -18,6 +20,7 @@ from lading.commands import (
     publish_plan,
     publish_stage_exclude,
     publish_staging,
+    publish_staging_telemetry,
 )
 from lading.utils import metrics
 
@@ -69,11 +72,15 @@ def test_staging_records_duration_and_success(
         pass
 
     assert (
-        metrics.counter_value(publish_staging.STAGING_METRIC, outcome="success") == 1
+        metrics.counter_value(
+            publish_staging_telemetry.STAGING_METRIC, outcome="success"
+        )
+        == 1
     ), "a completed staging must be counted as a success"
-    assert metrics.duration_stats(publish_staging.STAGING_DURATION_METRIC).count == 1, (
-        "a completed staging must record its duration"
-    )
+    assert (
+        metrics.duration_stats(publish_staging_telemetry.STAGING_DURATION_METRIC).count
+        == 1
+    ), "a completed staging must record its duration"
 
 
 def test_staging_uses_the_injected_clock(
@@ -86,7 +93,7 @@ def test_staging_uses_the_injected_clock(
     ticks = iter([100.0, 102.5])
     recorder = _RecordingRecorder()
 
-    telemetry = publish_staging.StagingTelemetry(
+    telemetry = publish_staging_telemetry.StagingTelemetry(
         clock=lambda: next(ticks), recorder=recorder
     )
     with publish_staging.staged_workspace(
@@ -127,13 +134,14 @@ def test_staging_records_an_inspection_failure(
 
     assert (
         metrics.counter_value(
-            publish_staging.STAGING_METRIC, outcome="inspection_failed"
+            publish_staging_telemetry.STAGING_METRIC, outcome="inspection_failed"
         )
         == 1
     ), "an unreadable workspace must be counted apart from a refused pattern"
-    assert metrics.duration_stats(publish_staging.STAGING_DURATION_METRIC).count == 1, (
-        "an inspection failure must still record its duration"
-    )
+    assert (
+        metrics.duration_stats(publish_staging_telemetry.STAGING_DURATION_METRIC).count
+        == 1
+    ), "an inspection failure must still record its duration"
 
 
 def test_staging_records_a_rejected_exclusion(
@@ -153,11 +161,15 @@ def test_staging_records_a_rejected_exclusion(
         pass
 
     assert (
-        metrics.counter_value(publish_staging.STAGING_METRIC, outcome="rejected") == 1
+        metrics.counter_value(
+            publish_staging_telemetry.STAGING_METRIC, outcome="rejected"
+        )
+        == 1
     ), "a refused exclusion must be counted apart from a failed copy"
-    assert metrics.duration_stats(publish_staging.STAGING_DURATION_METRIC).count == 1, (
-        "a refused exclusion must still record its duration"
-    )
+    assert (
+        metrics.duration_stats(publish_staging_telemetry.STAGING_DURATION_METRIC).count
+        == 1
+    ), "a refused exclusion must still record its duration"
 
 
 def test_staging_records_a_failed_copy(
@@ -183,11 +195,151 @@ def test_staging_records_a_failed_copy(
         pass
 
     assert (
-        metrics.counter_value(publish_staging.STAGING_METRIC, outcome="failed") == 1
+        metrics.counter_value(
+            publish_staging_telemetry.STAGING_METRIC, outcome="failed"
+        )
+        == 1
     ), "a copy error must be counted as a failure"
-    assert metrics.duration_stats(publish_staging.STAGING_DURATION_METRIC).count == 1, (
-        "a failed copy must still record its duration"
-    )
+    assert (
+        metrics.duration_stats(publish_staging_telemetry.STAGING_DURATION_METRIC).count
+        == 1
+    ), "a failed copy must still record its duration"
+
+
+def test_staging_records_a_copy_io_failure_as_failed(
+    monkeypatch: pytest.MonkeyPatch,
+    preparation_fixtures: PreparationFixtures,
+) -> None:
+    """A copy failure wrapped as a staging error is still counted as failed."""
+    plan = _plan(preparation_fixtures)
+    build_directory = preparation_fixtures.tmp_path / "build"
+
+    def deny_copy(*_args: object, **_kwargs: object) -> None:
+        """Fail as an unreadable source file does during the copy."""
+        error = PermissionError("permission denied")
+        raise error
+
+    monkeypatch.setattr(shutil, "copytree", deny_copy)
+    options = publish.PublishOptions(build_directory=build_directory, cleanup=False)
+
+    with (
+        pytest.raises(publish_staging.PublishPreparationError),
+        publish_staging.staged_workspace(plan, options=options),
+    ):
+        pass
+
+    assert (
+        metrics.counter_value(
+            publish_staging_telemetry.STAGING_METRIC, outcome="failed"
+        )
+        == 1
+    ), "a wrapped copy I/O failure must not be counted as a refused exclusion"
+
+
+def test_staging_records_an_unreadable_workspace(
+    monkeypatch: pytest.MonkeyPatch,
+    preparation_fixtures: PreparationFixtures,
+) -> None:
+    """A manifest that cannot be inspected is counted as an inspection failure."""
+    plan = _plan(preparation_fixtures)
+    build_directory = preparation_fixtures.tmp_path / "build"
+    manifest = plan.workspace_root / "alpha" / "Cargo.toml"
+    real_lstat = Path.lstat
+
+    def deny_link(self: Path) -> os.stat_result:
+        """Fail the no-follow inspection of the crate manifest."""
+        if self == manifest:
+            error = PermissionError("permission denied")
+            raise error
+        return real_lstat(self)
+
+    monkeypatch.setattr(Path, "lstat", deny_link)
+    options = publish.PublishOptions(build_directory=build_directory)
+
+    with (
+        pytest.raises(publish_staging.StageExcludeInspectionError),
+        publish_staging.staged_workspace(plan, options=options),
+    ):
+        pass
+
+    assert (
+        metrics.counter_value(
+            publish_staging_telemetry.STAGING_METRIC, outcome="inspection_failed"
+        )
+        == 1
+    ), "an unreadable manifest must be counted apart from a refused pattern"
+    assert (
+        metrics.duration_stats(publish_staging_telemetry.STAGING_DURATION_METRIC).count
+        == 1
+    ), "an inspection failure must still record its duration"
+
+
+class _FailingRecorder:
+    """Recorder double whose storage is unavailable."""
+
+    def record(self, *, outcome: str, duration_seconds: float) -> None:
+        """Fail as an unavailable metrics backend does."""
+        del outcome, duration_seconds
+        message = "recorder unavailable"
+        raise RuntimeError(message)
+
+
+def test_a_failing_recorder_does_not_break_staging(
+    preparation_fixtures: PreparationFixtures,
+) -> None:
+    """A telemetry failure must not fail a staging that succeeded."""
+    plan = _plan(preparation_fixtures)
+    build_directory = preparation_fixtures.tmp_path / "build"
+    options = publish.PublishOptions(build_directory=build_directory)
+    telemetry = publish_staging_telemetry.StagingTelemetry(recorder=_FailingRecorder())
+
+    with publish_staging.staged_workspace(
+        plan, options=options, telemetry=telemetry
+    ) as staged:
+        assert staged.staging_root.is_dir(), "the copy must complete"
+
+    assert not staged.staging_root.exists(), "cleanup must still remove the tree"
+
+
+def test_a_failing_clock_does_not_block_staging(
+    preparation_fixtures: PreparationFixtures,
+) -> None:
+    """A broken clock must not stop the copy from running."""
+    plan = _plan(preparation_fixtures)
+    build_directory = preparation_fixtures.tmp_path / "build"
+    options = publish.PublishOptions(build_directory=build_directory, cleanup=False)
+
+    def broken_clock() -> float:
+        """Fail as an unavailable monotonic clock does."""
+        message = "clock unavailable"
+        raise RuntimeError(message)
+
+    telemetry = publish_staging_telemetry.StagingTelemetry(clock=broken_clock)
+
+    with publish_staging.staged_workspace(
+        plan, options=options, telemetry=telemetry
+    ) as staged:
+        assert staged.staging_root.is_dir(), "the copy must run without a clock"
+
+    shutil.rmtree(staged.staging_root)
+
+
+def test_a_failing_recorder_does_not_replace_the_staging_error(
+    preparation_fixtures: PreparationFixtures,
+) -> None:
+    """The staging error must survive a recorder that also fails."""
+    plan = _plan(preparation_fixtures)
+    build_directory = preparation_fixtures.tmp_path / "build"
+    options = publish.PublishOptions(build_directory=build_directory)
+    telemetry = publish_staging_telemetry.StagingTelemetry(recorder=_FailingRecorder())
+
+    with (
+        pytest.raises(publish_staging.PublishPreparationError),
+        publish_staging.staged_workspace(
+            plan, options=options, stage_exclude=("alpha",), telemetry=telemetry
+        ),
+    ):
+        pass
 
 
 def test_staging_summary_payload_is_pinned(
@@ -205,7 +357,7 @@ def test_staging_summary_payload_is_pinned(
     options = publish.PublishOptions(build_directory=build_directory, cleanup=False)
     ticks = iter([100.0, 102.5])
 
-    telemetry = publish_staging.StagingTelemetry(clock=lambda: next(ticks))
+    telemetry = publish_staging_telemetry.StagingTelemetry(clock=lambda: next(ticks))
     with publish_staging.staged_workspace(
         plan, options=options, stage_exclude=("venv",), telemetry=telemetry
     ) as staged:

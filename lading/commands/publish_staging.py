@@ -37,7 +37,6 @@ import logging
 import shutil
 import signal
 import tempfile
-import time
 import typing as typ
 from pathlib import Path, PurePosixPath
 
@@ -48,13 +47,18 @@ from lading.commands.publish_stage_exclude import (
     _stage_exclude_ignore,
     _validate_stage_exclude,
 )
+from lading.commands.publish_staging_telemetry import (
+    DEFAULT_STAGING_TELEMETRY,
+    StagingTelemetry,
+    attempt_start,
+    record_attempt,
+)
 from lading.config import DEFAULT_STAGE_EXCLUDE
 from lading.stage_exclude_policy import (
     StageExcludeError,
     match_stage_exclude,
     normalize_stage_exclude,
 )
-from lading.utils import metrics
 
 if typ.TYPE_CHECKING:
     from lading.commands.publish import PublishOptions
@@ -70,59 +74,16 @@ LOGGER = logging.getLogger(__name__)
 #: else.
 STAGING_PREFIX = "lading-publish-"
 
-#: Counts each staging attempt by ``outcome``: ``success``, ``rejected`` when
-#: the exclusions cannot be used, or ``failed`` for any other error.
-STAGING_METRIC = "publish.staging"
 
-#: Observes staging duration, from exclusion validation to a finished copy.
-STAGING_DURATION_METRIC = "publish.staging.duration"
+class _StagingConfigurationRefusedError(PublishPreparationError):
+    """The requested staging configuration cannot be used.
 
-
-class StageRecorder(typ.Protocol):
-    """Records one finished staging attempt.
-
-    Implementations receive the outcome and elapsed time after the copy
-    returns or raises. The staging boundary decides neither how an outcome is
-    stored nor where it is reported.
+    It marks the failures a caller can fix by changing options or exclusions,
+    so the recorded outcome is ``rejected``. A copy that fails for any other
+    reason stays a plain :class:`PublishPreparationError` and is recorded as
+    ``failed``.
     """
 
-    def record(self, *, outcome: str, duration_seconds: float) -> None:
-        """Record ``outcome`` and ``duration_seconds`` for one attempt."""
-        ...
-
-
-class _MetricsStageRecorder:
-    """Record staging attempts in the process metric summary."""
-
-    def record(self, *, outcome: str, duration_seconds: float) -> None:
-        """Record the staging outcome and duration in the metric registry."""
-        metrics.observe_duration(STAGING_DURATION_METRIC, duration_seconds)
-        metrics.increment_counter(STAGING_METRIC, outcome=outcome)
-
-
-#: Production recorder for :class:`StageRecorder` consumers.
-_DEFAULT_STAGE_RECORDER: typ.Final[StageRecorder] = _MetricsStageRecorder()
-
-
-@dc.dataclass(frozen=True, slots=True)
-class StagingTelemetry:
-    """The clock and recorder a staging attempt reports through.
-
-    Attributes
-    ----------
-    clock : cabc.Callable[[], float]
-        Monotonic time source. Defaults to :func:`time.perf_counter`.
-    recorder : StageRecorder
-        Receives each finished attempt. Defaults to the process metric
-        summary.
-    """
-
-    clock: cabc.Callable[[], float] = time.perf_counter
-    recorder: StageRecorder = dc.field(default=_DEFAULT_STAGE_RECORDER)
-
-
-#: Production telemetry for callers that do not inject their own.
-DEFAULT_STAGING_TELEMETRY: typ.Final[StagingTelemetry] = StagingTelemetry()
 
 #: Staged trees the process is responsible for removing. A signal handler
 #: installed by the command-line entry point reads this, because a terminated
@@ -207,14 +168,16 @@ def _copy_workspace_tree(
 
     Raises
     ------
+    _StagingConfigurationRefusedError
+        If the staging directory would be nested inside the workspace root.
     PublishPreparationError
-        If the staging directory is unsafe or the workspace cannot be copied.
+        If the workspace cannot be copied.
     """
     workspace_root = workspace_root.resolve(strict=True)
     staging_root = build_directory / workspace_root.name
     if staging_root.resolve(strict=False).is_relative_to(workspace_root):
         message = "Publish staging directory cannot be nested inside the workspace root"
-        raise PublishPreparationError(message)
+        raise _StagingConfigurationRefusedError(message)
     try:
         if staging_root.exists():
             shutil.rmtree(staging_root)
@@ -310,10 +273,19 @@ def _validated_stage_exclude(
     # A caller's unusable spelling should fail as cheaply as a
     # manifest-removing one, and neither should wait for tens of gigabytes to
     # be copied before it is reported.
-    normalized = _normalize_stage_exclude(stage_exclude)
-    _validate_stage_exclude(
-        plan, normalized, preserve_symlinks=active_options.preserve_symlinks
-    )
+    try:
+        normalized = _normalize_stage_exclude(stage_exclude)
+        _validate_stage_exclude(
+            plan, normalized, preserve_symlinks=active_options.preserve_symlinks
+        )
+    except StageExcludeInspectionError:
+        # An unreadable workspace is not a configuration the caller can fix,
+        # so it keeps its own outcome instead of becoming "rejected".
+        raise
+    except PublishPreparationError as error:
+        # A refused pattern is the caller's configuration, not a copy
+        # failure; marking it keeps the recorded outcome honest.
+        raise _StagingConfigurationRefusedError(str(error)) from error
     return normalized
 
 
@@ -466,11 +438,11 @@ def _recorded_stage(
     StageExcludeInspectionError
         If the workspace cannot be read while checking an exclusion; counted
         as ``inspection_failed``.
-    PublishPreparationError
-        If an exclusion is refused or the copy fails; a refusal is counted as
+    _StagingConfigurationRefusedError
+        If an exclusion or the staging path is refused; counted as
         ``rejected``.
     """
-    started_at = telemetry.clock()
+    started_at = attempt_start(telemetry)
     outcome = "failed"
     try:
         result = _stage(plan, options, stage_exclude=stage_exclude)
@@ -479,18 +451,16 @@ def _recorded_stage(
         # counted apart from a refused pattern and from a failed copy.
         outcome = "inspection_failed"
         raise
-    except PublishPreparationError:
-        # A refused exclusion is a configuration problem with its own remedy,
-        # so it is counted apart from a copy that failed.
+    except _StagingConfigurationRefusedError:
+        # A refused exclusion or unsafe staging path has its own remedy, so
+        # it is counted apart from a copy that failed.
         outcome = "rejected"
         raise
     else:
         outcome = "success"
         return result
     finally:
-        telemetry.recorder.record(
-            outcome=outcome, duration_seconds=telemetry.clock() - started_at
-        )
+        record_attempt(telemetry, outcome, started_at)
 
 
 def _staging_root_for(workspace_root: Path, build_directory: Path) -> Path:

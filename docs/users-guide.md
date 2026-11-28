@@ -221,11 +221,15 @@ Both functions take the keyword-only `stage_exclude`, which defaults to
 `.git` again and keep Git-aware file selection when the workspace root holds
 it, or pass other patterns to trim more of the workspace.
 
-Both also take the keyword-only `clock` and `recorder`. `clock` supplies the
-duration, defaulting to `time.perf_counter`; `recorder` is a `StageRecorder`
-whose `record(*, outcome, duration_seconds)` method receives the finished
-attempt, defaulting to the process metric summary. Inject a recorder to observe
-staging without reading the global registry.
+Both also take a keyword-only `telemetry` argument, a
+`StagingTelemetry(clock=..., recorder=...)` value object from
+`lading.commands.publish_staging_telemetry`. Its `clock` supplies the start and
+end times used for the duration and defaults to `time.perf_counter`. Its
+`recorder` is a `StageRecorder` whose `record(*, outcome, duration_seconds)`
+method receives the finished attempt, defaulting to the process metric summary.
+Pass `telemetry=StagingTelemetry(recorder=my_recorder)` to observe staging
+without reading the global registry. A telemetry failure is logged and ignored:
+it never fails a staging or replaces a staging error.
 
 The `workspace` argument accepted by older releases is no longer part of the
 contract; the plan supplies the workspace root. When no

@@ -1702,15 +1702,21 @@ logging the normalized tuple. `match_stage_exclude` therefore only ever sees
 relative, normalized paths.
 
 `_stage` copies the workspace and returns the result; it records no telemetry.
-`_recorded_stage` wraps it, classifies the attempt (`success`, `rejected` for
-an unusable exclusion, `inspection_failed` for an unreadable workspace,
-`failed` for any other error), and hands the outcome and elapsed time to a
-`StageRecorder`. `staged_workspace` and `prepare_workspace` take keyword-only
-`clock` and `recorder` parameters, defaulting to `time.perf_counter` and the
-process metric summary, so a caller can supply a deterministic duration or
-observe staging without reading the global registry. The wrapper is the only
-place that decides an outcome, so the copy and the metrics cannot disagree
-about what happened.
+`_recorded_stage` wraps it, classifies the attempt (`success`, `rejected` for a
+refused exclusion or unsafe staging path, `inspection_failed` for an unreadable
+workspace, `failed` for a copy error), and hands the outcome and elapsed time
+to a `StageRecorder`. A refused configuration raises
+`_StagingConfigurationRefused`, a `PublishPreparationError` subclass, so a copy
+failure wrapped as `PublishPreparationError` is not mistaken for a bad
+configuration. `staged_workspace` and `prepare_workspace` take a keyword-only
+`telemetry` argument, a `StagingTelemetry` value object from
+`lading.commands.publish_staging_telemetry` holding the clock and recorder,
+defaulting to `time.perf_counter` and the process metric summary. A caller can
+therefore supply a deterministic duration or observe staging without reading
+the global registry. The wrapper is the only place that decides an outcome, so
+the copy and the metrics cannot disagree about what happened. Telemetry is
+best-effort: a clock or recorder failure is logged and ignored, because it must
+never fail a staging or replace a staging error.
 
 The symbolic-link walk stays in `publish_stage_exclude.py` beside the copy
 callback and the pre-copy check rather than moving to its own module. It has
@@ -1944,19 +1950,21 @@ then joins the resulting lines. All three helpers are public exports of
 `publish_plan`.
 
 `publish_staging.py` owns workspace preparation types and helpers that copy the
-workspace tree. Its exclusion adapter — the `copytree` ignore callback, the
-symbolic-link walk, and the pre-copy manifest check — lives in
-`publish_stage_exclude.py` (issue #262) so the copy and cleanup lifecycle does
-not also own exclusion semantics. The pure decisions those checks rest on,
-including pattern matching and the spelling rules, live one layer lower in
-`lading.stage_exclude_policy`, which accepts workspace-relative values and
-depends on neither the filesystem nor the command layer. `publish_manifest.py`
-owns the `publish.strip_patches` staging-time manifest mutation. These
-operations run before any `cargo package` or `cargo publish` command, so the
-command runner works against a prepared snapshot rather than the source
-workspace. Workspace README adoption is not performed here; the `lading bump`
-command transposes the workspace README into each opted-in crate before
-publication.
+workspace tree. `publish_staging_telemetry.py` owns the recorder protocol, the
+production metric recorder, the telemetry value object, and the helpers that
+keep a failing clock or recorder from disturbing a publish. Its exclusion
+adapter — the `copytree` ignore callback, the symbolic-link walk, and the
+pre-copy manifest check — lives in `publish_stage_exclude.py` (issue #262) so
+the copy and cleanup lifecycle does not also own exclusion semantics. The pure
+decisions those checks rest on, including pattern matching and the spelling
+rules, live one layer lower in `lading.stage_exclude_policy`, which accepts
+workspace-relative values and depends on neither the filesystem nor the command
+layer. `publish_manifest.py` owns the `publish.strip_patches` staging-time
+manifest mutation. These operations run before any `cargo package` or
+`cargo publish` command, so the command runner works against a prepared
+snapshot rather than the source workspace. Workspace README adoption is not
+performed here; the `lading bump` command transposes the workspace README into
+each opted-in crate before publication.
 
 `publish_diagnostics.py` owns compiletest failure enrichment. When a cargo
 pre-flight test failure mentions compiletest-style `*.stderr` artefacts, the
