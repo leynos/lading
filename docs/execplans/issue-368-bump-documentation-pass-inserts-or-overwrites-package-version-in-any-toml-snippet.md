@@ -315,10 +315,12 @@ Scenario: Bumping restricts documentation version rewriting to bumped crates
   (#353). `select_table` now takes `include_inline`, and the repository
   documents that the documentation and manifest passes leave inline shapes
   alone; a configured non-member rewrite opts in. The documentation pass
-  therefore uses the default and leaves `package = { ... }` and
-  `workspace = { package = { ... } }` snippets unchanged, and the late
-  inline-support change and its commit were dropped as superseded. A policy
-  test pins the unchanged round-trip.
+  therefore uses the default and does not traverse `package = { ... }` or
+  `workspace = { package = { ... } }` tables. A snippet containing them is not
+  necessarily unchanged: a block package version or an eligible dependency in
+  the same snippet still changes. The late inline-support change and its commit
+  were dropped as superseded, and tests pin both the unrewritten inline version
+  and the mixed-shape case.
 - 2026-11-28: redirect main's `bump_manifest_rewrite_dependencies` module to
   the split dependency helpers. The rebase left it importing
   `DEPENDENCY_SECTIONS`, `prepare_version_replacement` and
