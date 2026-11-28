@@ -400,17 +400,9 @@ pass leaves a target-specific table inside those `Cargo.toml` files unchanged.
 A configured non-member rewrite (`[[bump.manifest_rewrites]]`) does visit
 target-specific tables in the manifests it selects.
 
-Only the dependency keys named in the fence are rewritten, and only their
-`version` requirement; a requirement operator such as `^` or `~` is preserved.
-Keys that are not named are left untouched.
-
-Keys are matched as written. The documentation pass has no Cargo metadata, so
-it cannot resolve an alias: for a workspace crate `alpha`, a fence entry
-`alpha-core = { package = "alpha", version = "1.0.0" }` keeps its version.
-Conversely, an entry keyed `alpha` is rewritten even when it names a different
-package. The manifest pass resolves crate names to manifest keys from the
-workspace graph before applying the same rule, so it does follow aliases; that
-mapping is manifest-only.
+Only an identified entry's `version` requirement is rewritten; a requirement
+operator such as `^` or `~` is preserved. Entries whose identity is not a bump
+target are left untouched. Identity is described below.
 
 A fence can also show a location this pass cannot reach. That location is left
 unchanged and no error is reported, while any supported location in the same
@@ -424,14 +416,8 @@ fence is still rewritten:
 - a dependency *section* written as an inline table, such as
   `[target.'cfg(unix)']` followed by `dependencies = { alpha = "1.0.0" }`. An
   inline dependency *entry* such as `alpha = { version = "1.0.0" }` is
-  supported and rewritten;
-- a dependency entry whose sub-table is reopened after another header:
-  `[target.'cfg(unix)'.dependencies.alpha]`, then
-  `[target.'cfg(unix)'.dependencies]`, then
-  `[target.'cfg(unix)'.dependencies.alpha.package]`. `tomlkit` reads `alpha`
-  there as an out-of-order table, so it keeps its version while a plain sibling
-  entry such as `beta` in the same section is rewritten. Without the third
-  header `alpha` reads as an ordinary table and is rewritten normally.
+  supported and rewritten. A dependency entry whose sub-table is reopened after
+  another header is also supported and rewritten in place.
 
 An out-of-order `target` header is not a limit: a `[target]` line written after
 its selectors is still traversed.

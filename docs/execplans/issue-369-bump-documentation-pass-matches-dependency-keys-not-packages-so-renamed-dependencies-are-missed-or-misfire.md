@@ -155,7 +155,9 @@ documentation snippets.
 - New and edited code modules aim at the 400-line ceiling. After the rebase
   onto `main` (`ba6ebc9d`), three touched files already exceed it:
   `bump_toml.py` 587 to 602 lines, `tests/bdd/steps/test_bump_steps.py` 487 to
-  510, and `tests/unit/test_bump_manifest_updates.py` 414 to 453. The new
+  510, and `tests/unit/test_bump_manifest_updates.py` 414 to 453.
+  `tests/unit/test_bump_documentation_updates.py` grows from 377 to 467, where
+  the plan requires the pipeline tests, and crosses the ceiling. The new
   `bump_docs_dependencies.py` grows from 122 to 167 and `bump_docs_fences.py`
   returns to 384 after `main` moved the dependency helpers out. The exception
   is recorded in the decision log. Ruff complexity ceiling 8; Pylint maximum
@@ -339,7 +341,10 @@ increase. Any further threshold breach requires escalation.
   deviation rather than splitting the affected files in this change. Rationale:
   after the rebase, `bump_toml.py` (587), `tests/bdd/steps/test_bump_steps.py`
   (487), and `tests/unit/test_bump_manifest_updates.py` (414) already exceeded
-  400 lines at the target; the change grows them to 602, 510, and 453. The
+  400 lines at the target; the change grows them to 602, 510, and 453.
+  `tests/unit/test_bump_documentation_updates.py` (377 to 467) crosses the
+  ceiling; the plan places the pipeline tests in that file, so the exception is
+  recorded here rather than moving them to a new module. The
   `bump_docs_dependencies.py` integration reaches 167 lines and
   `bump_docs_fences.py` is back to 384 after `main` moved the dependency
   helpers. A split would enlarge the review diff beyond the issue. This is a
@@ -550,3 +555,7 @@ issue's expected behaviour and the section scope.
   module ownership, file sizes, budget base, and evidence; recorded the rebase
   integration decisions and the upstream refactor observation. Status remains
   `IN PROGRESS` until PR #422 merges.
+- 2026-11-28: Recorded the
+  `tests/unit/test_bump_documentation_updates.py` size exception (377 to 467)
+  after the rebased assessment, and corrected the stale user-guide paragraphs
+  that described literal key matching and proxy skipping.
