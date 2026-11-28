@@ -85,9 +85,14 @@ def redacting_invoke(
     Returns
     -------
     CommandRunner
-        Behaves like :func:`_invoke`, with the same error mapping, but the
-        exact ``secrets`` (and registry tokens in a call's ``env``) never
-        appear in what it relays or captures.
+        Behaves like :func:`_invoke`, with the same error mapping. The exact
+        ``secrets`` (and registry tokens in a call's ``env``) are hidden from
+        what it relays to the console and logs. The captured stdout and
+        stderr it returns are raw, exactly as the child wrote them, because
+        lading parses them; a message built from them must go through the
+        active redaction helpers (:func:`lading.utils.redaction.redact_active`
+        or the failure-detail helpers of :mod:`lading.utils.process`) before
+        it is shown.
     """
     return _map_errors(redacting_runner(secrets, cargo_home=cargo_home))
 

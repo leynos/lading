@@ -85,7 +85,9 @@ def redacting_runner(
     CommandRunner
         A runner with the subprocess adapter's behaviour, except that the
         console mirror, logged command line and spawn errors hide the secrets.
-        The captured streams it returns are unaltered.
+        The captured streams it returns are unaltered, so a message built from
+        them must be redacted with the active redaction helpers before it is
+        shown.
     """
 
     def run(
