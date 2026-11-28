@@ -43,6 +43,9 @@ branch, recording the plan, progress, decisions, and retrospective for a change.
   for rewriting `[workspace.*]` and `[target.<spec>.*]` dependency tables in
   documentation fences; the target tables are documentation-only, while the
   workspace tables match the manifest pass.
+- [Show documentation rewrite diffs for `lading bump`
+  dry runs][execplan-bump-documentation-diff] - delivered plan for the opt-in
+  `--diff` flag that closes issue #373.
 
 ## Decision records
 
@@ -74,6 +77,9 @@ branch, recording the plan, progress, decisions, and retrospective for a change.
   before mutation][adr-012] - accepted policy for canonical-root lexical
   checks, component-wise confinement, read-only `--no-deps` discovery, and
   prepare-then-commit.
+- [ADR-013: Show documentation rewrite diffs during bump dry
+  runs][adr-013] - accepted design for the opt-in `--diff` flag, exact
+  documentation previews, deterministic rendering, and the deferred JSON format.
 
 ## Reference documents
 
@@ -110,5 +116,7 @@ branch, recording the plan, progress, decisions, and retrospective for a change.
 [adr-010]: adrs/adr-0010-adopt-nose-duplication-gate.md
 [adr-011]: adrs/adr-0011-cyclopts-4-cli-result-and-diagnostic-boundary.md
 [adr-012]: adrs/adr-0012-confine-bump-write-targets.md
+[adr-013]: adrs/adr-0013-show-documentation-rewrite-diffs.md
+[execplan-bump-documentation-diff]: execplans/issue-373-bump-show-what-dry-run-would-change-in-documentation-not-just-which-files.md
 [execplan-regenerate-lockfiles]: execplans/regenerate-lockfiles.md
 [execplan-issue-370]: execplans/issue-370-bump-documentation-pass-skips-workspace-dependencies-and-target-specific-dependency-tables.md

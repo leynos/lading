@@ -3,8 +3,10 @@ r"""Documentation processing utilities for version bumping.
 This module provides utilities for updating version references within Markdown
 documentation files. It scans fenced TOML code blocks (e.g., Cargo.toml
 snippets in README files) and rewrites version entries to match the target
-workspace version. The preparation surface is
-``prepare_documentation_updates``; the rewriting helpers
+workspace version. The exported ``prepare_documentation_updates`` returns
+``(path, text)`` rows; ``_prepare_documentation_updates_with_sources`` is the
+private worker that also returns the source text it read, so the documentation
+preview and the write share one snapshot. The rewriting helpers
 ``rewrite_markdown_toml_fences`` and ``update_toml_snippet_versions`` remain
 independently testable.
 
@@ -49,6 +51,7 @@ from lading.utils.confinement import (
     UnmatchedPolicy,
     expand_confined_glob,
 )
+from lading.utils.text import normalize_newlines
 
 __all__ = [
     "DocumentationUpdateRequest",
@@ -75,7 +78,8 @@ class DocumentationUpdateRequest:
     updated_crates : frozenset[str]
         Names of crates whose dependency entries should be updated.
     read_source : cabc.Callable[[ConfinedPath], str]
-        Reader that honours earlier proposed content.
+        Reader that returns the current or earlier proposed source text, with
+        newline sequences intact. The rewrite normalizes them to LF.
     """
 
     target_version: str
@@ -112,8 +116,50 @@ def prepare_documentation_updates(
     BumpTargetExaminationError
         If a directory or selected file cannot be examined.
     """  # ruff: ignore[docstring-extraneous-exception]  # raised by expand_confined_glob
+    return tuple(
+        (path, updated_text)
+        for path, _source, updated_text in _prepare_documentation_updates_with_sources(
+            workspace_root, documentation, request
+        )
+    )
+
+
+def _prepare_documentation_updates_with_sources(
+    workspace_root: Path,
+    documentation: config_module.DocumentationConfig,
+    request: DocumentationUpdateRequest,
+) -> tuple[tuple[ConfinedPath, str, str], ...]:
+    """Return each documentation write with the source text it read.
+
+    The extra source value lets a caller show exactly what the rewrite
+    consumed without reading the file a second time, which could observe a
+    different file and leave a preview that does not match the plan.
+
+    Parameters
+    ----------
+    workspace_root : Path
+        Canonical workspace root.
+    documentation : config_module.DocumentationConfig
+        Configured glob patterns.
+    request : DocumentationUpdateRequest
+        Target version, crate names, and the reader for selected files.
+
+    Returns
+    -------
+    tuple[tuple[ConfinedPath, str, str], ...]
+        Confined paths, the exact source text read, and their complete
+        rewritten text, in expansion order.
+
+    Raises
+    ------
+    UnsafeBumpTargetError
+        If a pattern escapes the workspace or matches a symlink or special
+        file.
+    BumpTargetExaminationError
+        If a directory or selected file cannot be examined.
+    """  # ruff: ignore[docstring-extraneous-exception]  # raised by expand_confined_glob
     dependency_targets = {name for name in request.updated_crates if name}
-    updates: list[tuple[ConfinedPath, str]] = []
+    updates: list[tuple[ConfinedPath, str, str]] = []
     seen: set[tuple[str, ...]] = set()
     for index, pattern in enumerate(documentation.globs):
         matches = expand_confined_glob(
@@ -129,11 +175,11 @@ def prepare_documentation_updates(
             if match.parts in seen:
                 continue
             seen.add(match.parts)
-            text = request.read_source(match)
+            source = request.read_source(match)
             updated_text, changed = rewrite_markdown_toml_fences(
-                text, dependency_targets, request.target_version
+                normalize_newlines(source), dependency_targets, request.target_version
             )
             if not changed:
                 continue
-            updates.append((match, updated_text))
+            updates.append((match, source, updated_text))
     return tuple(updates)

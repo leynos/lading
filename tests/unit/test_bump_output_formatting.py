@@ -13,6 +13,7 @@ import hypothesis.strategies as st
 from hypothesis import given
 
 from lading.commands import bump_output
+from lading.commands.bump_preview import DocumentationPreview
 
 if typ.TYPE_CHECKING:
     from syrupy.assertion import SnapshotAssertion
@@ -26,7 +27,7 @@ def test_build_changes_description_counts_sections(tmp_path: Path) -> None:
         transposed_readmes=(tmp_path / "crates" / "alpha" / "README.md",),
     )
     assert (
-        bump_output._build_changes_description(changes)
+        bump_output._build_changes_description(bump_output._change_counts(changes))
         == "2 manifest(s), 1 documentation file(s), and 1 readme file(s)"
     ), "description should report 2 manifests, 1 documentation file, and 1 readme"
 
@@ -36,7 +37,9 @@ def test_build_changes_description_counts_sections(tmp_path: Path) -> None:
         transposed_readmes=(tmp_path / "crates" / "alpha" / "README.md",),
         lockfiles=(tmp_path / "Cargo.lock",),
     )
-    assert bump_output._build_changes_description(changes) == (
+    assert bump_output._build_changes_description(
+        bump_output._change_counts(changes)
+    ) == (
         "1 manifest(s), 1 documentation file(s), 1 readme file(s), and 1 lockfile(s)"
     ), "description should report 1 manifest, 1 doc, 1 readme, and 1 lockfile"
 
@@ -304,6 +307,49 @@ def test_format_result_message_lockfile_only(tmp_path: Path) -> None:
     )
     assert lines[1] == f"- {lockfile.relative_to(root)} (lockfile)", (
         "body should list the lockfile path"
+    )
+
+
+def test_document_previews_leave_the_summary_unchanged(tmp_path: Path) -> None:
+    """Previews never alter the rendered summary, including dry-run text."""
+    root = tmp_path
+    document_path = root / "README.md"
+    with_previews = bump_output.BumpChanges(
+        documents=(document_path,),
+        document_previews=(
+            DocumentationPreview(
+                path=document_path,
+                original='alpha = "0.1.0"\n',
+                proposed='alpha = "1.2.3"\n',
+            ),
+        ),
+    )
+    without_previews = bump_output.BumpChanges(documents=(document_path,))
+
+    assert bump_output._format_result_message(
+        with_previews, "1.2.3", dry_run=True, workspace_root=root
+    ) == bump_output._format_result_message(
+        without_previews, "1.2.3", dry_run=True, workspace_root=root
+    ), "document previews must not change the rendered summary"
+
+
+def test_document_previews_alone_do_not_create_a_summary(tmp_path: Path) -> None:
+    """Only listed change categories drive the summary, not preview records."""
+    root = tmp_path
+    preview_only = bump_output.BumpChanges(
+        document_previews=(
+            DocumentationPreview(
+                path=root / "README.md",
+                original='alpha = "0.1.0"\n',
+                proposed='alpha = "1.2.3"\n',
+            ),
+        )
+    )
+
+    assert bump_output._format_result_message(
+        preview_only, "1.2.3", dry_run=True, workspace_root=root
+    ) == ("Dry run; no manifest changes required; all versions already 1.2.3."), (
+        "a preview without a document category must still render the no-change text"
     )
 
 

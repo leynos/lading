@@ -25,7 +25,7 @@ from lading.commands.bump_manifest_rewrite_model import (
     ManifestRewriteError,
     ManifestRewriteVersions,
 )
-from lading.commands.bump_plan import PlanBuilder, WriteCategory
+from lading.commands.bump_plan import WriteCategory
 from lading.utils.confinement import (
     BumpPreflightError,
     confine_relative_path,
@@ -39,6 +39,7 @@ if typ.TYPE_CHECKING:  # pragma: no cover - import-time typing aids only
 
     from lading.commands.bump_manifest_rewrites import ManifestRewritePlan
     from lading.commands.bump_manifests import _BumpContext
+    from lading.commands.bump_plan_builder import PlanBuilder
     from lading.config import ManifestRewriteConfig
     from lading.workspace import WorkspaceCrate
 

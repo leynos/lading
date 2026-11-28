@@ -1,0 +1,21 @@
+# serializer version: 1
+# name: test_run_dry_run_with_diff_keeps_documentation_bytes
+  list([
+    'Dry run; would update version to 1.2.3 in 3 manifest(s) and 1 documentation file(s):',
+    '- Cargo.toml',
+    '- crates/alpha/Cargo.toml',
+    '- crates/beta/Cargo.toml',
+    '- README.md (documentation)',
+    '',
+    'Documentation diff:',
+    '--- a/README.md',
+    '+++ b/README.md',
+    '@@ -2,5 +2,5 @@',
+    ' ',
+    ' ```toml',
+    ' [dependencies]',
+    '-alpha = "0.1.0"',
+    '+alpha = "1.2.3"',
+    ' ```',
+  ])
+# ---

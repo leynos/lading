@@ -1,11 +1,11 @@
-"""Unit tests for ``lading.cli`` tri-state flag forwarding.
+"""Unit tests for ``lading.cli`` publish flag forwarding.
 
-Covers the nullable flags the CLI resolves and forwards to ``bump`` and
-``publish``: ``--dry-run``, ``--allow-unpublished-workspace-deps``,
-``--sccache-stats``/``--sccache-stats-json``, and ``--rebuild-lockfiles``.
+Covers the nullable publish flags the CLI resolves:
+``--allow-unpublished-workspace-deps`` and
+``--sccache-stats``/``--sccache-stats-json``. The ``bump`` flags are covered by
+``test_cli_bump_flags``.
 """
 
-import collections.abc as cabc
 import dataclasses as dc
 import logging
 import typing as typ
@@ -14,53 +14,11 @@ from pathlib import Path
 import pytest
 
 from lading import cli
-from lading.commands import bump as bump_command
-from lading.commands import bump_lockfiles
 from lading.commands import publish as publish_command
 from tests.helpers.cli_workspace import make_workspace
 
 if typ.TYPE_CHECKING:
     from syrupy.assertion import SnapshotAssertion
-
-
-@pytest.mark.usefixtures("minimal_config")
-def test_bump_cli_accepts_dry_run_flag(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    """The CLI passes ``dry_run=True`` when the flag is provided."""
-    workspace_graph = make_workspace(tmp_path.resolve())
-    captured_kwargs: dict[str, typ.Any] = {}
-
-    def fake_run(*args: object, **kwargs: object) -> str:
-        """Record the keyword arguments of a dry-run bump and return a preview."""
-        captured_kwargs.update(kwargs)
-        return "preview"
-
-    monkeypatch.setattr(bump_command, "run", fake_run)
-    monkeypatch.setattr(cli, "load_bump_workspace", lambda _: workspace_graph)
-
-    exit_code = cli.main([
-        "--workspace-root",
-        str(tmp_path),
-        "bump",
-        "1.2.3",
-        "--dry-run",
-    ])
-
-    assert exit_code == 0, f"a dry-run bump must exit 0, got {exit_code}"
-    options = captured_kwargs["options"]
-    assert isinstance(options, bump_command.BumpOptions), (
-        "bump.run must receive a BumpOptions instance"
-    )
-    assert options.dry_run is True, "the --dry-run flag must be forwarded as True"
-    repository = options.lockfile_repository
-    assert isinstance(repository, bump_lockfiles.CargoLockfileRepository), (
-        "the options must carry the cargo lockfile repository"
-    )
-    assert repository.runner is cli.subprocess_runner, (
-        "the repository must use the CLI subprocess runner"
-    )
 
 
 def test_publish_cli_logs_dry_run_default_flag_resolution(
@@ -316,97 +274,4 @@ def test_publish_cli_passes_sccache_flags(
     )
     assert options.sccache_stats_json == case.expected_json, (
         f"--sccache-stats-json forwarded as {options.sccache_stats_json!r}"
-    )
-
-
-@dc.dataclass(frozen=True, slots=True)
-class _RebuildLockfilesCase:
-    """One ``[bump]`` configuration, CLI flags, and the value they must yield.
-
-    ``config_body`` is empty where the case tests a flag on its own, so the
-    absence of configuration is stated explicitly rather than inferred.
-    """
-
-    config_body: str
-    extra_args: tuple[str, ...]
-    expected: bool | None
-
-
-_REBUILD_LOCKFILES_CASES = (
-    pytest.param(
-        _RebuildLockfilesCase(config_body="", extra_args=(), expected=None),
-        id="default",
-    ),
-    # The False here is hydrated by the Cyclopts TOML loader
-    # (use_commands_as_keys=True), not by resolution logic in cli.bump.
-    pytest.param(
-        _RebuildLockfilesCase(
-            config_body="[bump]\nrebuild_lockfiles = false\n",
-            extra_args=(),
-            expected=False,
-        ),
-        id="configuration-hydrated-by-cyclopts",
-    ),
-    pytest.param(
-        _RebuildLockfilesCase(
-            config_body="[bump]\nrebuild_lockfiles = true\n",
-            extra_args=(),
-            expected=True,
-        ),
-        id="configuration-hydrated-by-cyclopts-true",
-    ),
-    pytest.param(
-        _RebuildLockfilesCase(
-            config_body="[bump]\nrebuild_lockfiles = false\n",
-            extra_args=("--rebuild-lockfiles",),
-            expected=True,
-        ),
-        id="explicit-enable",
-    ),
-    pytest.param(
-        _RebuildLockfilesCase(
-            config_body="[bump]\nrebuild_lockfiles = false\n",
-            extra_args=("--no-rebuild-lockfiles",),
-            expected=False,
-        ),
-        id="explicit-disable",
-    ),
-)
-
-
-@pytest.mark.parametrize("case", _REBUILD_LOCKFILES_CASES)
-def test_bump_cli_forwards_raw_rebuild_lockfiles(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-    write_config: cabc.Callable[[str], Path],
-    case: _RebuildLockfilesCase,
-) -> None:
-    """The CLI forwards the nullable flag; resolution belongs to the command."""
-    write_config(case.config_body)
-    workspace_graph = make_workspace(tmp_path.resolve())
-    captured_kwargs: dict[str, typ.Any] = {}
-
-    def fake_run(*args: object, **kwargs: object) -> str:
-        """Record the keyword arguments of a bump and return a bumped marker."""
-        captured_kwargs.update(kwargs)
-        return "bumped"
-
-    monkeypatch.setattr(bump_command, "run", fake_run)
-    monkeypatch.setattr(cli, "load_bump_workspace", lambda _: workspace_graph)
-
-    exit_code = cli.main([
-        "--workspace-root",
-        str(tmp_path),
-        "bump",
-        "1.2.3",
-        *case.extra_args,
-    ])
-
-    assert exit_code == 0, f"bump should succeed, got exit code {exit_code}"
-    options = captured_kwargs["options"]
-    assert isinstance(options, bump_command.BumpOptions), (
-        "bump.run must receive a BumpOptions instance"
-    )
-    assert options.rebuild_lockfiles is case.expected, (
-        f"the flag should be forwarded as {case.expected!r}"
     )

@@ -15,12 +15,14 @@ from pathlib import Path
 
 from lading import config as config_module
 from lading.commands import (
+    bump_diff,
     bump_lockfiles,
     bump_manifests,
     bump_pipeline,
     bump_workspace_write_lock,
 )
 from lading.commands.bump_output import _format_result_message
+from lading.exceptions import LadingError
 from lading.utils.confinement import (
     BumpPreflightError,
     UnsafeBumpTargetError,
@@ -35,6 +37,10 @@ if typ.TYPE_CHECKING:  # pragma: no cover - import-time typing aids only
     from lading.workspace import WorkspaceGraph
 
 LOGGER = logging.getLogger(__name__)
+
+
+class BumpOptionsError(LadingError):
+    """Raised when bump options cannot produce a meaningful run."""
 
 
 @dc.dataclass(frozen=True, slots=True)
@@ -63,6 +69,10 @@ class BumpOptions:
         Explicit dependency sections to rewrite by crate name.
     include_workspace_sections : bool, default False
         Whether workspace dependency tables should be rewritten as well.
+    diff : bool, default False
+        Keyword-only. Append a unified diff of each documentation file that
+        was (or would be) rewritten. Requires ``dry_run``; a live run is
+        rejected because it has no recorded proposal to show.
 
     Notes
     -----
@@ -79,6 +89,9 @@ class BumpOptions:
         default_factory=lambda: types.MappingProxyType({})
     )
     include_workspace_sections: bool = False
+    # Keyword-only so inserting the field cannot change the meaning of an
+    # existing positional BumpOptions call.
+    diff: bool = dc.field(default=False, kw_only=True)
 
 
 def run(
@@ -105,14 +118,18 @@ def run(
     -------
     str
         Human-readable summary of the manifests, documents, README files, and
-        lockfiles that changed, or would change during a dry run.
+        lockfiles that changed, or would change during a dry run. When
+        ``options.diff`` is set, the summary is followed by a blank line,
+        ``Documentation diff:``, and a unified diff for each rewritten
+        documentation file.
 
     Notes
     -----
     Errors from the delegated update stages propagate to the caller. In
-    particular, ``ReadmeTranspositionError`` identifies an unsafe workspace
-    README adoption, and ``OSError`` identifies an unreadable or unwritable
-    workspace file.
+    particular, ``BumpOptionsError`` rejects ``diff`` without ``dry_run``,
+    ``ReadmeTranspositionError`` identifies an unsafe workspace README
+    adoption, and ``OSError`` identifies an unreadable or unwritable workspace
+    file.
 
     Examples
     --------
@@ -123,6 +140,7 @@ def run(
     'Dry run; would update version to 1.2.0 in ...'
     """
     resolved_options = BumpOptions() if options is None else options
+    _validate_bump_options(resolved_options)
     if resolved_options.dry_run:
         return _run_initialised(workspace_root, resolved_options, target_version)
     root_path = establish_workspace_root(workspace_root)
@@ -143,12 +161,18 @@ def _run_initialised(
         len(context.updated_crate_names),
     )
     changes = bump_pipeline._run_pipeline(context, target_version)
-    return _format_result_message(
+    summary = _format_result_message(
         changes,
         target_version,
         dry_run=context.base_options.dry_run,
         workspace_root=context.root_path,
     )
+    if not context.base_options.diff:
+        return summary
+    diff_text = bump_diff.format_documentation_diff(
+        changes.document_previews, context.root_path
+    )
+    return f"{summary}\n\nDocumentation diff:\n{diff_text}"
 
 
 def _initialize_bump_context(
@@ -157,6 +181,7 @@ def _initialize_bump_context(
 ) -> _BumpContext:
     """Return initialised bump context for ``workspace_root``."""
     resolved_options = BumpOptions() if options is None else options
+    _validate_bump_options(resolved_options)
     root_path = establish_workspace_root(workspace_root)
     configuration = resolved_options.configuration
     if configuration is None:
@@ -181,6 +206,7 @@ def _initialize_bump_context(
     )
     base_options = BumpOptions(
         dry_run=resolved_options.dry_run,
+        diff=resolved_options.diff,
         rebuild_lockfiles=rebuild_lockfiles,
         configuration=configuration,
         workspace=workspace,
@@ -255,3 +281,10 @@ def _validate_injected_workspace(root_path: Path, workspace: WorkspaceGraph) -> 
                 f"not contain its manifest {crate.manifest_path}"
             )
             raise BumpPreflightError(message)
+
+
+def _validate_bump_options(options: BumpOptions) -> None:
+    """Reject option combinations that cannot produce a meaningful run."""
+    if options.diff and not options.dry_run:
+        message = "--diff requires --dry-run"
+        raise BumpOptionsError(message)

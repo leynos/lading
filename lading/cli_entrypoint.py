@@ -17,6 +17,7 @@ from .cli_helpers import (
     _workspace_env,
 )
 from .commands import publish_staging
+from .commands.bump import BumpOptionsError
 from .commands.bump_manifest_rewrite_model import ManifestRewriteError
 from .utils import metrics, normalize_workspace_root
 from .utils.confinement import BumpPreflightError
@@ -152,6 +153,9 @@ def _dispatch_with_diagnostics(remaining: cabc.Sequence[str]) -> int:
         # A rejected write plan is a validation failure, not an unexpected
         # error: it exits before any workspace file was touched (issue #409).
         print(f"Preflight error: {exc}", file=sys.stderr)
+        return 1
+    except BumpOptionsError as exc:
+        print(str(exc), file=sys.stderr)
         return 1
     except WorkspaceModelError as exc:
         print(f"Workspace error: {exc}", file=sys.stderr)

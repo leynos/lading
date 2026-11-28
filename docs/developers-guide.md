@@ -1026,6 +1026,30 @@ that changes the process working directory. This keeps
 current-working-directory behaviour covered without causing mutmut's baseline
 run to fail before it can generate mutants.
 
+## CLI entry-point test helper (`tests/helpers/cli_entrypoints.py`)
+
+Process-level CLI tests exercise the two launch routes a user has:
+`python -m lading.cli` and, when the package is installed, the `lading` console
+script. The helper owns that choice:
+
+- `ENTRY_POINT_KINDS` lists `"module"` and `"console-script"` for pytest
+  `params`.
+- `entry_point_argv(kind)` returns the argv prefix for one route; the
+  console-script route skips the test when the script is not installed.
+- `console_script()` returns the installed script path or `None`.
+
+`tests/e2e/test_cli_entrypoint_contract.py` and
+`tests/e2e/test_users_guide_example.py` both parameterize on
+`ENTRY_POINT_KINDS`, so a packaging or entry-point regression cannot pass one
+route only.
+
+`tests/helpers/tested_examples.py` loads marked console examples and owns the
+`MarkedExample` record; `tests/helpers/markdown_fence_scan.py` supplies the
+container-aware fence scanning. The loader is strict by default and rejects an
+unmarked fence. `load_tested_examples(path, require_markers=False)` skips
+unmarked fences instead, which is how the users' guide example test reads a
+guide that still carries older fences.
+
 ## mutmut sandbox inputs (`[tool.mutmut] also_copy`)
 
 mutmut runs the suite from a copied `mutants/` tree. It copies the source, the
@@ -1204,12 +1228,64 @@ reads it. Publish discovery is unchanged and continues to use
 `lading.workspace.load_workspace`.
 
 `lading/commands/bump_plan.py` owns the frozen `BumpPlan`/`PlannedWrite`
-models, the `PlanBuilder` proposal sink, the deterministic commit order, and the
-`BumpChanges` projection. `lading/commands/bump_prepare.py` owns preparation
-of manifests, documentation, and adopted READMEs. `bump_pipeline` only
-orchestrates: prepare, then commit, then regenerate. A new bump target kind
-must be added to preparation and to `commit_plan`, never written directly from
-a pipeline stage.
+models, the deterministic commit order, and the `BumpChanges` projection;
+`lading/commands/bump_plan_builder.py` owns the `PlanBuilder` proposal sink.
+`lading/commands/bump_prepare.py` owns preparation of manifests, documentation,
+and adopted READMEs. `bump_pipeline` only orchestrates: prepare, then commit,
+then regenerate. A new bump target kind must be added to preparation and to
+`commit_plan`, never written directly from a pipeline stage.
+
+### Documentation previews and diff rendering
+
+`lading/commands/bump_preview.py` owns `DocumentationPreview`, the frozen
+record pairing the raw text a documentation rewrite read with the complete text
+it proposes. Both `bump_prepare` and `bump_output` import it at runtime; the
+`BumpChanges.document_previews` annotation must resolve for CrossHair, so a
+typing-only import would silently narrow the model checker to the empty
+default. The `pyproject.toml` per-file exception for
+`typing-only-first-party-import` records that reason.
+
+`bump_prepare.prepare_documentation` passes `PlanBuilder.read_raw` as the
+reader to the internal `bump_docs._prepare_documentation_updates_with_sources`.
+That read uses `newline=""`, so CRLF and lone-CR sequences survive for the
+diff, and the update tuple returns the exact source text the rewrite consumed
+alongside the LF proposal. The stage passes that source to
+`PlanBuilder.propose(..., observed=source)`, so neither the preview nor the
+proposal comes from a second, possibly different read. The stage records the
+preview only when `propose` reports that a write remains. `propose` removes any
+recorded preview when it removes a write that a later stage restored, and both
+are keyed by the target's filesystem identity rather than its spelling. The
+exported `prepare_documentation_updates` keeps its established `(path, text)`
+rows and projects the worker's result. `BumpPlan.document_previews` and
+`BumpChanges.document_previews` carry the previews in preparation order; the
+renderer sorts them.
+
+`lading/commands/bump_diff.py` owns `format_documentation_diff` and
+`sorted_documentation_previews`. The renderer sorts by `str(path)`, splits file
+lines only at CR and LF while keeping each terminator, and passes the two line
+lists to `difflib.unified_diff(..., lineterm="\n")`. It marks unterminated
+lines with `\ No newline at end of file` and selects a CRLF or CR notice from
+the original terminators. It is a pure function of the previews and the
+workspace root.
+
+### Shared newline normalization (`lading/utils/text.py`)
+
+`lading/utils/text.py` owns `normalize_newlines(text)`, the single shared
+conversion for bump preparation and planning. It replaces CRLF sequences, then
+lone CR sequences, with LF.
+
+Its callers are the documentation worker in `lading/commands/bump_docs.py`,
+which normalizes the source before the fence rewrite, and `PlanBuilder.propose`
+when an `observed` text is supplied, which normalizes the snapshot before
+comparing it with a restore candidate. `PlanBuilder.read_raw` keeps the raw
+terminators, so a `DocumentationPreview` still shows a CRLF or lone-CR source
+exactly as it appears on disk, while the rewrite and the restore comparison
+work on LF text.
+
+`BumpOptions.diff` is a keyword-only flag that requires `dry_run`.
+`bump._initialize_bump_context` raises `BumpOptionsError` when it is set
+without a dry run, before any preparation stage executes; `cli_entrypoint.main`
+writes the message to stderr and exits 1.
 
 `lading.commands.bump_output` is the sole owner of `BumpChanges` and all bump
 result-message formatting; `bump.py` imports these helpers and must not
@@ -1391,10 +1467,11 @@ re-deriving them per crate, which would make manifest processing quadratic in
 workspace size.
 
 Option defaulting is the command layer's responsibility, not the CLI adapter's.
-`cli.bump` forwards `rebuild_lockfiles` as the raw `bool | None` it received;
-the only resolution against `configuration.bump.rebuild_lockfiles` happens in
+`cli.bump` takes a `BumpFlags` bundle (`dry_run`, `diff`, and
+`rebuild_lockfiles`) and forwards each field unchanged; the only resolution of
+`rebuild_lockfiles` against `configuration.bump.rebuild_lockfiles` happens in
 `bump._initialize_bump_context`. (The Cyclopts TOML loader may hydrate the CLI
-flag from `lading.toml` before dispatch, but `cli.bump` itself performs no
+flags from `lading.toml` before dispatch, but `cli.bump` itself performs no
 coalescing.)
 
 Bump-time crate-set derivation is centralized in the bump context: the
@@ -1432,7 +1509,10 @@ Three pure helpers in `lading/commands/bump_output.py` carry PEP 316 docstring
 contracts (`pre:`/`post:` lines):
 
 - `_build_changes_description` — assembles the Oxford-comma-joined
-  category description from a `BumpChanges` instance.
+  category description from a `_ChangeCounts` record. The record holds the four
+  category counts, so CrossHair can explore non-empty categories; a
+  `BumpChanges` parameter would force it to proxy the nested `Path` values and
+  fail.
 - `_format_header` — formats the top-level bump result header line.
 - `_format_manifest_path` — formats a single manifest path for display
   in the bump output.
@@ -1450,12 +1530,18 @@ sets per-path and per-condition timeouts to keep the check bounded.
 intended for targeted verification when the formatting helpers change.
 
 `_format_manifest_path` keeps its `pre:`/`post:` contract but is intentionally
-excluded from the `make crosshair` run. CrossHair 0.0.107 cannot construct a
+excluded from the `make crosshair` run. The pinned CrossHair cannot construct a
 symbolic `pathlib.Path` proxy — it raises in `intersect_signatures` on CPython
 3.14, the project baseline and the version every gateway now uses. Its
 behaviour is instead covered by the Hypothesis property test in
-`tests/unit/test_bump_command_internals.py`, which exercises
+`tests/unit/test_bump_output_formatting.py`, which exercises
 `_format_result_message` across a wide range of path inputs.
+
+To confirm the model checker reaches a non-empty category rather than only the
+zero default, temporarily add `post: False` to `_build_changes_description` and
+run `make crosshair`. The reported counterexample should be a `_ChangeCounts`
+with at least one positive count (for example, `lockfiles=1`). Restore the
+contract afterwards.
 
 ## Workspace discovery helpers
 

@@ -13,7 +13,7 @@ import pytest
 
 from lading.commands import bump, bump_prepare, bump_prepare_manifest_rewrites
 from lading.commands.bump_manifest_rewrite_model import ManifestRewriteError
-from lading.commands.bump_plan import PlanBuilder
+from lading.commands.bump_plan_builder import PlanBuilder
 from lading.utils.confinement import BumpPreflightError, UnsafeBumpTargetError
 from lading.workspace import WorkspaceCrate, WorkspaceGraph
 from lading.workspace.graph_paths import graph_relative_manifest

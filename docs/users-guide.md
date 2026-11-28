@@ -349,6 +349,51 @@ To preview changes without writing any files:
 lading bump 1.2.3 --dry-run
 ```
 
+To see what a dry run would change inside each documentation file, add
+`--diff`. It requires `--dry-run` and appends a unified diff per changed file
+to the summary:
+
+<!-- tested-example: bump-documentation-diff -->
+````console
+$ lading bump 1.2.3 --dry-run --diff
+Dry run; would update version to 1.2.3 in 1 manifest(s) and 1 documentation file(s):
+- Cargo.toml
+- README.md (documentation)
+
+Documentation diff:
+--- a/README.md
++++ b/README.md
+@@ -1,4 +1,4 @@
+ ```toml
+ [dependencies]
+-alpha = "0.1.0"
++alpha = "1.2.3"
+ ```
+````
+
+The diff covers the documentation stage only. Manifests, transposed README
+files, and lockfiles are still listed but not diffed. A write that normalizes
+CRLF line endings to LF carries a notice under the file header, and a line
+without a final newline is followed by `\ No newline at end of file`. The
+output is intended for humans: it resembles a unified diff but is not
+guaranteed to be accepted by `git apply`.
+
+The diff reports the rewrite; it does not change it. The unrelated `[package]`
+insertion reported as [#368](https://github.com/leynos/lading/issues/368) is
+fixed in this release: the documentation pass rewrites versions only inside
+fences that belong to bumped crates. The diff still shows every change the
+rewrite makes.
+
+A later stage can rewrite a path the documentation stage also touched: a crate
+README adopted through workspace transposition is copied after the
+documentation rewrite. When that replacement keeps a write, the diff's added
+lines describe the final text the plan writes for that path. Diagnostics from
+`cargo metadata` and lockfile discovery remain on stderr and may appear before
+the summary when a terminal merges both streams.
+
+`--diff` requires `--dry-run`. A live run rejects the flag with
+`--diff requires --dry-run` and modifies no files.
+
 After updating manifest versions, `lading bump` automatically refreshes any
 git-tracked `Cargo.lock` files (excluding those under `target/`) that have an
 adjacent `Cargo.toml`, plus any additional manifests listed in

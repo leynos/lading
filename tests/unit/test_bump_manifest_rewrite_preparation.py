@@ -15,7 +15,7 @@ from lading.commands.bump_manifest_rewrite_model import (
     ManifestRewriteError,
     ManifestRewritePlan,
 )
-from lading.commands.bump_plan import PlanBuilder
+from lading.commands.bump_plan_builder import PlanBuilder
 from lading.config import BumpConfig, LadingConfig, ManifestRewriteConfig
 from lading.workspace import WorkspaceGraph
 from tests.helpers.manifest_rewrite_metrics import (

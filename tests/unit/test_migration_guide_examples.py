@@ -137,7 +137,7 @@ def _run_example(example: MarkedExample, tmp_path: Path) -> tuple[_Invocation, .
     assert bash is not None, "the example runner requires bash"
     bin_dir = tmp_path / "bin"
     log = tmp_path / "calls.log"
-    for name in ("uv", "python", "python3.14"):
+    for name in ("uv", "python", "python3.14", "lading"):
         _write_stub(bin_dir / name, log)
     _write_stub(tmp_path / ".venv" / "bin" / "python", log)
     env = {
@@ -242,3 +242,18 @@ def test_marked_examples_execute_in_an_isolated_boundary(
     assert invocations == _expected_pip_prerelease(pinned), (
         "the pip example must create the environment then install the pre-release"
     )
+
+
+def test_bump_diff_example_executes(tmp_path: Path) -> None:
+    """The documented bump diff command runs unchanged in the isolated boundary."""
+    example = load_tested_examples(_GUIDE)["migration-bump-diff"]
+
+    assert example.language == "bash", "the example must be a shell fence"
+    invocations = _run_example(example, tmp_path)
+
+    assert invocations == (
+        _Invocation(
+            program="lading",
+            arguments=("bump", "1.2.3", "--dry-run", "--diff"),
+        ),
+    ), "the example must invoke the documented bump diff command"

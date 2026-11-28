@@ -38,6 +38,8 @@ import dataclasses as dc
 # stdlib type-only imports.
 from pathlib import Path
 
+from lading.commands.bump_preview import DocumentationPreview as DocumentationPreview
+
 _SINGLE_CHANGE_CATEGORY_COUNT = 1
 _PAIRED_CHANGE_CATEGORY_COUNT = 2
 
@@ -60,32 +62,70 @@ class BumpChanges:
         Cargo lockfiles regenerated after manifest updates.
     transposed_readmes : Sequence[Path]
         Crate README files adopted from the workspace README.
+    document_previews : Sequence[DocumentationPreview]
+        Exact original and proposed text for each rewritten documentation
+        file, in preparation order. Empty when no documentation file changed.
     """
 
     manifests: cabc.Sequence[Path] = ()
     documents: cabc.Sequence[Path] = ()
     lockfiles: cabc.Sequence[Path] = ()
     transposed_readmes: cabc.Sequence[Path] = ()
+    document_previews: cabc.Sequence[DocumentationPreview] = ()
 
 
-def _build_changes_description(changes: BumpChanges) -> str:
+@dc.dataclass(frozen=True, slots=True)
+class _ChangeCounts:
+    """Number of changed files in each bump output category."""
+
+    manifests: int = 0
+    documents: int = 0
+    readmes: int = 0
+    lockfiles: int = 0
+
+
+def _change_counts(changes: BumpChanges) -> _ChangeCounts:
+    """Return the per-category counts that drive the summary text."""
+    return _ChangeCounts(
+        manifests=len(changes.manifests),
+        documents=len(changes.documents),
+        readmes=len(changes.transposed_readmes),
+        lockfiles=len(changes.lockfiles),
+    )
+
+
+def _has_change_counts(counts: _ChangeCounts) -> bool:
+    """Return True when at least one category has a non-zero count."""
+    return any((
+        counts.manifests,
+        counts.documents,
+        counts.readmes,
+        counts.lockfiles,
+    ))
+
+
+def _build_changes_description(counts: _ChangeCounts) -> str:
     """Build a human-readable description of changed files.
 
-    CrossHair contracts (issue #95); model-check with ``make crosshair``.
+    CrossHair contracts (issue #95); model-check with ``make crosshair``. The
+    parameter is a count record rather than ``BumpChanges`` because the pinned
+    CrossHair cannot build proxies for the ``Path`` values nested inside
+    ``DocumentationPreview``; counts let it explore every non-empty category.
 
-    pre: _has_changes(changes)
+    pre: min(counts.manifests, counts.documents, counts.readmes, counts.lockfiles) >= 0
+    pre: _has_change_counts(counts)
     post: len(__return__) > 0
     post: " and and " not in __return__
     """
     parts: list[str] = []
-    if changes.manifests:
-        parts.append(f"{len(changes.manifests)} manifest(s)")
-    if changes.documents:
-        parts.append(f"{len(changes.documents)} documentation file(s)")
-    if changes.transposed_readmes:
-        parts.append(f"{len(changes.transposed_readmes)} readme file(s)")
-    if changes.lockfiles:
-        parts.append(f"{len(changes.lockfiles)} lockfile(s)")
+    if counts.manifests:
+        parts.append(f"{counts.manifests} manifest(s)")
+    if counts.documents:
+        parts.append(f"{counts.documents} documentation file(s)")
+    if counts.readmes:
+        parts.append(f"{counts.readmes} readme file(s)")
+    if counts.lockfiles:
+        parts.append(f"{counts.lockfiles} lockfile(s)")
     if len(parts) == _SINGLE_CHANGE_CATEGORY_COUNT:
         return parts[0]
     if len(parts) == _PAIRED_CHANGE_CATEGORY_COUNT:
@@ -119,12 +159,7 @@ def _format_header(description: str, target_version: str, *, dry_run: bool) -> s
 
 def _has_changes(changes: BumpChanges) -> bool:
     """Return True when a bump run changed at least one file category."""
-    return any((
-        changes.manifests,
-        changes.documents,
-        changes.transposed_readmes,
-        changes.lockfiles,
-    ))
+    return _has_change_counts(_change_counts(changes))
 
 
 def _format_result_message(
@@ -138,7 +173,7 @@ def _format_result_message(
     if not _has_changes(changes):
         return _format_no_changes_message(target_version, dry_run=dry_run)
 
-    description = _build_changes_description(changes)
+    description = _build_changes_description(_change_counts(changes))
     header = _format_header(description, target_version, dry_run=dry_run)
     formatted_paths = [
         f"- {_format_manifest_path(manifest_path, workspace_root)}"

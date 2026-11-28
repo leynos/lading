@@ -29,6 +29,7 @@ from lading.workspace import WorkspaceCrate, WorkspaceDependency, WorkspaceGraph
 _LOCKFILE_STUB_MODULES = frozenset({
     "test_bump_manifest_updates",
     "test_bump_documentation_updates",
+    "test_bump_documentation_previews",
     "test_bump_context_properties",
     "test_bump_result_formatting",
     "test_bump_lockfile_rebuild",
