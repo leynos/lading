@@ -1865,8 +1865,8 @@ miss is out-of-plan and fatal, in-plan but still fatal, or in-plan and
 downgraded by `allow_unpublished_workspace_deps` during dry-run publication.
 
 `publish_digests.py`, `publish_archive_check.py`, `publish_archive_outcomes.py`,
-`publish_target_dir.py` and `publish_registry.py` implement `--expect-digests`
-(issue
+`publish_target_dir.py`, `publish_registry.py` and `publish_registry_reads.py`
+implement `--expect-digests` (issue
 [#419](https://github.com/leynos/lading/issues/419); [ADR-013](adrs/adr-0013-verify-archives-against-expected-digests.md)).
 `publish_digests` is the pure half: `parse_digest_text`,
 `load_expected_digests` and `validate_against_plan` turn the file into
@@ -1962,14 +1962,16 @@ masking for logged environment overrides. `publish_registry` is the injectable
 `static.crates.io` through a size cap, one 180 s time budget covering
 connecting, reads, closing and retry waits, a `Content-Length` check and
 bounded retries (a short or interrupted body, including `IncompleteRead`, is
-retried), and tests substitute a fake. Each underlying socket read is bounded
-by a socket timeout of the 60 s request timeout or the budget left, whichever
-is less, so a stalled body costs one request timeout and is retried while
-budget remains, reading with `read1`; that does not bound one `read1` call,
-since CPython's chunked reader can make several reads in one while it consumes
-the trailers, nor closing. The total is enforced by deadline checks once the
-body is read and the response closed, before a digest or a 404's `None` is
-returned, so expiry is never reported as either. The new errors
+retried), and tests substitute a fake. `publish_registry_reads` owns the time
+side of that download: the `Deadline` one lookup shares across its attempts and
+`read_chunk`, which reads the body one bounded chunk at a time. Each underlying
+socket read is bounded by a socket timeout of the 60 s request timeout or the
+budget left, whichever is less, so a stalled body costs one request timeout and
+is retried while budget remains, reading with `read1`; that does not bound one
+`read1` call, since CPython's chunked reader can make several reads in one
+while it consumes the trailers, nor closing. The total is enforced by deadline
+checks once the body is read and the response closed, before a digest or a 404's
+`None` is returned, so expiry is never reported as either. The new errors
 (`ExpectedDigestsError`, `ArchiveMismatchError`, `UploadedArchiveMismatchError`,
 `PublishedArchiveConflictError`) live in `publish_errors`;
 `ArchiveUnavailableError` and `PublishedArchiveUnavailableError` sit beside the

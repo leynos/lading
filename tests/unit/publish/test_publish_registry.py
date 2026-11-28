@@ -8,7 +8,7 @@ import urllib.request
 
 import pytest
 
-from lading.commands import publish_registry
+from lading.commands import publish_registry, publish_registry_reads
 from lading.commands.publish_registry import (
     PublishedArchiveUnavailableError,
     crates_io_archive_url,
@@ -98,7 +98,7 @@ def test_permanent_failure_is_not_retried() -> None:
 def test_oversized_response_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
     """The body is bounded, so an endless response cannot fill the disk."""
     monkeypatch.setattr(publish_registry, "_MAX_ARCHIVE_BYTES", 16)
-    monkeypatch.setattr(publish_registry, "_READ_CHUNK_BYTES", 8)
+    monkeypatch.setattr(publish_registry_reads, "_READ_CHUNK_BYTES", 8)
     script = Script(b"x" * 17)
 
     with pytest.raises(PublishedArchiveUnavailableError, match="exceeds 16 bytes"):

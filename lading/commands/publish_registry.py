@@ -36,18 +36,24 @@ import urllib.error
 import urllib.request
 
 from lading.commands.publish_errors import PublishError
+from lading.commands.publish_registry_reads import (
+    REQUEST_TIMEOUT_SECONDS,
+    BudgetExhaustedError,
+    Deadline,
+    Response,
+    declared_length,
+    read_chunk,
+)
 
 LOGGER = logging.getLogger(__name__)
 
 _ARCHIVE_HOST = "https://static.crates.io/crates"
 _USER_AGENT = "lading"
-_REQUEST_TIMEOUT_SECONDS = 60.0
 # One budget for the whole lookup: connecting, every read, the waits between
 # retries, and closing. Steady trickling bytes cannot stretch it.
 _TOTAL_BUDGET_SECONDS = 180.0
 _ATTEMPTS = 3
 _RETRY_DELAY_SECONDS = 2.0
-_READ_CHUNK_BYTES = 1024 * 1024
 # crates.io accepts uploads of 10 MiB unless a crate is granted more. A cap
 # well above that still stops an endless response from filling the disk.
 _MAX_ARCHIVE_BYTES = 256 * 1024 * 1024
@@ -79,19 +85,12 @@ class PublishedArchiveUnavailableError(PublishError):
     """
 
 
-class _Response(typ.Protocol):
-    """The slice of an HTTP response the fetcher reads."""
-
-    def read(self, size: int, /) -> bytes:
-        """Return up to ``size`` bytes of the body."""
-
-
 class _Opener(typ.Protocol):
     """Callable that opens a request and yields a readable response."""
 
     def __call__(
         self, request: urllib.request.Request, /, *, timeout: float
-    ) -> contextlib.AbstractContextManager[_Response]:
+    ) -> contextlib.AbstractContextManager[Response]:
         """Open ``request`` and return a context manager over its response."""
 
 
@@ -127,89 +126,7 @@ def crates_io_archive_url(name: str, version: str) -> str:
     return f"{_ARCHIVE_HOST}/{name}/{name}-{version}.crate"
 
 
-class _BudgetExhaustedError(OSError):
-    """Raised when the lookup's total time budget has run out."""
-
-
-@dc.dataclass(slots=True)
-class _Deadline:
-    """The single time budget a lookup shares across its attempts."""
-
-    clock: cabc.Callable[[], float]
-    expires_at: float
-
-    def remaining(self) -> float:
-        """Return the seconds left, never negative."""
-        return max(0.0, self.expires_at - self.clock())
-
-    def check(self) -> None:
-        """Raise when no time is left.
-
-        Raises
-        ------
-        _BudgetExhaustedError
-            If the budget has run out.
-        """
-        if self.remaining() <= 0.0:
-            message = f"the {_TOTAL_BUDGET_SECONDS:.0f}s time budget is exhausted"
-            raise _BudgetExhaustedError(message)
-
-
-def _declared_length(response: _Response) -> int | None:
-    """Return the response's ``Content-Length``, when it states a valid one.
-
-    Returns
-    -------
-    int | None
-        The declared length, or ``None`` when absent or not a number.
-    """
-    headers = getattr(response, "headers", None)
-    raw = None if headers is None else headers.get("Content-Length")
-    return int(raw) if raw is not None and str(raw).isdigit() else None
-
-
-def _limit_socket_wait(response: _Response, seconds: float) -> None:
-    """Make the next blocking read on ``response`` wait at most ``seconds``.
-
-    A buffered ``read(n)`` can loop over many ``recv`` calls, so the request
-    timeout, capped at the budget left, is applied to the socket before every
-    read and reads use ``read1``.
-    That bounds each underlying read, not the total: a ``read1`` on a chunked
-    body can still make several reads while it consumes the trailers. The total
-    is enforced by the deadline checks before any result is returned. The
-    socket is reached through the response's file object; a response without
-    one (a test double) is left alone.
-    """
-    sock = getattr(getattr(getattr(response, "fp", None), "raw", None), "_sock", None)
-    if sock is not None:
-        sock.settimeout(seconds)
-
-
-def _read_chunk(response: _Response, deadline: _Deadline) -> bytes:
-    """Read at most one chunk, never waiting past the deadline.
-
-    Returns
-    -------
-    bytes
-        The next chunk, or ``b""`` at the end of the body.
-
-    Raises
-    ------
-    TimeoutError
-        If the read timed out while budget remained (a retryable stall).
-    """
-    deadline.check()
-    # A stall costs one request timeout, leaving budget for a retry.
-    _limit_socket_wait(response, min(_REQUEST_TIMEOUT_SECONDS, deadline.remaining()))
-    read = getattr(response, "read1", response.read)
-    try:
-        return read(_READ_CHUNK_BYTES)
-    except TimeoutError:
-        deadline.check()  # Raises when the timeout was the budget running out.
-        raise
-
-
-def _hash_response(response: _Response, *, url: str, deadline: _Deadline) -> str:
+def _hash_response(response: Response, *, url: str, deadline: Deadline) -> str:
     """Hash ``response`` as it streams, within the size cap and the time budget.
 
     Returns
@@ -227,13 +144,13 @@ def _hash_response(response: _Response, *, url: str, deadline: _Deadline) -> str
     """
     digest = hashlib.sha256()
     total = 0
-    while chunk := _read_chunk(response, deadline):
+    while chunk := read_chunk(response, deadline):
         total += len(chunk)
         if total > _MAX_ARCHIVE_BYTES:
             message = f"Published archive at {url} exceeds {_MAX_ARCHIVE_BYTES} bytes"
             raise PublishedArchiveUnavailableError(message)
         digest.update(chunk)
-    declared = _declared_length(response)
+    declared = declared_length(response)
     if declared is not None and total < declared:
         nothing_received_back = b""
         raise http.client.IncompleteRead(nothing_received_back, declared - total)
@@ -273,7 +190,7 @@ def _unavailable(
 def _is_retryable(error: BaseException) -> bool:
     """Whether ``error`` is a transient failure worth another attempt."""
     match error:
-        case _BudgetExhaustedError():
+        case BudgetExhaustedError():
             result = False
         case urllib.error.HTTPError():
             result = error.code in _RETRYABLE_STATUSES
@@ -290,7 +207,7 @@ class _Retry:
 
     url: str
     attempt: int
-    deadline: _Deadline
+    deadline: Deadline
     transport: FetchTransport
 
     def wait_for_next(self, error: BaseException) -> bool:
@@ -319,14 +236,14 @@ class _Retry:
 
 
 def _open_and_hash(
-    url: str, transport: FetchTransport, deadline: _Deadline
+    url: str, transport: FetchTransport, deadline: Deadline
 ) -> str | None:
     """Make one request; return the digest, or ``None`` for a 404."""
     # The URL comes from `crates_io_archive_url`: a fixed https host.
     request = urllib.request.Request(  # ruff: ignore[suspicious-url-open-usage] -- fixed https host
         url, headers={"User-Agent": _USER_AGENT}
     )
-    timeout = min(_REQUEST_TIMEOUT_SECONDS, deadline.remaining())
+    timeout = min(REQUEST_TIMEOUT_SECONDS, deadline.remaining())
     try:
         with transport.opener(request, timeout=timeout) as response:
             deadline.check()  # Connecting and reading headers used the budget too.
@@ -338,12 +255,12 @@ def _open_and_hash(
     except OSError as error:
         # A timeout while connecting or reading headers that spent the budget is
         # the budget expiring, whatever urllib wrapped it in; it is never a 404.
-        if not isinstance(error, _BudgetExhaustedError):
+        if not isinstance(error, BudgetExhaustedError):
             deadline.check()
         raise
 
 
-def _attempt(url: str, transport: FetchTransport, deadline: _Deadline) -> str | None:
+def _attempt(url: str, transport: FetchTransport, deadline: Deadline) -> str | None:
     """Make one request within the budget; return the digest, or ``None``."""
     deadline.check()
     result = _open_and_hash(url, transport, deadline)
@@ -385,7 +302,9 @@ def fetch_crates_io_digest(
     """  # ruff: ignore[docstring-missing-exception, docstring-extraneous-exception]  # raised through _unavailable and the URL builder
     url = crates_io_archive_url(name, version)
     active = FetchTransport() if transport is None else transport
-    deadline = _Deadline(active.clock, active.clock() + _TOTAL_BUDGET_SECONDS)
+    deadline = Deadline(
+        active.clock, active.clock() + _TOTAL_BUDGET_SECONDS, _TOTAL_BUDGET_SECONDS
+    )
     failure: BaseException | None = None
     for attempt in range(1, _ATTEMPTS + 1):
         try:
