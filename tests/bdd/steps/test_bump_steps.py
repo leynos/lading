@@ -91,7 +91,7 @@ def given_workspace_has_nested_tracked_lockfile(
 @when(
     parsers.re(
         r"I invoke lading bump (?P<version>\S+) with that workspace"
-        r"(?P<mode> using --dry-run)?"
+        r"(?P<options>(?: using --dry-run(?: and --diff)?)?)"
     ),
     target_fixture="cli_run",
 )
@@ -99,7 +99,7 @@ def when_invoke_lading_bump(
     version: str,
     workspace_directory: Path,
     repo_root: Path,
-    mode: str | None,
+    options: str | None,
 ) -> CliRunResult:
     """Execute the bump CLI via ``python -m`` and capture the result.
 
@@ -111,8 +111,9 @@ def when_invoke_lading_bump(
         The workspace root supplied via ``--workspace-root``.
     repo_root : Path
         The repository root used as the subprocess working directory.
-    mode : str or None
-        The optional ``using --dry-run`` suffix captured from the step text.
+    options : str or None
+        The optional ``using --dry-run[ and --diff]`` suffix captured from the
+        step text.
 
     Returns
     -------
@@ -120,7 +121,7 @@ def when_invoke_lading_bump(
         The captured CLI run details (return code, stdout, stderr, and the
         resolved workspace path).
     """
-    extra = ("--dry-run",) if mode else ()
+    extra = tuple(token for token in (options or "").split() if token.startswith("--"))
     return _invoke_lading_bump(version, workspace_directory, repo_root, *extra)
 
 

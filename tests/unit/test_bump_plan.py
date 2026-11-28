@@ -18,11 +18,11 @@ from hypothesis import HealthCheck, given
 
 from lading.commands import bump, bump_toml
 from lading.commands.bump_plan import (
-    PlanBuilder,
     WriteCategory,
     changes_from_plan,
     commit_plan,
 )
+from lading.commands.bump_plan_builder import PlanBuilder
 from lading.utils.confinement import (
     BumpPreflightError,
     ConfinedPath,

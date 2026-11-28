@@ -16,12 +16,12 @@ from lading.commands import (
 )
 from lading.commands.bump_plan import (
     BumpPlan,
-    PlanBuilder,
     PlannedWrite,
     WriteCategory,
     changes_from_plan,
     commit_plan,
 )
+from lading.commands.bump_plan_builder import PlanBuilder
 from lading.commands.bump_prepare import (
     prepare_documentation,
     prepare_manifests,

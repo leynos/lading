@@ -295,13 +295,17 @@ The `bump` command will synchronize versions across the workspace.
 **Command Signature:**
 
 ```shell
-lading bump <new_version> [--dry-run]
+lading bump <new_version> [--dry-run] [--diff]
 ```
 
 - `<new_version>`: The new semantic version string (e.g., `1.2.3`). This is a
   required argument.
 - `--dry-run`: If present, the command will report all changes it would make
   without writing to any files.
+- `--diff`: Requires `--dry-run`. Appends a unified diff of every documentation
+  file the run would rewrite, disclosing line-ending normalization and a
+  missing final newline. The default summary is unchanged when it is absent; see
+  [ADR-013](adrs/adr-0013-show-documentation-rewrite-diffs.md).
 
 **Execution Flow:**
 
@@ -454,13 +458,21 @@ checked to be a regular `Cargo.toml` before the graph builder reads it. Publish
 keeps its existing full-metadata discovery path.
 
 The bump workflow is split into preparation and mutation. A `PlanBuilder`
-accumulates `PlannedWrite` values in `lading.commands.bump_plan`, keyed by
-confined path and carrying every change category that touched the file. Later
-stages read earlier proposed content, so an adopted README composes from a
-documentation rewrite of the workspace README. `bump_prepare` prepares
+accumulates `PlannedWrite` values in `lading.commands.bump_plan_builder`, keyed
+by confined path and carrying every change category that touched the file.
+Later stages read earlier proposed content, so an adopted README composes from
+a documentation rewrite of the workspace README. `bump_prepare` prepares
 manifests, documentation, and READMEs; only after every stage succeeds does
 `commit_plan()` write, in deterministic root-manifest, member-manifest,
 documentation, README order. A dry run reports the plan and writes nothing.
+
+Documentation preparation also records a `DocumentationPreview` for each
+changed file: the raw source it read and the text the plan will write. A later
+stage that replaces the pending content updates the preview, and a restore
+removes it with the write. `lading.commands.bump_diff` renders those previews
+into the `--diff` output, sorted by path, with CRLF/CR notices and the standard
+missing-newline marker. `lading.utils.text.normalize_newlines` is the single LF
+conversion shared by the rewrite and the restore comparison.
 
 Configured non-member manifests join the same plan. The
 `bump_manifest_rewrite_filesystem` adapter confines each configured path or

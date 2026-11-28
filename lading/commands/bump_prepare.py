@@ -1,7 +1,7 @@
 """Prepare every bump write before any workspace file is mutated.
 
 Each stage here computes complete file contents and records them on a
-:class:`~lading.commands.bump_plan.PlanBuilder`. Nothing is written; the
+:class:`~lading.commands.bump_plan_builder.PlanBuilder`. Nothing is written; the
 pipeline commits the finished plan only after every target has passed
 confinement and every content transform has succeeded.
 """
@@ -24,7 +24,8 @@ from lading.commands.bump_manifests import (
     _workspace_dependency_sections,
     render_manifest,
 )
-from lading.commands.bump_plan import PlanBuilder, WriteCategory
+from lading.commands.bump_plan import WriteCategory
+from lading.commands.bump_preview import DocumentationPreview
 from lading.utils.confinement import (
     BumpPreflightError,
     BumpTargetExaminationError,
@@ -36,6 +37,7 @@ from lading.workspace.graph_paths import graph_relative_manifest
 
 if typ.TYPE_CHECKING:  # pragma: no cover - import-time typing aids only
     from lading.commands.bump_manifests import _BumpContext
+    from lading.commands.bump_plan_builder import PlanBuilder
     from lading.workspace import WorkspaceCrate
 
 _log = logging.getLogger(__name__)
@@ -185,8 +187,8 @@ def prepare_documentation(
     """
 
     def read_selected(path: ConfinedPath) -> str:
-        """Return the selected file's current or proposed content."""
-        content = builder.read(path)
+        """Return the selected file's current or proposed raw content."""
+        content = builder.read_raw(path)
         if content is None:
             message = f"selected documentation file is missing: {path.display}"
             raise BumpTargetExaminationError(message)
@@ -197,13 +199,17 @@ def prepare_documentation(
         updated_crates=context.updated_crate_names,
         read_source=read_selected,
     )
-    updates = bump_docs.prepare_documentation_updates(
+    updates = bump_docs._prepare_documentation_updates_with_sources(
         context.root_path,
         context.configuration.bump.documentation,
         request,
     )
-    for path, content in updates:
-        builder.propose(path, content, WriteCategory.DOCUMENTATION)
+    for path, source, content in updates:
+        if builder.propose(path, content, WriteCategory.DOCUMENTATION, observed=source):
+            builder.record_documentation_preview(
+                path,
+                DocumentationPreview(path=path.path, original=source, proposed=content),
+            )
     _log.debug("Prepared %d documentation write(s)", len(updates))
 
 

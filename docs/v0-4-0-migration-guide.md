@@ -5,7 +5,8 @@ also makes the command-line boundary explicit: diagnostics that an earlier
 dependency rendered on stdout are now written to stderr, and command summaries
 are printed once, unwrapped and without colour. Existing flags and
 `lading.toml` keys keep their meaning; the release adds the opt-in
-`[[bump.manifest_rewrites]]` allowlist and additive Python modules. An
+`[[bump.manifest_rewrites]]` allowlist, the `lading bump --diff` flag (which
+requires `--dry-run` and is described below), and additive Python modules. An
 environment already running 3.14 that only reads successful output needs no
 action beyond the version bump itself.
 
@@ -313,6 +314,32 @@ ERROR: Package 'lading' requires a different Python: 3.13.x not in '>=3.14'
 That refusal is the intended behaviour rather than a packaging accident. It
 replaces the alternative — installing successfully and then failing at import
 or during a run — with a message that names the constraint.
+
+## Bump dry-run documentation diff
+
+Lading 0.4.0 adds an opt-in `--diff` flag to `lading bump`. With `--dry-run`,
+it appends a unified diff of each documentation file the bump would rewrite, so
+a version bump can be reviewed before it edits free-form snippets. The default
+dry-run output is otherwise unchanged.
+
+<!-- tested-example: migration-bump-diff -->
+```bash
+lading bump 1.2.3 --dry-run --diff
+```
+
+`--diff` requires `--dry-run`; a live run rejects it with
+`--diff requires --dry-run`. Coverage is documentation files only, and the diff
+is human-readable rather than a `git apply` patch. See
+[Step 2: Bump versions](users-guide.md#2-bump-versions) for the full layout.
+
+The Python function `lading.cli.bump` is an internal CLI adapter rather than
+part of the published Python surface. Its flags are now passed as a `BumpFlags`
+bundle; that internal change is not a library migration.
+
+Also, before writing anything, `lading bump` now validates the complete write
+plan (manifests, documentation, adopted READMEs, and lockfile destinations) and
+rejects any target that escapes the workspace or is not a regular file. See
+[Confinement preflight](users-guide.md#confinement-preflight).
 
 ## Why the floor moved
 

@@ -48,6 +48,7 @@ def test_users_guide_documents_key_cli_flags_and_env_vars() -> None:
 
     required_cli_terms = (
         "lading bump 1.2.3 --dry-run",
+        "lading bump 1.2.3 --dry-run --diff",
         "lading publish --forbid-dirty",
         "lading publish --skip-preflight",
         "lading publish --live",
@@ -103,3 +104,13 @@ def test_users_guide_documents_relay_event_contract() -> None:
     missing = [term for term in required_terms if term not in content]
 
     assert not missing, f"users guide missing relay event terms: {missing}"
+
+
+def test_users_guide_documents_bump_diff_368_boundary() -> None:
+    """The --diff guide records that #368 is fixed and the diff still reports."""
+    content = Path("docs/users-guide.md").read_text(encoding="utf-8")
+
+    assert "#368" in content, "the guide must name the unrelated-snippet defect"
+    assert "fixed in this release" in content, (
+        "the guide must state that the unrelated-snippet defect is fixed"
+    )

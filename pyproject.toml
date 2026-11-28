@@ -196,7 +196,10 @@ extend-ignore = [
 # ``make crosshair``). Those contracts keep the docstrings multi-line, so
 # DOC201 would demand a Returns section that the private-helper convention
 # (AGENTS.md) says to omit; scope DOC201 off rather than choose between them.
-"lading/commands/bump_output.py" = ["docstring-missing-returns"]
+# TC001 is scoped off for the same CrossHair reason: `DocumentationPreview` is
+# a real runtime import because the annotations on `BumpChanges` must resolve
+# for the model checker, which a typing-only import would silently prevent.
+"lading/commands/bump_output.py" = ["docstring-missing-returns", "typing-only-first-party-import"]
 
 [tool.ruff.lint.flake8-type-checking]
 # Decorators that evaluate their target's annotations when the decorator runs.

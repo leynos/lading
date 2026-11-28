@@ -8,8 +8,8 @@ configuration loading, and workspace metadata loading before dispatching to the
 
 The CLI resolves user-interface concerns here before crossing into command
 internals, but it does not coalesce optional flags against configuration
-defaults. For example, :func:`bump` forwards its ``rebuild_lockfiles``
-parameter as ``bool | None`` exactly as received; the command layer
+defaults. For example, :func:`bump` takes a ``BumpFlags`` bundle and forwards
+``rebuild_lockfiles`` as ``bool | None`` exactly as received; the command layer
 (``lading.commands.bump._initialize_bump_context``) owns resolving an unset
 value against ``configuration.bump.rebuild_lockfiles``. This keeps the
 nullable-to-concrete defaulting in a single place rather than splitting it
@@ -45,10 +45,9 @@ from .cli_helpers import _workspace_env as _workspace_env
 from .cli_options import (
     CLEAN_LOCATION_PARAMETER,
     CLEAN_REMOVE_PARAMETER,
-    DRY_RUN_PARAMETER,
-    REBUILD_LOCKFILES_PARAMETER,
     VERSION_PARAMETER,
     WORKSPACE_PARAMETER,
+    BumpFlags,
     PublishFlags,
 )
 from .cli_options import (
@@ -172,13 +171,15 @@ def _run_with_context(
         return runner(workspace_root, configuration, workspace_model, active_runner)
 
 
+_DEFAULT_BUMP_FLAGS = BumpFlags()
+
+
 @app.command
 def bump(
     version: typ.Annotated[str, VERSION_PARAMETER],
     workspace_root: typ.Annotated[Path | None, WORKSPACE_PARAMETER] = None,
     *,
-    dry_run: typ.Annotated[bool, DRY_RUN_PARAMETER] = False,
-    rebuild_lockfiles: typ.Annotated[bool | None, REBUILD_LOCKFILES_PARAMETER] = None,
+    flags: typ.Annotated[BumpFlags, Parameter(name="*")] = _DEFAULT_BUMP_FLAGS,
 ) -> str:
     """Update workspace manifests to ``version``.
 
@@ -189,11 +190,11 @@ def bump(
     workspace_root : Path | None
         Optional path to the workspace root; resolved to the current
         directory when :data:`None`.
-    dry_run : bool
-        When ``True``, preview manifest changes without writing files.
-    rebuild_lockfiles : bool | None
-        Tri-state flag where ``None`` is distinct from ``True`` and ``False``;
-        the bump command resolves ``None`` against the configuration.
+    flags : BumpFlags
+        Flag bundle: ``dry_run`` previews without writing, ``diff`` appends a
+        unified diff of each documentation file that would change (requires
+        ``dry_run``), and ``rebuild_lockfiles`` is the nullable lockfile
+        override the bump command resolves against the configuration.
 
     Returns
     -------
@@ -202,11 +203,16 @@ def bump(
 
     Examples
     --------
-    >>> from lading.cli import bump
-    >>> summary = bump("1.2.3", dry_run=True)  # doctest: +SKIP
+    >>> from lading.cli import BumpFlags, bump
+    >>> summary = bump("1.2.3", flags=BumpFlags(dry_run=True))  # doctest: +SKIP
     >>> "Dry run; would update version to 1.2.3 in" in summary  # doctest: +SKIP
     True
     """
+    # Reject an impossible flag combination before discovery, so a directory
+    # that is not a workspace still reports the flag diagnostic.
+    commands.bump._validate_bump_options(
+        commands.bump.BumpOptions(dry_run=flags.dry_run, diff=flags.diff)
+    )
     resolved = normalize_workspace_root(workspace_root)
     return _run_with_context(
         resolved,
@@ -214,11 +220,12 @@ def bump(
             root,
             version,
             options=commands.bump.BumpOptions(
-                dry_run=dry_run,
+                dry_run=flags.dry_run,
+                diff=flags.diff,
                 # Forwarded unresolved: default-resolution against the
                 # configuration is the bump command's responsibility
                 # (_initialize_bump_context), not the CLI adapter's.
-                rebuild_lockfiles=rebuild_lockfiles,
+                rebuild_lockfiles=flags.rebuild_lockfiles,
                 configuration=configuration,
                 workspace=workspace,
                 lockfile_repository=commands.bump_lockfiles.CargoLockfileRepository(

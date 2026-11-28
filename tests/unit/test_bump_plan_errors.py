@@ -6,12 +6,8 @@ import pytest
 
 from lading.commands import bump_toml
 from lading.commands.bump_manifest_rewrite_model import ManifestRewriteWriteError
-from lading.commands.bump_plan import (
-    PlanBuilder,
-    PlannedWrite,
-    WriteCategory,
-    commit_plan,
-)
+from lading.commands.bump_plan import PlannedWrite, WriteCategory, commit_plan
+from lading.commands.bump_plan_builder import PlanBuilder
 from lading.utils.confinement import (
     BumpTargetExaminationError,
     ConfinedPath,

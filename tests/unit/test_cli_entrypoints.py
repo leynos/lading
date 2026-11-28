@@ -16,6 +16,7 @@ import pytest
 
 from lading import cli, cli_entrypoint
 from lading import config as config_module
+from lading.commands import bump as bump_command
 from lading.commands import publish as publish_command
 from tests.helpers.cli_workspace import make_workspace
 
@@ -211,3 +212,82 @@ def test_publish_via_app_matches_across_config_branches(
     assert disk_call[1] is not preloaded, (
         "the disk branch must reload a fresh configuration object"
     )
+
+
+@pytest.mark.usefixtures("minimal_config")
+def test_bump_rejects_diff_without_dry_run(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """The CLI rejects ``--diff`` without ``--dry-run`` before discovery."""
+
+    def fail_loader(_root: Path) -> object:
+        """Fail if workspace discovery runs for a rejected invocation."""
+        message = "workspace discovery ran for a rejected invocation"
+        raise AssertionError(message)
+
+    monkeypatch.setattr(cli, "load_bump_workspace", fail_loader)
+
+    exit_code = cli.main([
+        "--workspace-root",
+        str(tmp_path),
+        "bump",
+        "1.2.3",
+        "--diff",
+    ])
+
+    captured = capsys.readouterr()
+    assert exit_code == 1, f"the rejected invocation must exit 1, got {exit_code}"
+    assert "--diff requires --dry-run" in captured.err, (
+        "the diagnostic must name the missing --dry-run flag"
+    )
+    assert not captured.out, "a rejected invocation must leave stdout empty"
+
+
+@pytest.mark.usefixtures("minimal_config")
+def test_bump_function_rejects_diff_without_dry_run(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A direct ``cli.bump`` caller receives the typed domain error."""
+
+    def fail_loader(_root: Path) -> object:
+        """Fail if workspace discovery runs for a rejected invocation."""
+        message = "workspace discovery ran for a rejected invocation"
+        raise AssertionError(message)
+
+    monkeypatch.setattr(cli, "load_bump_workspace", fail_loader)
+
+    with pytest.raises(
+        bump_command.BumpOptionsError, match="--diff requires --dry-run"
+    ):
+        cli.bump("1.2.3", tmp_path, flags=cli.BumpFlags(diff=True))
+
+
+def test_bump_run_rejects_diff_without_dry_run(tmp_path: Path) -> None:
+    """``bump.run`` validates its own options before loading the workspace."""
+    with pytest.raises(
+        bump_command.BumpOptionsError, match="--diff requires --dry-run"
+    ):
+        bump_command.run(
+            tmp_path,
+            "1.2.3",
+            options=bump_command.BumpOptions(diff=True),
+        )
+
+
+def test_bump_run_rejects_diff_before_resolving_a_missing_root(
+    tmp_path: Path,
+) -> None:
+    """Live options are validated before a missing root raises."""
+    missing = tmp_path / "missing"
+
+    with pytest.raises(
+        bump_command.BumpOptionsError, match="--diff requires --dry-run"
+    ):
+        bump_command.run(
+            missing,
+            "1.2.3",
+            options=bump_command.BumpOptions(diff=True),
+        )

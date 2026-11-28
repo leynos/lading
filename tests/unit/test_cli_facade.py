@@ -38,6 +38,7 @@ def test_cli_reexports_public_annotation_aliases() -> None:
     """Public CLI annotation aliases should remain available at both paths."""
     alias_names = (
         "AllowUnpublishedWorkspaceDepsFlag",
+        "BumpFlags",
         "DryRunFlag",
         "ForbidDirtyFlag",
         "LiveFlag",

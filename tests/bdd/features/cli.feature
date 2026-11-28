@@ -114,6 +114,17 @@ Feature: Lading CLI scaffolding
     And the documentation file "README.md" does not contain "version = \"1.2.3\""
     And the CLI output lists documentation path "- README.md (documentation)" once
 
+  Scenario: Dry running the bump command shows the documentation diff
+    Given a workspace directory with configuration
+    And cargo metadata describes a sample workspace
+    And the workspace README contains a TOML dependency snippet for "alpha"
+    And bump.documentation.globs contains "README.md"
+    When I invoke lading bump 1.2.3 with that workspace using --dry-run and --diff
+    Then the bump command reports a dry-run plan for "1.2.3"
+    And the bump output contains a documentation diff for "README.md"
+    And the documentation file "README.md" contains "alpha = \"0.1.0\""
+
+
   Scenario: Bumping transposes workspace README to crates
     Given a workspace directory with configuration
     And cargo metadata describes a sample workspace

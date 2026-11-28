@@ -1,0 +1,82 @@
+# serializer version: 1
+# name: test_cr_only_normalization_notice_snapshot
+  '''
+  --- a/README.md
+  +++ b/README.md
+  Note: this rewrite writes the file with LF line endings; the original used CR.
+  @@ -1 +1 @@
+  -alpha = "0.1.0"
+  +alpha = "1.2.3"
+  '''
+# ---
+# name: test_crlf_normalization_notice_snapshot
+  '''
+  --- a/README.md
+  +++ b/README.md
+  Note: this rewrite writes the file with LF line endings; the original used CRLF.
+  @@ -1 +1 @@
+  -alpha = "0.1.0"
+  +alpha = "1.2.3"
+  '''
+# ---
+
+# name: test_files_are_sorted_in_diff_snapshot
+  '''
+  --- a/a-guide.md
+  +++ b/a-guide.md
+  @@ -1 +1 @@
+  -alpha = "0.1.0"
+  +alpha = "1.2.3"
+  
+  --- a/z-guide.md
+  +++ b/z-guide.md
+  @@ -1 +1 @@
+  -alpha = "0.1.0"
+  +alpha = "1.2.3"
+  '''
+# ---
+# name: test_missing_final_newline_marker_snapshot
+  '''
+  --- a/README.md
+  +++ b/README.md
+  @@ -1,4 +1,4 @@
+   ```toml
+   [dependencies]
+  -alpha = "0.1.0"
+  +alpha = "1.2.3"
+   ```
+  \ No newline at end of file
+  '''
+# ---
+# name: test_multiple_fences_diff_snapshot
+  '''
+  --- a/README.md
+  +++ b/README.md
+  @@ -2,10 +2,10 @@
+   
+   ```toml
+   [dependencies]
+  -alpha = "0.1.0"
+  +alpha = "1.2.3"
+   ```
+   
+   ```toml
+   [dev-dependencies]
+  -alpha = "0.1.0"
+  +alpha = "1.2.3"
+   ```
+  '''
+# ---
+# name: test_single_fence_diff_snapshot
+  '''
+  --- a/README.md
+  +++ b/README.md
+  @@ -2,5 +2,5 @@
+   
+   ```toml
+   [dependencies]
+  -alpha = "0.1.0"
+  +alpha = "1.2.3"
+   ```
+  '''
+# ---

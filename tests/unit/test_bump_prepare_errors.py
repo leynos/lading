@@ -6,7 +6,7 @@ import pytest
 
 from lading.commands import bump, bump_docs, bump_prepare
 from lading.commands.bump_manifests import _BumpContext
-from lading.commands.bump_plan import PlanBuilder
+from lading.commands.bump_plan_builder import PlanBuilder
 from lading.utils.confinement import (
     BumpPreflightError,
     BumpTargetExaminationError,
@@ -86,13 +86,15 @@ def test_prepare_documentation_reports_a_missing_selected_file(
         workspace_root: Path,
         documentation: object,
         request: bump_docs.DocumentationUpdateRequest,
-    ) -> tuple[tuple[ConfinedPath, str], ...]:
+    ) -> tuple[tuple[ConfinedPath, str, str], ...]:
         """Read the missing selection as a real expansion would."""
         del workspace_root, documentation
         request.read_source(missing)
         return ()
 
-    monkeypatch.setattr(bump_docs, "prepare_documentation_updates", fake_updates)
+    monkeypatch.setattr(
+        bump_docs, "_prepare_documentation_updates_with_sources", fake_updates
+    )
     builder = PlanBuilder(root=root)
 
     with pytest.raises(BumpTargetExaminationError) as excinfo:

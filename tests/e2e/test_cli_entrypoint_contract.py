@@ -13,44 +13,23 @@ process streams here means that change cannot silently turn a machine-read
 stdout into an error message.
 """
 
-import importlib.metadata
 import subprocess
-import sys
-import sysconfig
 from pathlib import Path
 
 import pytest
 
 from lading.commands.publish_staging import STAGING_PREFIX
 from tests.helpers.cli_diagnostics import normalize_diagnostic
+from tests.helpers.cli_entrypoints import ENTRY_POINT_KINDS, entry_point_argv
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 _TIMEOUT_SECONDS = 120
 
 
-def _console_script() -> Path | None:
-    """Return the installed ``lading`` script, or :data:`None` if absent."""
-    entry_points = importlib.metadata.entry_points(
-        group="console_scripts", name="lading"
-    )
-    if not entry_points:
-        return None
-    script = Path(sysconfig.get_path("scripts")) / "lading"
-    return script if script.is_file() else None
-
-
-@pytest.fixture(params=["module", "console-script"])
+@pytest.fixture(params=ENTRY_POINT_KINDS)
 def entry_point(request: pytest.FixtureRequest) -> list[str]:
     """Return the argv prefix that starts one supported entry point."""
-    if request.param == "module":
-        return [sys.executable, "-m", "lading.cli"]
-    script = _console_script()
-    if script is None:
-        pytest.skip(
-            "the lading console script is not installed in this environment, "
-            "so only the module entry point is exercised"
-        )
-    return [str(script)]
+    return entry_point_argv(request.param)
 
 
 def _run(
@@ -103,6 +82,29 @@ def test_an_invalid_bump_version_fails_on_stderr(
     result = _run(entry_point, tmp_path / "workspace", "bump", "1.2")
 
     _assert_rejected(result, "Invalid version argument '1.2'", expected_status=1)
+
+
+def test_bump_diff_without_dry_run_fails_on_stderr(
+    entry_point: list[str], tmp_path: Path
+) -> None:
+    """Both entry points reject ``--diff`` without ``--dry-run``."""
+    workspace = tmp_path / "workspace"
+    member = workspace / "crates" / "alpha"
+    (member / "src").mkdir(parents=True)
+    manifest = workspace / "Cargo.toml"
+    original = '[workspace]\nmembers = ["crates/alpha"]\n'
+    manifest.write_text(original, encoding="utf-8")
+    (member / "Cargo.toml").write_text(
+        '[package]\nname = "alpha"\nversion = "0.1.0"\n', encoding="utf-8"
+    )
+    (member / "src" / "lib.rs").write_text("", encoding="utf-8")
+
+    result = _run(entry_point, workspace, "bump", "1.2.3", "--diff")
+
+    _assert_rejected(result, "--diff requires --dry-run", expected_status=1)
+    assert manifest.read_text(encoding="utf-8") == original, (
+        "the rejected invocation must not modify the workspace manifest"
+    )
 
 
 def _staging_tree(location: Path) -> Path:

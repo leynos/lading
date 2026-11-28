@@ -49,6 +49,14 @@ DRY_RUN_PARAMETER = Parameter(
     help="Preview manifest changes without writing files.",
 )
 
+DIFF_PARAMETER = Parameter(
+    name="diff",
+    help=(
+        "With --dry-run, print a unified diff of each documentation file that "
+        "would change. Requires --dry-run."
+    ),
+)
+
 REBUILD_LOCKFILES_PARAMETER = Parameter(
     name="rebuild-lockfiles",
     negative="no-rebuild-lockfiles",
@@ -144,6 +152,29 @@ KEEP_STAGING_PARAMETER = Parameter(
 
 
 @dc.dataclass(frozen=True, slots=True)
+class BumpFlags:
+    """The ``lading bump`` flags, flattened onto the command line by Cyclopts.
+
+    Grouping the flags keeps the command signature to the version plus the
+    workspace root while every field still surfaces as its own option, with
+    its help text and negative form.
+
+    Examples
+    --------
+    >>> BumpFlags().dry_run
+    False
+    >>> BumpFlags(diff=True).diff
+    True
+    >>> BumpFlags().rebuild_lockfiles is None
+    True
+    """
+
+    dry_run: typ.Annotated[bool, DRY_RUN_PARAMETER] = False
+    diff: typ.Annotated[bool, DIFF_PARAMETER] = False
+    rebuild_lockfiles: typ.Annotated[bool | None, REBUILD_LOCKFILES_PARAMETER] = None
+
+
+@dc.dataclass(frozen=True, slots=True)
 class PublishFlags:
     """The ``lading publish`` flags, flattened onto the command line by Cyclopts.
 
@@ -194,6 +225,7 @@ type SccacheStatsJsonOption = typ.Annotated[Path | None, SCCACHE_STATS_JSON_PARA
 
 __all__ = [
     "ALLOW_UNPUBLISHED_WORKSPACE_DEPS_PARAMETER",
+    "DIFF_PARAMETER",
     "DRY_RUN_PARAMETER",
     "FORBID_DIRTY_PARAMETER",
     "LIVE_PARAMETER",
@@ -209,6 +241,7 @@ __all__ = [
     "WORKSPACE_ROOT_ENV_VAR",
     "WORKSPACE_ROOT_REQUIRED_MESSAGE",
     "AllowUnpublishedWorkspaceDepsFlag",
+    "BumpFlags",
     "DryRunFlag",
     "ForbidDirtyFlag",
     "LiveFlag",
