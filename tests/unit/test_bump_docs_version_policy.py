@@ -329,3 +329,21 @@ def test_inline_package_tables_are_left_alone() -> None:
         "inline shapes are outside the documentation pass, as select_table documents"
     )
     assert updated == snippet, "an inline package table must round-trip"
+
+
+def test_block_package_with_inline_workspace_updates_only_the_package() -> None:
+    """An inline workspace table is not traversed even when the gate passes."""
+    snippet = (
+        '[package]\nname = "alpha"\nversion = "0.1.0"\n\n'
+        'workspace = { package = { version = "0.1.0" } }\n'
+    )
+
+    updated, changed = rewrite(snippet)
+
+    assert changed, "the block package version must be rewritten"
+    assert updated.count('version = "2.0.0"') == 1, (
+        f"only the block package version may change; got {updated!r}"
+    )
+    assert 'workspace = { package = { version = "0.1.0" } }' in updated, (
+        "the inline workspace version must stay as written"
+    )

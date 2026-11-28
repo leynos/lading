@@ -397,7 +397,10 @@ lading bump <new_version> [--dry-run]
   `[package]` table by definition, so adding one to satisfy the gate would
   describe a different workspace shape; such a documented version is maintained
   by hand. A root manifest that is also a package carries `[package].name`, and
-  both of its versions are rewritten when that crate is bumped.
+  both of its versions are rewritten when that crate is bumped and both are
+  standard table sections. The pass uses `select_table` without
+  `include_inline`, so an inline `workspace = { ... }` version table is left
+  alone.
 - Dependency-table location in documentation is owned by
   `lading.commands.bump_docs_dependencies`. It calls the shared
   `bump_toml_dependencies.update_dependency_sections` once on the document with

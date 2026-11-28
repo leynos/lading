@@ -91,7 +91,9 @@ production modules are executable contracts.
    `version = { workspace = true }`, or no `version` key at all keeps its
    package version; an eligible dependency in the same fence may still change.
 4. `[workspace.package].version` is rewritten only when the same fence passes
-   the `[package].name` gate, which is the documented virtual-root limit.
+   the `[package].name` gate, which is the documented virtual-root limit. The
+   pass uses `select_table` without `include_inline`, so a `package` or
+   `workspace` table written as an inline table is outside the policy.
 5. Dependency-reference rewriting, including exclusion by an empty target set,
    is unchanged.
 6. The manifest update path keeps its insert-or-replace behaviour.

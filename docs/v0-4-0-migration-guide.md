@@ -284,7 +284,9 @@ virtual workspace root has no `[package].name` to identify it, so its
 `[package]` table by definition, so this fence cannot satisfy the gate without
 describing a different workspace shape; maintain its documented version by
 hand. A root manifest that is also a package carries `[package].name`, and both
-its versions are rewritten when that crate is bumped.
+of its versions are rewritten when that crate is bumped and both are standard
+table sections. An inline `workspace = { package = { version = ... } }` table
+is not traversed, so its version stays as written.
 
 ## What changed
 
