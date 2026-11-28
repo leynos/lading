@@ -650,6 +650,9 @@ reason = "Keep the manifest resolver and PEP 723 formatter presence probes separ
 [[tool.duplication_gate.allow]]
 members = ["lading/commands/publish_failures.py", "lading/commands/bump_pipeline.py"]
 reason = "Type-checking import blocks, each listing the types that module alone needs in the conventional grouped order. The publish failure handlers and the bump pipeline share no behaviour; merging their blocks would create a shared typing module that couples publish and bump, which is the cross-layer coupling these blocks exist to avoid."
+[[tool.duplication_gate.allow]]
+members = ["lading/commands/publish_pipeline.py", "lading/commands/bump_prepare_manifest_rewrites.py"]
+reason = "Type-checking import blocks only: each lists the pathlib, workspace and command types that module alone annotates with, in the conventional grouped order. The publish pipeline and the bump manifest-rewrite preparation share no behaviour; a shared typing module would couple publish and bump, the cross-layer coupling these blocks avoid."
 [tool.df12_skylos]
 roots = ["lading"]
 python = "3.14"
