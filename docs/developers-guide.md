@@ -1918,23 +1918,25 @@ programmatic caller: `hidden_secrets` yields the run's scope and
 The entry point's file is only the first: a relative `CARGO_HOME` is resolved
 by Cargo against each command's working directory, so before starting each
 command `redacting_runner` reads the credentials file of the home that command
-runs with (`invocation_cargo_home`: the call's own `CARGO_HOME`, else the entry
-point's, joined to the call's `cwd`), and adds its tokens, and those in the
-call's own `env`, to the scope it was given with `SecretScope.hide`, so that
-command's relay hides them and, through the scope, so do later diagnostics and
-logs. A runner changes only the scope it is handed, never an enclosing one;
-when a `use_secrets` block ends, what its scope holds is handed to the
-enclosing scope (`SecretScope.parent`), so a learned token stays hidden until
-the outermost scope ends. A scope's `secrets` are its own values plus every
-enclosing scope's, read live, so a child sees what its parent learns later. The
-relative home is never made absolute once for the whole run. `redact_text`
-replaces, left to right, the longest secret starting at each position, so the
-result does not depend on the order secrets are given in. Every known secret is
-replaced, including one that could overlap the `<redacted>` marker, as a
-named-registry token that is just `redacted` could: `marker_for` then builds
-the marker from one character found in no secret (framed by `<` and `>` when no
-secret has a bracket), so no secret can show through it, and fails closed with
-`ValueError` if none is left. The marker depends only on the set of secrets, so
+runs with (`invocation_cargo_home`: the call's own `CARGO_HOME`, else, on Unix,
+`$HOME/.cargo` for a `HOME` the call's environment sets, as Cargo derives its
+default home from the environment it runs with, else the entry point's, joined
+to the call's `cwd`), and adds its tokens, and those in the call's own `env`,
+to the scope it was given with `SecretScope.hide`, so that command's relay
+hides them and, through the scope, so do later diagnostics and logs. A runner
+changes only the scope it is handed, never an enclosing one; when a
+`use_secrets` block ends, what its scope holds is handed to the enclosing scope
+(`SecretScope.parent`), so a learned token stays hidden until the outermost
+scope ends. A scope's `secrets` are its own values plus every enclosing
+scope's, read live, so a child sees what its parent learns later. The relative
+home is never made absolute once for the whole run. `redact_text` replaces,
+left to right, the longest secret starting at each position, so the result does
+not depend on the order secrets are given in. Every known secret is replaced,
+including one that could overlap the `<redacted>` marker, as a named-registry
+token that is just `redacted` could: `marker_for` then builds the marker from
+one character found in no secret (framed by `<` and `>` when no secret has a
+bracket), so no secret can show through it, and fails closed with `ValueError`
+if none is left. The marker depends only on the set of secrets, so
 `SecretRedactor` reproduces it exactly for any chunking by keeping the tail raw
 until later input settles it (a Hypothesis property checks the equivalence).
 The runner captures each stream raw and filters only the mirrored text

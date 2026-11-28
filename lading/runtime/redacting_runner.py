@@ -23,6 +23,7 @@ Examples
 """
 
 import collections.abc as cabc
+import os
 import typing as typ
 from pathlib import Path
 
@@ -35,14 +36,22 @@ if typ.TYPE_CHECKING:
     from lading.utils.secret_scope import SecretScope
 
 
+# Cargo finds the user's home through ``HOME`` on Unix; on Windows it asks the
+# operating system, so a ``HOME`` override does not move its default home.
+_HOME_NAMES_CARGO_HOME = os.name != "nt"
+
+
 def invocation_cargo_home(
     default: Path | None, cwd: Path | None, env: cabc.Mapping[str, str] | None
 ) -> Path | None:
     """Return the Cargo home one command runs with, as seen from lading.
 
     The command's own ``CARGO_HOME`` wins over ``default`` (the entry point's).
-    A relative home is relative to the command's working directory, as Cargo
-    resolves it, so it is joined to ``cwd`` rather than made absolute once.
+    Without one, on Unix, a ``HOME`` the command's environment sets names the
+    home too, as ``$HOME/.cargo``: Cargo derives its default home from the
+    environment it runs with, not lading's. A relative home is relative to the
+    command's working directory, as Cargo resolves it, so it is joined to
+    ``cwd`` rather than made absolute once.
 
     Returns
     -------
@@ -55,12 +64,23 @@ def invocation_cargo_home(
     PosixPath('/w/member/chome')
     >>> invocation_cargo_home(None, Path("/w"), {"CARGO_HOME": "/opt/cargo"})
     PosixPath('/opt/cargo')
+    >>> invocation_cargo_home(Path("/root/.cargo"), None, {"HOME": "/home/ci"})
+    PosixPath('/home/ci/.cargo')
     """
-    configured = (env or {}).get("CARGO_HOME")
-    home = Path(configured) if configured else default
+    home = _environment_cargo_home(env or {}) or default
     if home is None or cwd is None:
         return home
     return cwd / home
+
+
+def _environment_cargo_home(env: cabc.Mapping[str, str]) -> Path | None:
+    """Return the Cargo home a command's own environment names, if any."""
+    if configured := env.get("CARGO_HOME"):
+        return Path(configured)
+    user_home = env.get("HOME")
+    if user_home and _HOME_NAMES_CARGO_HOME:
+        return Path(user_home) / ".cargo"
+    return None
 
 
 def redacting_runner(

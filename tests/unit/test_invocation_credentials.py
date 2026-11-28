@@ -94,3 +94,25 @@ def test_a_command_cargo_home_overrides_the_entry_points(
         )
 
     assert _SECOND not in capsys.readouterr().out, "the overriding home is read"
+
+
+def test_a_command_home_override_moves_its_default_cargo_home(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Without ``CARGO_HOME``, the command's own ``HOME`` names its Cargo home."""
+    home = tmp_path / "home"
+    (home / ".cargo").mkdir(parents=True)
+    (home / ".cargo" / "credentials.toml").write_text(
+        f'[registry]\ntoken = "{_SECOND}"\n', encoding="utf-8"
+    )
+    runner = redacting_runner(SecretScope(), cargo_home=tmp_path / "entry" / ".cargo")
+    script = (
+        "import os, pathlib, tomllib;"
+        "home = pathlib.Path(os.environ['HOME']) / '.cargo';"
+        "text = (home / 'credentials.toml').read_text(encoding='utf-8');"
+        "print('token', tomllib.loads(text)['registry']['token'])"
+    )
+
+    runner([sys.executable, "-c", script], cwd=tmp_path, env={"HOME": str(home)})
+
+    assert _SECOND not in capsys.readouterr().out, "the overridden home is read"
