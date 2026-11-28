@@ -331,6 +331,40 @@ def test_loader_restores_the_outer_list_indentation(tmp_path: Path) -> None:
     )
 
 
+def test_loader_clears_list_state_when_a_quote_starts_outside_it(
+    tmp_path: Path,
+) -> None:
+    """An outdented quote after a list ends the list for later literals."""
+    path = write_document(
+        tmp_path,
+        "- item\n\n> quote\n\n    ```text\n    literal\n    ```\n",
+    )
+
+    examples = load_tested_examples(path)
+
+    assert not examples, (
+        "four spaces inside the quote are indented code, not an unmarked fence"
+    )
+
+
+def test_loader_reads_an_example_outer_to_a_nested_fence(tmp_path: Path) -> None:
+    """A line returning to the outer list indentation ends the skipped fence."""
+    path = write_document(
+        tmp_path,
+        "- - ```text\n    ignored\n"
+        "  <!-- tested-example: real -->\n  ```bash\n  echo real\n  ```\n",
+    )
+
+    examples = load_tested_examples(path, require_markers=False)
+
+    assert set(examples) == {"real"}, (
+        "the marked example after the outer-level line must be read"
+    )
+    assert examples["real"].body == "echo real", (
+        "the marked example must still be parsed"
+    )
+
+
 def test_loader_clears_list_state_between_separate_quotes(
     tmp_path: Path,
 ) -> None:

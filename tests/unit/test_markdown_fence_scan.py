@@ -147,7 +147,7 @@ def test_nested_list_marker_uses_its_container_indent() -> None:
 
 def test_strip_list_items_consumes_nested_markers() -> None:
     """Nested list containers can open on one line."""
-    assert strip_list_items("- - ~~~~text", 0) == ("~~~~text", 4), (
+    assert strip_list_items("- - ~~~~text", 0) == ("~~~~text", (2, 4)), (
         "both markers must be consumed and their columns accumulated"
     )
 
@@ -163,4 +163,14 @@ def test_quote_marker_tabs_accumulate_columns() -> None:
     """Each tab after a quote marker is measured from the accumulated column."""
     assert strip_quotes(">\t>\t x", 2) == "   x", (
         "two markers and their tab padding leave three columns"
+    )
+
+
+def test_strip_list_items_rejects_code_after_a_marker() -> None:
+    """Four spaces inside a list item are code, not another marker."""
+    assert strip_list_items("-     - ```text", 0) == ("    - ```text", (2,)), (
+        "only the outer marker may be consumed"
+    )
+    assert unmarked_fence_delimiter("-     - ```text", 0) is None, (
+        "the indented remainder is literal code, not a fence"
     )

@@ -195,19 +195,28 @@ def list_context(raw: str, levels: list[int]) -> int:
     """
     depth = quote_depth(raw)
     content = strip_quotes(raw, depth) or ""
-    match = _list_item(content, levels[-1] if levels else 0)
-    if match is not None:
-        content_start = _list_content_start(content, match)
-        indent = _column_after(content[:content_start])
+    container = levels[-1] if levels else 0
+    if _list_item(content, container) is not None:
+        _, columns = strip_list_items(content, container)
+        _push_levels(levels, columns)
+        return levels[-1] if levels else 0
+    if content.strip():
+        _close_outdented_levels(levels, indentation(content))
+    return levels[-1] if levels else 0
+
+
+def _push_levels(levels: list[int], columns: tuple[int, ...]) -> None:
+    """Push each opened list level, closing deeper and equal levels first."""
+    for indent in columns:
         while levels and levels[-1] >= indent:
             levels.pop()
         levels.append(indent)
-        return indent
-    if content.strip():
-        content_indentation = indentation(content)
-        while levels and levels[-1] > content_indentation:
-            levels.pop()
-    return levels[-1] if levels else 0
+
+
+def _close_outdented_levels(levels: list[int], indentation: int) -> None:
+    """Close list levels deeper than ``indentation``."""
+    while levels and levels[-1] > indentation:
+        levels.pop()
 
 
 def unmarked_fence_delimiter(
@@ -227,8 +236,8 @@ def unmarked_fence_delimiter(
     """
     depth = quote_depth(raw)
     content = strip_quotes(raw, depth) or ""
-    remainder, _content_column = strip_list_items(content, list_indent)
-    if remainder != content:
+    remainder, columns = strip_list_items(content, list_indent)
+    if columns:
         too_indented = indentation(remainder) > MAX_FENCE_INDENT
     else:
         too_indented = indentation(remainder) > list_indent + MAX_FENCE_INDENT
@@ -237,28 +246,32 @@ def unmarked_fence_delimiter(
     return fence_delimiter(remainder.strip(" \t"))
 
 
-def strip_list_items(content: str, container_indent: int) -> tuple[str, int]:
-    """Strip every leading list marker, returning the rest and its column.
+def strip_list_items(
+    content: str, container_indent: int
+) -> tuple[str, tuple[int, ...]]:
+    """Strip every leading list marker, returning the rest and its columns.
 
     CommonMark allows nested list containers to open on one line, so
-    ``- - content`` has two markers.
+    ``- - content`` has two markers. Each marker after the first is validated
+    relative to the sliced remainder, where four spaces denote code.
 
     Returns
     -------
-    tuple[str, int]
-        The remaining content and the column where it begins.
+    tuple[str, tuple[int, ...]]
+        The remaining content and the absolute content columns of each list
+        level opened on the line, outermost first.
     """
     remainder = content
     base = 0
     container = container_indent
-    matched = False
+    columns: list[int] = []
     while (match := _list_item(remainder, container)) is not None:
         content_start = _list_content_start(remainder, match)
         base = _column_after(remainder[:content_start], base)
+        columns.append(base)
         remainder = remainder[content_start:]
-        container = base
-        matched = True
-    return remainder, base if matched else container_indent
+        container = 0
+    return remainder, tuple(columns)
 
 
 def _list_item(content: str, container_indent: int) -> re.Match[str] | None:

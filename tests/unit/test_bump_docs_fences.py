@@ -200,6 +200,27 @@ def test_a_tab_between_block_quote_markers_is_preserved() -> None:
     )
 
 
+def test_a_list_continuation_quote_keeps_its_markers() -> None:
+    """An indented quote inside a list keeps its markers when rendered."""
+    text = (
+        "- item\n\n"
+        "    > ```toml\n"
+        "    > [dependencies]\n"
+        '    > alpha = "0.1.0"\n'
+        "    > ```\n"
+    )
+
+    updated, changed = bump_docs_fences.rewrite_markdown_toml_fences(
+        text, ("alpha",), "1.2.3"
+    )
+
+    assert changed, "the dependency version must be rewritten"
+    assert "    > [dependencies]" in updated, (
+        "the indented block quote must survive the continuation prefix"
+    )
+    assert '> alpha = "1.2.3"' in updated, "the quoted requirement must be rewritten"
+
+
 _FENCE_OPENER = st.sampled_from([
     "```toml",
     "````toml",

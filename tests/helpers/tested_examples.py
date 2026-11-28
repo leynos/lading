@@ -14,7 +14,6 @@ from pathlib import Path
 
 from tests.helpers.markdown_fence_scan import (
     MAX_FENCE_INDENT,
-    clear_deeper_levels,
     closes_fence,
     dedent,
     fence_delimiter,
@@ -104,6 +103,7 @@ class _LoadState:
     require_markers: bool
     examples: dict[str, MarkedExample]
     list_levels: dict[int, list[int]] = dc.field(default_factory=dict)
+    container_depth: int = 0
 
 
 def _load_line(state: _LoadState, index: int) -> int:
@@ -129,7 +129,11 @@ def _container_indent(state: _LoadState, raw: str) -> int:
         The content indentation of the enclosing list item, or ``0``.
     """
     depth = quote_depth(raw)
-    clear_deeper_levels(state.list_levels, depth)
+    if depth != state.container_depth:
+        # A quote that starts or ends outside the current list does not
+        # continue it, so the levels it leaves behind are stale.
+        state.list_levels.clear()
+        state.container_depth = depth
     levels = state.list_levels.setdefault(depth, [])
     return list_context(raw, levels)
 
@@ -184,7 +188,8 @@ def _marker_at(
     """Return the marker on ``raw``, or ``None`` when it carries none."""
     depth = quote_depth(raw)
     content = strip_quotes(raw, depth) or ""
-    marker_text, container_indent = strip_list_items(content, list_indent)
+    marker_text, columns = strip_list_items(content, list_indent)
+    container_indent = columns[-1] if columns else list_indent
     marker_text = marker_text.strip()
     if not marker_text.startswith("<!-- tested-example:"):
         return None
