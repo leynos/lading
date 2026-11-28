@@ -88,13 +88,18 @@ sources. The bump command lives in `lading/commands/`:
 - `bump_docs_dependencies.py` — dependency-section rewriting inside fences. It
   visits top-level, `[workspace.*]`, and `[target.<spec>.*]` tables and, after
   this change, selects each entry by its `package` identity or key before
-  calling `bump_toml.update_dependency_table`.
-- `bump_docs_fences.py` — Markdown fence discovery; re-exports
-  `update_toml_snippet_dependencies` from `bump_docs_dependencies.py`.
-- `bump_toml.py` — shared TOML helpers. `update_dependency_table` iterates
-  names and calls `update_dependency_entry`, which dispatches `InlineTable` and
-  `Table` entries to `assign_dependency_version_field` and treats everything
-  else as a scalar requirement.
+  calling `bump_toml_dependencies.update_dependency_table`.
+- `bump_docs_fences.py` — Markdown fence discovery and package-version
+  rewriting; re-exports `update_toml_snippet_dependencies` from
+  `bump_docs_dependencies.py`.
+- `bump_toml.py` — TOML table selection, the `[package]` and
+  `[workspace.package]` version writers (including the replace-only
+  `replace_string_version`), manifest parsing, and atomic writes.
+- `bump_toml_dependencies.py` — dependency-entry helpers. It provides
+  `DEPENDENCY_SECTIONS` and `update_dependency_table`, which iterates names and
+  calls `update_dependency_entry`; that dispatches `InlineTable`, `Table`, and
+  `OutOfOrderTableProxy` entries to `assign_dependency_version_field` and
+  treats everything else as a scalar requirement.
 - `bump_manifests.py` — manifest rewriting. `_dependency_sections_for_crate`
   maps bumped crate names to manifest keys via `dependency.manifest_name`; it
   is the reference behaviour and is unchanged.
@@ -146,8 +151,9 @@ snippets. The `[workspace.*]` and `[target.<spec>.*]` traversal comes from
 ## Constraints
 
 - Do not modify `lading/commands/bump_manifests.py` or its key selection.
-- Do not add `package` handling to `bump_toml.update_dependency_table`; it
-  must remain an exact-key operation for manifest callers.
+- Do not add `package` handling to
+  `bump_toml_dependencies.update_dependency_table`; it must remain an exact-key
+  operation for manifest callers.
 - Preserve the signatures of `rewrite_markdown_toml_fences`,
   `update_toml_snippet_versions`, `update_toml_snippet_dependencies`, and
   `update_documentation_files` (the last is re-exported by `bump_docs.py`).
@@ -318,10 +324,11 @@ increase. Any further threshold breach requires escalation.
 ## Decision log
 
 - Decision: implement the identity rule in `bump_docs_fences.py`, not in
-  `bump_toml.update_dependency_table`. Rationale: the manifest pass must keep
-  exact-key semantics (`manifest_name` already resolves aliases), while the
-  documentation pass has no metadata-derived key mapping. Keeping the rule in
-  the documentation module prevents the two callers from diverging again.
+  `bump_toml_dependencies.update_dependency_table`. Rationale: the manifest
+  pass must keep exact-key semantics (`manifest_name` already resolves
+  aliases), while the documentation pass has no metadata-derived key mapping.
+  Keeping the rule in the documentation module prevents the two callers from
+  diverging again.
 - Decision: use `"package" in entry` to distinguish an absent field from an
   unusable one. Rationale: `value_as_string(...) or key` would silently fall
   back to the key for an empty package, contradicting the specified rule. The

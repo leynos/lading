@@ -1303,9 +1303,9 @@ the top-level `[dependencies]`, `[dev-dependencies]`, and
 Identity selection lives in this module, not in `bump_toml`. Manifest callers
 pass manifest keys (resolved from `cargo metadata` by
 `bump_manifests._dependency_sections_for_crate`) to
-`bump_toml.update_dependency_table`, which stays an exact-key operation. Keep
-that boundary: adding `package` matching to the shared helper would change
-manifest selection. Dotted dependency entries parse as an
+`bump_toml_dependencies.update_dependency_table`, which stays an exact-key
+operation. Keep that boundary: adding `package` matching to the shared helper
+would change manifest selection. Dotted dependency entries parse as an
 `OutOfOrderTableProxy`; the shared entry dispatch mutates their `version` field
 in place, so both manifest and documentation callers can update them once
 selection has chosen the key. The user-visible rule is documented in
