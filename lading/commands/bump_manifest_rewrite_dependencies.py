@@ -12,7 +12,11 @@ import typing as typ
 from tomlkit.container import OutOfOrderTableProxy
 from tomlkit.items import InlineTable, Table
 
-from lading.commands import bump_manifest_rewrite_bounds, bump_toml
+from lading.commands import (
+    bump_manifest_rewrite_bounds,
+    bump_toml,
+    bump_toml_dependencies,
+)
 
 if typ.TYPE_CHECKING:
     from tomlkit.toml_document import TOMLDocument
@@ -58,7 +62,7 @@ def rewrite_dependency_requirements(
     """
     names = frozenset(updated_crate_names)
     sections: list[tuple[str, ...]] = []
-    for section in bump_toml.DEPENDENCY_SECTIONS:
+    for section in bump_toml_dependencies.DEPENDENCY_SECTIONS:
         sections.append((section,))
         sections.append(("workspace", section))
     target_table = bump_toml.select_table(document, ("target",), include_inline=True)
@@ -66,7 +70,7 @@ def rewrite_dependency_requirements(
         for selector in tuple(target_table):
             sections.extend(
                 ("target", selector, section)
-                for section in bump_toml.DEPENDENCY_SECTIONS
+                for section in bump_toml_dependencies.DEPENDENCY_SECTIONS
             )
     changed = False
     for path in sections:
@@ -113,7 +117,7 @@ def _rewrite_dependency_entry(
         if entry.get("workspace") is True:
             return False
         value = entry.get("version")
-        replacement = bump_toml.prepare_version_replacement(
+        replacement = bump_toml_dependencies.prepare_version_replacement(
             value,
             target_version,
             compose=compose_requirement,
@@ -126,7 +130,7 @@ def _rewrite_dependency_entry(
             return False
         entry["version"] = replacement
         return True
-    replacement = bump_toml.prepare_version_replacement(
+    replacement = bump_toml_dependencies.prepare_version_replacement(
         entry, target_version, compose=compose_requirement
     )
     _warn_if_bounds_exclude_target(key, entry, target_version)
@@ -186,5 +190,7 @@ def compose_requirement(existing: str, target_version: str) -> str:
     first_constraint, separator, remaining_constraints = existing.partition(",")
     trimmed_constraint = first_constraint.rstrip()
     trailing_whitespace = first_constraint[len(trimmed_constraint) :]
-    replacement = bump_toml.compose_requirement(trimmed_constraint, target_version)
+    replacement = bump_toml_dependencies.compose_requirement(
+        trimmed_constraint, target_version
+    )
     return f"{replacement}{trailing_whitespace}{separator}{remaining_constraints}"

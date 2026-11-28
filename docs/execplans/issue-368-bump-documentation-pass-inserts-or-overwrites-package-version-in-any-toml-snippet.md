@@ -249,6 +249,11 @@ Scenario: Bumping restricts documentation version rewriting to bumped crates
 - [x] EP-M3: documentation, migration note, and gates. User guide, design
   document, migration guide and their contract tests committed as `c395dc84`;
   all six deterministic gates green.
+- [x] 2026-11-28: rebased twice as `main` advanced: first onto `4ddba048`
+  (#423), then onto `ba6ebc9d` (#353). Conflicts were resolved by adopting
+  main's inline-table policy, carrying main's `_terminated_opener` into the
+  renderer module, and splitting/redirecting the moved TOML helpers. One
+  superseded commit was skipped; all six gates are green afterwards.
 - [x] 2026-11-27: review fixes committed as `da097f52` (dependency-helper
   split), `b0194fc7` (test hardening), `a80eac4c` (duplicated out-of-order
   tests merged). Local CodeRabbit review reports zero findings, hosted CI is
@@ -294,17 +299,30 @@ Scenario: Bumping restricts documentation version rewriting to bumped crates
   sanctioned separate atomic refactor after the functional commit, and both
   modules are now under the ceiling.
 - 2026-11-27: tolerate both budget exceptions. Final measurement against the
-  reviewed base `4ddba048`: Python source and tests +2156/-874, a net +1282
+  reviewed base `ba6ebc9d`: Python source and tests +2631/-1145, a net +1486
   against the +320-line tolerance, and `pyproject.toml` +4/-0 against the
-  zero-line configuration tolerance. The earlier +702 figure predated the
-  rebase onto #423 and the review-driven hardening. The overage is required
-  work rather than scope growth: the repository's 400-line ceiling forced the
-  renderer, dependency-helper and fence-scanner splits; review required
-  CommonMark indentation rules and their regressions; and the configuration
-  change is one per-file pydoclint ignore for the loader's delegated
-  `ValueError` contract, matching the existing `bump_readme.py` precedent. The
-  ExecPlan itself is excluded from every budget.
-- 2026-11-27: correct the virtual-root guidance after review. A virtual
+  zero-line configuration tolerance. Earlier figures (+702, then +1282)
+  predated the rebases onto #423 and #353 and the review-driven hardening. The
+  overage is required work rather than scope growth: the repository's 400-line
+  ceiling forced the renderer, dependency-helper and fence-scanner splits;
+  review required CommonMark indentation rules and their regressions; and the
+  configuration change is one per-file pydoclint ignore for the loader's
+  delegated `ValueError` contract, matching the existing `bump_readme.py`
+  precedent. The ExecPlan itself is excluded from every budget.
+- 2026-11-28: adopt main's inline-table policy after rebasing onto `ba6ebc9d`
+  (#353). `select_table` now takes `include_inline`, and the repository
+  documents that the documentation and manifest passes leave inline shapes
+  alone; a configured non-member rewrite opts in. The documentation pass
+  therefore uses the default and leaves `package = { ... }` and
+  `workspace = { package = { ... } }` snippets unchanged, and the late
+  inline-support change and its commit were dropped as superseded. A policy
+  test pins the unchanged round-trip.
+- 2026-11-28: redirect main's `bump_manifest_rewrite_dependencies` module to
+  the split dependency helpers. The rebase left it importing
+  `DEPENDENCY_SECTIONS`, `prepare_version_replacement` and
+  `compose_requirement` from `bump_toml`, which produced five type errors and
+  32 test failures until the imports moved to `bump_toml_dependencies`.
+- 2026-11-28: correct the virtual-root guidance after review. A virtual
   manifest has no `[package]` table, so advising readers to add a bumped crate's
   `[package].name` to a virtual-root example would describe a different
   workspace shape. The guides now say to maintain that documented version by
