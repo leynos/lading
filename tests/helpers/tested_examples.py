@@ -142,7 +142,8 @@ def _enter_container(state: _LoadState, raw: str) -> None:
     """Continue or discard the enclosing list when a quote starts."""
     outer = state.list_levels.get(state.container_depth)
     container = outer[-1] if outer else 0
-    if indentation(raw) < container:
+    content = strip_quotes(raw, state.container_depth) or raw
+    if indentation(content) < container:
         # An outdented quote does not continue the list.
         state.list_levels.pop(state.container_depth, None)
 

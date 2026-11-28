@@ -301,16 +301,16 @@ Scenario: Bumping restricts documentation version rewriting to bumped crates
   sanctioned separate atomic refactor after the functional commit, and both
   modules are now under the ceiling.
 - 2026-11-27: tolerate both budget exceptions. Final measurement against the
-  reviewed base `ba6ebc9d`: Python source and tests +2732/-1248, a net +1484
+  reviewed base `ba6ebc9d`: Python source and tests +2675/-1248, a net +1427
   against the +320-line tolerance, and `pyproject.toml` +4/-0 against the
-  zero-line configuration tolerance. Earlier figures (+702, +1282, then +1486)
-  predated the rebases onto #423 and #353 and the review-driven hardening. The
-  overage is required work rather than scope growth: the repository's 400-line
-  ceiling forced the renderer, dependency-helper and fence-scanner splits;
-  review required CommonMark indentation rules and their regressions; and the
-  configuration change is one per-file pydoclint ignore for the loader's
-  delegated `ValueError` contract, matching the existing `bump_readme.py`
-  precedent. The ExecPlan itself is excluded from every budget.
+  zero-line configuration tolerance. Earlier figures (+702, +1282, +1486, then
+  +1484) predated the rebases onto #423 and #353 and the review-driven
+  hardening. The overage is required work rather than scope growth: the
+  repository's 400-line ceiling forced the renderer, dependency-helper and
+  fence-scanner splits; review required CommonMark indentation rules and their
+  regressions; and the configuration change is one per-file pydoclint ignore
+  for the loader's delegated `ValueError` contract, matching the existing
+  `bump_readme.py` precedent. The ExecPlan itself is excluded from every budget.
 - 2026-11-28: adopt main's inline-table policy after rebasing onto `ba6ebc9d`
   (#353). `select_table` now takes `include_inline`, and the repository
   documents that the documentation and manifest passes leave inline shapes
