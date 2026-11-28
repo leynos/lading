@@ -259,8 +259,13 @@ increase. Any further threshold breach requires escalation.
   Hypothesis property over generated keys, package values, and current versions
   with deterministic examples. Pushed `90e28153`; `make test` reports 1759
   passed, 31 skipped, 108 snapshots, and every hosted check passes.
-- [ ] Reconcile the final assessment round and merge PR #422 once it reaches
-  equilibrium.
+- [x] (2026-11-28) The formal review completed after the queued request. All 14
+  pre-merge checks pass. One minor inline finding: the user-guide example
+  showed the alias and the package-name spelling as two dependencies in one
+  manifest, which Cargo rejects because they resolve to the same package. The
+  examples are now separate code blocks.
+- [ ] Reply in the review thread, request approval, and merge PR #422 once it
+  reaches equilibrium.
 
 ## Surprises & discoveries
 

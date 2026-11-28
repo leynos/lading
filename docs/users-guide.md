@@ -457,12 +457,19 @@ version = "0.1.0"
 A documented dependency is identified by its `package` field when that field is
 present, and by its key when the field is absent. This matches how the manifest
 pass resolves a dependency, so a renamed dependency is bumped under either
-spelling:
+spelling. First, an alias that renames the package:
 
 ```toml
 [dependencies]
 config_layer = { package = "ortho_config", version = "0.9.0" }  # bumped
-ortho_config = "0.9.0"                                          # bumped
+```
+
+Second, the same dependency under its package name (a separate manifest, since
+Cargo rejects two dependencies on the same package):
+
+```toml
+[dependencies]
+ortho_config = "0.9.0"  # bumped
 ```
 
 A `package` field that is present but empty, or that is not a string, makes the
