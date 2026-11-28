@@ -138,10 +138,10 @@ follows, verified by direct probing:
 5. Cover the behaviour with unit, pipeline, and CLI behavioural tests, and
    document the identity rule and its scope.
 
-Explicit non-goals: supporting `[workspace.dependencies]` or target-specific
-tables in documentation fences, changing manifest key selection, adding
-configuration knobs, or resolving aliases through `cargo metadata` for
-documentation snippets.
+Explicit non-goals: changing manifest key selection, adding configuration
+knobs, or resolving aliases through `cargo metadata` for documentation
+snippets. The `[workspace.*]` and `[target.<spec>.*]` traversal comes from
+`main` and is retained, with the identity rule applied at each visited location.
 
 ## Constraints
 
@@ -393,8 +393,10 @@ passes.
 
 Assigned requirements: `ISSUE-369-REQ-implementation`, `-mutation`.
 
-- Add `_dependency_identity(key, entry)` to `bump_docs_fences.py` and filter
-  keys through it in `_update_single_dependency_section`.
+- Add `_dependency_identity(key, entry)` to the documentation dependency pass
+  and filter each visited table's keys through it. The rebase onto `main`
+  relocated that pass to `bump_docs_dependencies.py`, so the helper lives there
+  in the final tree.
 - Dispatch `OutOfOrderTableProxy` entries through the table-like branch of
   `update_dependency_entry`, and widen `assign_dependency_version_field` to
   `_TableLike`.
@@ -415,9 +417,9 @@ Assigned requirements: `ISSUE-369-REQ-migration`, `-design`.
 - Run `make fmt`, `make markdownlint`, `make nixie`, the focused pytest
   command, and the full gates.
 
-Acceptance: the documentation states the rule and scope without implying
-support for `[workspace.dependencies]` or target-specific tables, and every
-gate passes with recorded evidence.
+Acceptance: the documentation states the identity rule and the post-rebase
+location scope (top-level, `[workspace.*]`, and `[target.<spec>.*]` tables),
+and every gate passes with recorded evidence.
 
 ## Verification plan
 
@@ -492,15 +494,15 @@ requirements.
 Evidence:
 
 ```plaintext
-focused: 114 passed in 78.60s
-make check-fmt: 649 files already formatted; 40 Markdown files unchanged
+focused: 69 passed (identity, helper, and pipeline suites on the rebased tree)
+make check-fmt: 739 files already formatted; 41 Markdown files unchanged
 make markdownlint: 0 issues in 0 files (spelling gate clean)
 make nixie: All diagrams validated successfully
 make lint: 10.00/10 (Ruff, Interrogate, Skylos, duplication, Pylint)
 make typecheck: All checks passed
-make test: 1759 passed, 31 skipped, 108 snapshots
-hosted: build-dist, lint-test, CodeScene, and Gecko pass on 90e28153
-cs check: 10.00 for bump_toml.py and test_dependency_sections.py
+make test: 2017 passed, 29 skipped, 114 snapshots
+hosted: build-dist, lint-test, CodeScene, and Gecko pass on the rebased head
+cs check: 10.00 for bump_docs_dependencies.py and test_dependency_sections.py
 ```
 
 Lessons:
@@ -559,3 +561,5 @@ issue's expected behaviour and the section scope.
   `tests/unit/test_bump_documentation_updates.py` size exception (377 to 467)
   after the rebased assessment, and corrected the stale user-guide paragraphs
   that described literal key matching and proxy skipping.
+- 2026-11-28: Aligned the plan's non-goals and EP-M2/EP-M3 statements with the
+  relocated dependency pass and the retained workspace/target scope.
