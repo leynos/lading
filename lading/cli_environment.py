@@ -10,7 +10,6 @@ command, a scope that hides those token values from everything lading prints.
 
 import collections.abc as cabc
 import functools
-import os
 import sys
 from contextlib import AbstractContextManager, contextmanager, nullcontext
 from pathlib import Path
@@ -26,26 +25,42 @@ from lading.utils.secret_scope import redact_active, use_secrets
 CARGO_REGISTRY_DEFAULT_ENV_VAR = "CARGO_REGISTRY_DEFAULT"
 
 
-def hidden_for(tokens: cabc.Sequence[str]) -> AbstractContextManager[object]:
+def hidden_for(
+    tokens: cabc.Sequence[str], environ: cabc.Mapping[str, str]
+) -> AbstractContextManager[object]:
     """Hide registry credentials from everything this invocation shows.
 
     Only a digest-checked publish (``--expect-digests``) activates them, so any
     other invocation behaves as it did before the option existed. The scope
     wraps the whole of ``main``, error printing included.
 
+    Parameters
+    ----------
+    tokens : cabc.Sequence[str]
+        The command-line arguments.
+    environ : cabc.Mapping[str, str]
+        The environment the invocation runs with; only ``main``, the
+        composition root, passes ``os.environ``.
+
     Returns
     -------
     AbstractContextManager[object]
-        :func:`~lading.utils.redaction.use_secrets` for the resolved values, or
-        a no-op.
+        :func:`~lading.utils.secret_scope.use_secrets` for the resolved
+        values, or a no-op.
+
+    Examples
+    --------
+    >>> with hidden_for(["bump", "1.2.3"], {"CARGO_REGISTRY_TOKEN": "abc"}):
+    ...     redact_active("abc")
+    'abc'
     """
     if not any(token.partition("=")[0] == "--expect-digests" for token in tokens):
         return nullcontext()
-    return _hidden_digest_run()
+    return _hidden_digest_run(environ)
 
 
 @contextmanager
-def _hidden_digest_run() -> cabc.Generator[None]:
+def _hidden_digest_run(environ: cabc.Mapping[str, str]) -> cabc.Generator[None]:
     """Hide the environment's token values first, then the credentials file's.
 
     Resolving the Cargo environment reads the credentials file and can warn
@@ -53,7 +68,7 @@ def _hidden_digest_run() -> cabc.Generator[None]:
     environment already names are therefore active before that read, and the
     file's own are added once it has been read.
     """
-    environment = hidden_environment(os.environ)
+    environment = hidden_environment(environ)
     with use_secrets(environment.secrets):
         yield
 

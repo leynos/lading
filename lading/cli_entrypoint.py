@@ -6,6 +6,7 @@ and diagnostics. Command adapters live in :mod:`lading.cli`.
 """
 
 import collections.abc as cabc
+import os
 import sys
 
 from . import config
@@ -73,7 +74,8 @@ def main(argv: cabc.Sequence[str] | None = None) -> int:
     0
     """
     tokens = list(sys.argv[1:] if argv is None else argv)
-    with hidden_for(tokens):
+    # The composition root: the one place the ambient environment is read.
+    with hidden_for(tokens, os.environ):
         return _main(tokens)
 
 
