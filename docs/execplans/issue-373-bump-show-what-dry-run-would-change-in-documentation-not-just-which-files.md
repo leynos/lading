@@ -75,7 +75,7 @@ compatibility.
 ## Tolerances (exception triggers)
 
 The comparison base is `origin/main` at `6768763c`, the commit this plan was
-last rebuilt on. At that base the change spans 48 non-ExecPlan files and 1,855
+last rebuilt on. At that base the change spans 50 non-ExecPlan files and 1,875
 net Python lines, which exceeds the file and code triggers below; D11 records
 the accepted overrun. ExecPlan files are excluded from every size count.
 
