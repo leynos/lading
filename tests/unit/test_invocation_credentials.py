@@ -13,8 +13,8 @@ from pathlib import Path
 
 from lading.runtime.credentials import credential_file_tokens
 from lading.runtime.redacting_runner import redacting_runner
-from lading.utils.process import command_detail
-from lading.utils.redaction import REDACTED, redact_active, use_secrets
+from lading.utils.redaction import REDACTED
+from lading.utils.secret_scope import SecretScope, redact_active, use_secrets
 
 if typ.TYPE_CHECKING:
     import pytest
@@ -53,15 +53,15 @@ def test_a_command_hides_the_token_of_its_own_relative_cargo_home(
     second = _directory_with_token(tmp_path, "second", _SECOND)
     # What the entry point collects from its own directory, the first one.
     collected = credential_file_tokens(first / _HOME)
-    runner = redacting_runner(collected, cargo_home=_HOME)
     logger = logging.getLogger("lading.commands.publish")
 
-    with use_secrets(collected):
+    with use_secrets(collected) as scope:
+        runner = redacting_runner(scope, cargo_home=_HOME)
         exit_code, stdout, _stderr = runner(
             [sys.executable, "-c", _PRINT_FROM_OWN_HOME], cwd=second
         )
         logger.warning("cargo said: %s", stdout)
-        detail = command_detail(stdout, "")
+        detail = redact_active(stdout)
 
     relayed = capsys.readouterr().out
     assert exit_code == 0, "the child must have run"
@@ -78,7 +78,7 @@ def test_a_command_cargo_home_overrides_the_entry_points(
 ) -> None:
     """A ``CARGO_HOME`` in the command's own environment is the one read."""
     second = _directory_with_token(tmp_path, "second", _SECOND)
-    runner = redacting_runner((), cargo_home=Path("elsewhere"))
+    runner = redacting_runner(SecretScope(), cargo_home=Path("elsewhere"))
     script = (
         "import os, pathlib, tomllib;"
         "home = pathlib.Path(os.environ['CARGO_HOME']);"

@@ -16,7 +16,8 @@ from pathlib import Path
 
 from lading.commands.publish_cargo_config import CargoEnvironment
 from lading.runtime.credentials import credential_file_tokens
-from lading.utils.redaction import redact_active, registry_token_values, use_secrets
+from lading.utils.redaction import registry_token_values
+from lading.utils.secret_scope import redact_active, use_secrets
 
 # Cargo's own variable naming the registry `cargo publish` targets by default.
 # `--expect-digests` can only compare against crates.io, so it is read to refuse

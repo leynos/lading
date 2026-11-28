@@ -12,12 +12,8 @@ from lading import config as config_module
 from lading.commands import publish
 from lading.commands.publish_cargo_config import CargoEnvironment
 from lading.commands.publish_errors import ExpectedDigestsError
-from lading.utils.redaction import (
-    REDACTED,
-    redact_active,
-    redact_text,
-    use_secrets,
-)
+from lading.utils.redaction import REDACTED, redact_text
+from lading.utils.secret_scope import redact_active, use_secrets
 from tests.helpers.publish_digests import PublishRig
 
 _LEAK = "exc-credential-44dd55ee66ff"
@@ -267,7 +263,7 @@ def _run_overlapping_scopes(
         contextvars.copy_context(),
     )
     open_scopes: list[
-        tuple[contextvars.Context, contextlib.AbstractContextManager[None]]
+        tuple[contextvars.Context, contextlib.AbstractContextManager[object]]
     ] = []
     try:
         for context, scope in ((first_context, first), (second_context, second)):

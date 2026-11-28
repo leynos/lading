@@ -30,6 +30,7 @@ from lading.utils import metrics
 
 if typ.TYPE_CHECKING:
     from lading.runtime import CommandRunner
+    from lading.utils.secret_scope import SecretScope
 
 # Duration of each per-crate cargo invocation, labelled by ``subcommand``
 # (``package`` or ``publish``) and ``crate``. One observation per invocation,
@@ -78,23 +79,22 @@ def _invoke(
 
 
 def redacting_invoke(
-    secrets: cabc.Sequence[str], *, cargo_home: Path | None = None
+    scope: SecretScope, *, cargo_home: Path | None = None
 ) -> CommandRunner:
-    """Return the default publish runner with ``secrets`` hidden from its output.
+    """Return the default publish runner with ``scope``'s secrets hidden.
 
     Returns
     -------
     CommandRunner
-        Behaves like :func:`_invoke`, with the same error mapping. The exact
-        ``secrets`` (and registry tokens in a call's ``env``) are hidden from
+        Behaves like :func:`_invoke`, with the same error mapping. The
+        scope's secrets (and registry tokens a call brings) are hidden from
         what it relays to the console and logs. The captured stdout and
         stderr it returns are raw, exactly as the child wrote them, because
         lading parses them; a message built from them must go through the
-        active redaction helpers (:func:`lading.utils.redaction.redact_active`
-        or the failure-detail helpers of :mod:`lading.utils.process`) before
-        it is shown.
+        active redaction helpers (:meth:`SecretScope.redact` or
+        :func:`lading.utils.secret_scope.redact_active`) before it is shown.
     """
-    return _map_errors(redacting_runner(secrets, cargo_home=cargo_home))
+    return _map_errors(redacting_runner(scope, cargo_home=cargo_home))
 
 
 @dc.dataclass(frozen=True, slots=True)

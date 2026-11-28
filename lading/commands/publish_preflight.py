@@ -48,12 +48,8 @@ from lading.commands.publish_lockfile_preflight import _validate_lockfile_freshn
 from lading.commands.publish_skip import SkipPreflightDecision, resolve_skip_preflight
 from lading.utils import metrics
 from lading.utils.process import append_detail, command_detail, with_detail
-from lading.utils.redaction import (
-    ordered_secrets,
-    redact_text,
-    registry_token_values,
-    use_secrets,
-)
+from lading.utils.redaction import ordered_secrets, redact_text, registry_token_values
+from lading.utils.secret_scope import use_secrets
 
 if typ.TYPE_CHECKING:
     from lading.commands.lockfile_repository import LockfileInspectionRepository

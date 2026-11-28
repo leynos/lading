@@ -16,7 +16,7 @@ from lading.commands.publish_archive_check import ArchiveVerifier, create_verifi
 from lading.commands.publish_execution import redacting_invoke
 from lading.commands.publish_staging import _resolve_staged_crate_root
 from lading.runtime.redacting_runner import redacting_runner
-from lading.utils.redaction import use_secrets
+from lading.utils.secret_scope import SecretScope, use_secrets
 
 if typ.TYPE_CHECKING:
     import pathlib
@@ -26,12 +26,16 @@ if typ.TYPE_CHECKING:
     from lading.runtime import CommandRunner
 
 
-def discovery_runner(options: PublishOptions) -> CommandRunner | None:
+def discovery_runner(
+    options: PublishOptions, scope: SecretScope | None
+) -> CommandRunner | None:
     """Return the runner for workspace discovery, only when digests are expected.
 
     Without digests discovery keeps its ambient runner, so behaviour is as
     before. With them it uses the injected runner, or one that hides the
     caller's registry tokens, so ``cargo metadata`` output cannot leak one.
+    ``scope`` is the run's open secret scope, which that runner extends with
+    the tokens each command brings.
 
     Returns
     -------
@@ -39,10 +43,10 @@ def discovery_runner(options: PublishOptions) -> CommandRunner | None:
         The runner to install around discovery, or ``None`` for the ambient one.
     """
     environment = options.cargo_environment
-    if options.expect_digests is None or environment is None:
+    if scope is None or environment is None:
         return None
     return options.command_runner or redacting_runner(
-        environment.secrets, cargo_home=environment.cargo_home
+        scope, cargo_home=environment.cargo_home
     )
 
 
@@ -69,12 +73,12 @@ def refuse_staged_defaults(
     publish_cargo_config.refuse_alternate_default_at(starts, options.cargo_environment)
 
 
-def command_runner(options: PublishOptions) -> CommandRunner:
+def command_runner(options: PublishOptions, scope: SecretScope | None) -> CommandRunner:
     """Return the injected runner, or the default one.
 
-    With digests expected the default runner hides the caller's registry
-    tokens from subprocess output, so a programmatic caller gets the same
-    protection as the command line.
+    With digests expected (``scope`` is the run's open secret scope) the
+    default runner hides the caller's registry tokens from subprocess output,
+    so a programmatic caller gets the same protection as the command line.
 
     Returns
     -------
@@ -83,10 +87,10 @@ def command_runner(options: PublishOptions) -> CommandRunner:
     """
     if options.command_runner is not None:
         return options.command_runner
-    if options.cargo_environment is not None and options.expect_digests is not None:
-        environment = options.cargo_environment
-        return redacting_invoke(environment.secrets, cargo_home=environment.cargo_home)
-    return publish_pipeline._invoke
+    environment = options.cargo_environment
+    if scope is None or environment is None:
+        return publish_pipeline._invoke
+    return redacting_invoke(scope, cargo_home=environment.cargo_home)
 
 
 def digest_checks(
@@ -138,14 +142,17 @@ def archive_verifier(
     return create_verifier(expected, runner, options.published_digest_fetcher)
 
 
-def hidden_secrets(options: PublishOptions) -> contextlib.AbstractContextManager[None]:
+def hidden_secrets(
+    options: PublishOptions,
+) -> contextlib.AbstractContextManager[SecretScope | None]:
     """Hide the caller's registry tokens from shown messages for a digest run.
 
     Returns
     -------
-    contextlib.AbstractContextManager[None]
-        A scope that redacts the known secrets in every message built from
-        captured output, or a no-op when digests are not expected.
+    contextlib.AbstractContextManager[SecretScope | None]
+        :func:`~lading.utils.secret_scope.use_secrets` for the known secrets,
+        yielding the scope the run's runners extend, or a no-op yielding
+        ``None`` when digests are not expected.
     """
     environment = options.cargo_environment
     if options.expect_digests is None or environment is None:

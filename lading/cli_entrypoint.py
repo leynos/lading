@@ -21,7 +21,7 @@ from .commands import publish_staging
 from .commands.bump_manifest_rewrite_model import ManifestRewriteError
 from .utils import metrics, normalize_workspace_root
 from .utils.confinement import BumpPreflightError
-from .utils.redaction import redact_active
+from .utils.secret_scope import redact_active
 from .workspace import WorkspaceModelError
 
 

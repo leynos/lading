@@ -94,7 +94,7 @@ from .commands import publish_staging as publish_staging
 from .runtime import subprocess_runner as subprocess_runner
 from .utils import normalize_workspace_root
 from .utils.confinement import BumpPreflightError as BumpPreflightError
-from .utils.redaction import use_secrets
+from .utils.secret_scope import use_secrets
 from .workspace import (
     WorkspaceGraph,
     load_bump_workspace,
@@ -108,6 +108,7 @@ from .workspace import metadata as metadata_module
 if typ.TYPE_CHECKING:
     from .commands.publish_cargo_config import CargoEnvironment
     from .runtime import CommandRunner
+    from .utils.secret_scope import SecretScope
 
 
 # ``python -m lading.cli`` executes this module a second time as ``__main__``
@@ -152,10 +153,10 @@ def _run_with_context(
     str
         The command's rendered summary.
     """
-    secrets = None if environment is None else environment.secrets
     home = None if environment is None else environment.cargo_home
-    active_runner = _select_runner(secrets, cargo_home=home)
-    hidden = nullcontext() if secrets is None else use_secrets(secrets)
+    hidden: AbstractContextManager[SecretScope | None] = (
+        nullcontext() if environment is None else use_secrets(environment.secrets)
+    )
     # Only a digest-checked publish locks discovery; every other command keeps
     # the plain loader exactly as before.
     loader = workspace_loader or (
@@ -164,7 +165,10 @@ def _run_with_context(
     # Entered before the configuration is loaded: a configuration error can
     # quote `lading.toml`, which may hold a token, and leaving the scope
     # sanitizes it.
-    with hidden:
+    with hidden as scope:
+        # The runner is given the open scope, which it extends with the tokens
+        # each command brings, so they stay hidden from later messages.
+        active_runner = _select_runner(scope, cargo_home=home)
         configuration, configuration_scope = _command_configuration(workspace_root)
         with configuration_scope, metadata_module.use_command_runner(active_runner):
             workspace_model = loader(workspace_root)

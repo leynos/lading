@@ -1,19 +1,23 @@
 r"""A command runner that hides registry credentials from what it relays.
 
-:func:`redacting_runner` wraps the production subprocess adapter with the secret
-values the command-line entry point resolved. It is selected only for a
-digest-checked run (``--expect-digests``); every other run uses the plain
-runner, whatever the environment holds.
+:func:`redacting_runner` wraps the production subprocess adapter with a
+:class:`~lading.utils.secret_scope.SecretScope`: the values the entry point
+resolved, and the explicit handle through which the runner hides the tokens
+each command brings (its environment's, and its own Cargo home's credentials
+file). It is selected only for a digest-checked run (``--expect-digests``);
+every other run uses the plain runner, whatever the environment holds.
 
 The secrets are hidden from what lading *shows*: the mirrored console output,
 the logged command line and environment, and spawn errors. The captured streams
 it returns are exactly what the child wrote, because lading parses them (for
-example ``cargo metadata`` JSON). Messages that embed captured output are
-redacted where they are built, through :func:`lading.utils.redaction.redact_active`.
+example ``cargo metadata`` JSON). A message built from captured output must be
+redacted before it is shown, with the scope's :meth:`SecretScope.redact` or the
+other helpers of :mod:`lading.utils.secret_scope`.
 
 Examples
 --------
->>> runner = redacting_runner(("s3cret",))
+>>> from lading.utils.secret_scope import SecretScope
+>>> runner = redacting_runner(SecretScope(("s3cret",)))
 >>> runner(["echo", "token s3cret"], echo_stdout=False)  # doctest: +SKIP
 (0, 'token s3cret\\n', '')
 """
@@ -24,14 +28,11 @@ from pathlib import Path
 
 from lading.runtime.credentials import credential_file_tokens
 from lading.runtime.subprocess_runner import SubprocessContext, run_logged
-from lading.utils.redaction import (
-    add_active_secrets,
-    ordered_secrets,
-    registry_token_values,
-)
+from lading.utils.redaction import registry_token_values
 
 if typ.TYPE_CHECKING:
     from lading.runtime.runner import CommandRunner
+    from lading.utils.secret_scope import SecretScope
 
 
 def invocation_cargo_home(
@@ -63,22 +64,22 @@ def invocation_cargo_home(
 
 
 def redacting_runner(
-    secrets: cabc.Sequence[str], *, cargo_home: Path | None = None
+    scope: SecretScope, *, cargo_home: Path | None = None
 ) -> CommandRunner:
-    """Return a runner whose relayed output and logs never show ``secrets``.
+    """Return a runner whose relayed output and logs never show the scope's secrets.
 
     Parameters
     ----------
-    secrets : cabc.Sequence[str]
-        Exact secret values, typically from
-        :func:`~lading.utils.redaction.registry_token_values`. Token values
-        in a call's own ``env`` are hidden as well.
+    scope : SecretScope
+        The secrets to hide, usually the scope
+        :func:`~lading.utils.secret_scope.use_secrets` opened
+        around the command. Before each command starts, the registry tokens
+        in its own ``env`` and in the credentials file of the Cargo home it
+        runs with are added to it, so they are hidden from that command's
+        output and, through the scope, from later messages.
     cargo_home : Path | None
-        The entry point's Cargo home, possibly relative. Before each command
-        starts, the credentials file of the home that command runs with (see
-        :func:`invocation_cargo_home`) is read, and its tokens are hidden from
-        that command's output and added to the active secrets for later
-        messages.
+        The entry point's Cargo home, possibly relative, from which each
+        command's own home is resolved (see :func:`invocation_cargo_home`).
 
     Returns
     -------
@@ -99,11 +100,9 @@ def redacting_runner(
     ) -> tuple[int, str, str]:
         """Execute ``command`` through the subprocess adapter."""
         home = invocation_cargo_home(cargo_home, cwd, env)
-        found = (*registry_token_values(env or {}), *credential_file_tokens(home))
-        add_active_secrets(found)
-        hidden = ordered_secrets((*secrets, *found))
+        scope.hide((*registry_token_values(env or {}), *credential_file_tokens(home)))
         context = SubprocessContext(
-            cwd=cwd, env=env, echo_stdout=echo_stdout, secrets=hidden
+            cwd=cwd, env=env, echo_stdout=echo_stdout, secrets=scope.secrets
         )
         return run_logged(command, context)
 

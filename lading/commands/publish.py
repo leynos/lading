@@ -35,6 +35,7 @@ if typ.TYPE_CHECKING:
     from lading.commands.publish_cargo_config import CargoEnvironment
     from lading.commands.publish_skip import SkipPreflightDecision
     from lading.runtime import CommandRunner
+    from lading.utils.secret_scope import SecretScope
     from lading.workspace import WorkspaceGraph
 
 LOGGER = logging.getLogger(__name__)
@@ -305,20 +306,27 @@ def run(
     str
         Human-readable publication plan and staged-workspace summary.
     """
-    effective_options = PublishOptions() if options is None else options
+    given = PublishOptions() if options is None else options
+    # The explicit arguments win over the options' own fields.
+    effective_options = dc.replace(
+        given,
+        configuration=configuration or given.configuration,
+        workspace=workspace or given.workspace,
+    )
     # Opened before anything is logged or validated: the start log, the option
     # checks and every error leaving this function are inside the scope.
-    with publish_digest_run.hidden_secrets(effective_options):
-        return _publish(workspace_root, configuration, workspace, effective_options)
+    with publish_digest_run.hidden_secrets(effective_options) as scope:
+        return _publish(workspace_root, effective_options, scope)
 
 
 def _publish(
     workspace_root: Path,
-    configuration: config_module.LadingConfig | None,
-    workspace: WorkspaceGraph | None,
     effective_options: PublishOptions,
+    scope: SecretScope | None,
 ) -> str:
     """Plan, stage, and execute publication; see :func:`run`.
+
+    ``scope`` is the digest run's open secret scope, which its runners extend.
 
     Returns
     -------
@@ -329,15 +337,15 @@ def _publish(
     LOGGER.info("Starting publish workflow for workspace %s", root_path)
     _validate_publication_options(effective_options)
     active_configuration = _ensure_configuration(
-        configuration or effective_options.configuration, root_path
+        effective_options.configuration, root_path
     )
-    command_runner = publish_digest_run.command_runner(effective_options)
+    command_runner = publish_digest_run.command_runner(effective_options, scope)
     planning = _Planning(
-        workspace or effective_options.workspace,
+        effective_options.workspace,
         active_configuration,
         root_path,
         locked=effective_options.expect_digests is not None,
-        runner=publish_digest_run.discovery_runner(effective_options),
+        runner=publish_digest_run.discovery_runner(effective_options, scope),
     )
     # With digests, the plan is needed to validate them, and that must happen
     # before the pre-flight, whose auxiliary builds can package crates.

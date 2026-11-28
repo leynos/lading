@@ -48,7 +48,7 @@ from lading.commands.publish_sccache_stats import (
     query_text,
 )
 from lading.utils import metrics
-from lading.utils.redaction import redact_active
+from lading.utils.secret_scope import redact_active
 
 if typ.TYPE_CHECKING:
     from lading.runtime import CommandRunner

@@ -13,6 +13,7 @@ from lading.runtime import subprocess_runner
 from lading.runtime.credentials import credential_file_tokens
 from lading.runtime.redacting_runner import redacting_runner
 from lading.utils.redaction import REDACTED
+from lading.utils.secret_scope import SecretScope
 
 if typ.TYPE_CHECKING:
     import collections.abc as cabc
@@ -97,7 +98,7 @@ def test_credentials_file_value_is_hidden_from_relayed_output(
     )
     environment = cli_environment.cargo_environment({"CARGO_HOME": str(tmp_path)})
 
-    redacting_runner(environment.secrets)(_echoing(_FROM_FILE))
+    redacting_runner(SecretScope(environment.secrets))(_echoing(_FROM_FILE))
 
     assert _FROM_FILE not in capsys.readouterr().out, (
         "the credentials-file value must be hidden from the relay"
@@ -108,7 +109,7 @@ def test_override_supplied_token_is_hidden_without_any_ambient_value(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """A pre-flight override token needs no matching process environment."""
-    runner = redacting_runner(())
+    runner = redacting_runner(SecretScope())
 
     runner(
         _echoing(_FROM_OVERRIDE),
@@ -127,7 +128,7 @@ def test_digest_checked_runs_always_select_the_redacting_runner(
     monkeypatch.delenv("LADING_USE_CMD_MOX_STUB", raising=False)
     monkeypatch.delenv("CARGO_REGISTRY_TOKEN", raising=False)
 
-    assert cli._select_runner(()) is not subprocess_runner, (
+    assert cli._select_runner(SecretScope()) is not subprocess_runner, (
         "an expectation run must always redact"
     )
     assert cli._select_runner() is subprocess_runner, "an ordinary run is untouched"
@@ -142,12 +143,14 @@ def test_programmatic_default_runner_redacts_when_digests_are_expected(
         expect_digests=tmp_path / "digests.txt", cargo_environment=environment
     )
 
-    publish_digest_run.command_runner(checked)(_echoing(_FROM_NAMED))
+    publish_digest_run.command_runner(checked, SecretScope(environment.secrets))(
+        _echoing(_FROM_NAMED)
+    )
 
     assert _FROM_NAMED not in capsys.readouterr().out, (
         "the default runner must hide the secret from the relay"
     )
-    assert publish_digest_run.command_runner(publish.PublishOptions()) is (
+    assert publish_digest_run.command_runner(publish.PublishOptions(), None) is (
         publish_pipeline._invoke
     ), "without digests the default runner is unchanged"
 
@@ -171,7 +174,7 @@ def test_redacting_and_plain_runners_log_the_same_command(
         ]
 
     plain = logged(subprocess_runner)
-    redacted = logged(redacting_runner((_FROM_FILE,)))
+    redacted = logged(redacting_runner(SecretScope((_FROM_FILE,))))
 
     assert redacted == plain, "both runners must log the same lines"
     assert any(line.startswith("Running external command") for line in redacted), (
@@ -185,12 +188,12 @@ def test_longest_secret_wins_when_groups_are_combined(
 ) -> None:
     """A token in ``env`` that contains a known secret is replaced whole."""
     context = _AuxBuildContext(
-        runner=redacting_runner(()),
+        runner=redacting_runner(SecretScope()),
         env={"CARGO_REGISTRY_TOKEN": "abcdef"},
         secrets=("abc",),
     )
 
-    redacting_runner(("abc",))(
+    redacting_runner(SecretScope(("abc",)))(
         _echoing("abcdef"), env={"CARGO_REGISTRY_TOKEN": "abcdef"}
     )
 
@@ -207,7 +210,7 @@ def test_the_logged_working_directory_hides_the_secret(
     workdir.mkdir()
     script = [sys.executable, "-c", "import os;print(os.getcwd())"]
 
-    _code, stdout, _stderr = redacting_runner((_FROM_NAMED,))(
+    _code, stdout, _stderr = redacting_runner(SecretScope((_FROM_NAMED,)))(
         script, cwd=workdir, echo_stdout=False
     )
 

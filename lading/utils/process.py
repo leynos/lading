@@ -41,7 +41,7 @@ import os
 import shlex
 import typing as typ
 
-from lading.utils.redaction import redact_active
+from lading.utils.secret_scope import redact_active
 
 if typ.TYPE_CHECKING:
     from logging import Logger as LoggerType

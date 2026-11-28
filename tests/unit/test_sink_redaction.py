@@ -12,7 +12,8 @@ from lading.commands import publish_diagnostics, publish_sccache
 from lading.commands.publish_archive_check import PACKAGED, create_verifier
 from lading.commands.publish_digests import ExpectedDigests
 from lading.commands.publish_errors import ArchiveUnavailableError
-from lading.utils.redaction import REDACTED, use_secrets
+from lading.utils.redaction import REDACTED
+from lading.utils.secret_scope import use_secrets
 from lading.workspace import WorkspaceModelError
 from tests.unit.publish.conftest import make_crate
 from tests.unit.publish.sccache_doubles import WRAPPER, ScriptedRunner, payload

@@ -11,7 +11,8 @@ import pytest
 from lading.commands.publish_manifest import PublishPreparationError
 from lading.exceptions import LadingError
 from lading.utils.exception_redaction import sanitize_exception
-from lading.utils.redaction import REDACTED, redact_text, use_secrets
+from lading.utils.redaction import REDACTED, redact_text
+from lading.utils.secret_scope import use_secrets
 
 _LEAK = "exc-credential-44dd55ee66ff"
 

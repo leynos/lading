@@ -1905,36 +1905,45 @@ follows Cargo's own order (`CARGO_REGISTRY_DEFAULT`, then `.cargo/config` or
 through its ancestors, then Cargo home); `refuse_alternate_default` applies it
 to the workspace root and to each publishable crate's root before anything is
 staged. The inputs arrive as `PublishOptions.cargo_environment`, a
-`CargoEnvironment` resolved by `lading.cli`. `lading.utils.redaction` and
-`redacting_runner` keep exact registry-token values out of what lading shows,
-never out of what it parses. `lading.cli` collects the values from the
-environment and the credentials file (`runtime.credentials`) for a
-digest-checked run only; `_select_runner` then returns `redacting_runner`,
-while a run without the option always gets the plain `subprocess_runner`. The
-entry point's file is only the first: a relative `CARGO_HOME` is resolved by
-Cargo against each command's working directory, so before starting each command
-`redacting_runner` reads the credentials file of the home that command runs with
-(`invocation_cargo_home`: the call's own `CARGO_HOME`, else the entry point's,
-joined to the call's `cwd`), hides its tokens from that command's relay and
-adds them to every open scope with `add_active_secrets`, so later diagnostics
-and logs hide them too. The relative home is never made absolute once for the
-whole run. `redact_text` replaces, left to right, the longest secret starting
-at each position, so the result does not depend on the order secrets are given
-in. Every known secret is replaced, including one that could overlap the
-`<redacted>` marker, as a named-registry token that is just `redacted` could:
-`marker_for` then builds the marker from one character found in no secret
-(framed by `<` and `>` when no secret has a bracket), so no secret can show
-through it, and fails closed with `ValueError` if none is left. The marker
-depends only on the set of secrets, so `SecretRedactor` reproduces it exactly
-for any chunking by keeping the tail raw until later input settles it (a
-Hypothesis property checks the equivalence). The runner captures each stream
-raw and filters only the mirrored text (`stream_relay.relay_decoded` with a
-`RelayCapture`). Messages built from captured output are redacted centrally:
-`use_secrets` activates the values for the run and `command_detail` and
-`append_detail` (and so `with_detail` and the metadata error) call
-`redact_active`. The spawn error, the logged command line and the debug
-environment log redact by value too. As a backstop, `use_secrets` sanitizes an
-exception that propagates out of its scope
+`CargoEnvironment` resolved by `lading.cli`. `lading.utils.redaction`,
+`lading.utils.secret_scope` and `redacting_runner` keep exact registry-token
+values out of what lading shows, never out of what it parses. `lading.cli`
+collects the values from the environment and the credentials file
+(`runtime.credentials`) for a digest-checked run only, opens a scope for them
+with `use_secrets`, and hands the `SecretScope` it yields to `_select_runner`,
+which returns `redacting_runner(scope, ...)`, while a run without the option
+always gets the plain `subprocess_runner`. `publish.run` does the same for a
+programmatic caller: `hidden_secrets` yields the run's scope and
+`command_runner` and `discovery_runner` build their redacting runners on it.
+The entry point's file is only the first: a relative `CARGO_HOME` is resolved
+by Cargo against each command's working directory, so before starting each
+command `redacting_runner` reads the credentials file of the home that command
+runs with (`invocation_cargo_home`: the call's own `CARGO_HOME`, else the entry
+point's, joined to the call's `cwd`), and adds its tokens, and those in the
+call's own `env`, to the scope it was given with `SecretScope.hide`, so that
+command's relay hides them and, through the scope, so do later diagnostics and
+logs. A runner changes only the scope it is handed, never an enclosing one;
+when a `use_secrets` block ends, what its scope holds is handed to the
+enclosing scope (`SecretScope.parent`), so a learned token stays hidden until
+the outermost scope ends. A scope's `secrets` are its own values plus every
+enclosing scope's, read live, so a child sees what its parent learns later. The
+relative home is never made absolute once for the whole run. `redact_text`
+replaces, left to right, the longest secret starting at each position, so the
+result does not depend on the order secrets are given in. Every known secret is
+replaced, including one that could overlap the `<redacted>` marker, as a
+named-registry token that is just `redacted` could: `marker_for` then builds
+the marker from one character found in no secret (framed by `<` and `>` when no
+secret has a bracket), so no secret can show through it, and fails closed with
+`ValueError` if none is left. The marker depends only on the set of secrets, so
+`SecretRedactor` reproduces it exactly for any chunking by keeping the tail raw
+until later input settles it (a Hypothesis property checks the equivalence).
+The runner captures each stream raw and filters only the mirrored text
+(`stream_relay.relay_decoded` with a `RelayCapture`). Messages built from
+captured output are redacted centrally: `use_secrets` activates the values for
+the run and `command_detail` and `append_detail` (and so `with_detail` and the
+metadata error) call `redact_active`. The spawn error, the logged command line
+and the debug environment log redact by value too. As a backstop, `use_secrets`
+sanitizes an exception that propagates out of its scope
 (`lading.utils.exception_redaction.sanitize_exception`: strings at any depth of
 `args` and attributes, notes and the whole cause and context chain, in place,
 (containers that contain themselves terminate; any traversal failure falls back

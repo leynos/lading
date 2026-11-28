@@ -7,16 +7,10 @@ messages built from captured output. It never changes what lading *parses*:
 captured streams stay exactly as the child wrote them, so a value that happens
 to coincide with, say, ``cargo metadata`` JSON cannot corrupt it.
 
-There are three layers. :class:`SecretRedactor` filters a stream of text
-chunks, for the relay. :func:`use_secrets` and :func:`redact_active` carry the
-known values for the duration of a digest-checked run, so the helpers that
-embed captured output in messages
-(:func:`lading.utils.process.command_detail` and
-:func:`~lading.utils.process.append_detail`) redact in one place. Finally,
-:func:`use_secrets` installs the log hooks of :mod:`lading.utils.log_redaction`
-for as long as secrets are active, so a message built without any redaction,
-however it got there, is still hidden where it leaves lading. The command
-line's error printer uses :func:`redact_active` the same way.
+:class:`SecretRedactor` filters a stream of text chunks, for the relay, and
+:func:`redact_text` replaces the same values in one string. Carrying the values
+for the duration of a digest-checked run, and hiding them wherever output
+leaves lading, is :mod:`lading.utils.secret_scope`'s job.
 
 Redaction is deliberately narrow: it replaces the exact values of the registry
 token variables lading was given, never a pattern.
@@ -28,43 +22,17 @@ Examples
 'password <redacted> done'
 >>> registry_token_values({"CARGO_REGISTRY_TOKEN": "abc", "HOME": "/root"})
 ('abc',)
->>> with use_secrets(("abc",)):
-...     redact_active("token abc")
-'token <redacted>'
 """
 
 import collections.abc as cabc
-import contextlib
-import contextvars
 import dataclasses as dc
 import functools
-import itertools
 import re
-
-from lading.utils.exception_redaction import sanitize_exception
-from lading.utils.log_redaction import LogRedaction
 
 REDACTED = "<redacted>"
 
 # Cargo's two credential variables: the crates.io token and a named registry's.
 _TOKEN_VARIABLE = re.compile(r"CARGO_REGISTRY_TOKEN|CARGO_REGISTRIES_[A-Z0-9_]+_TOKEN")
-
-
-@dc.dataclass(eq=False, slots=True)
-class _Scope:
-    """One open :func:`use_secrets` block: its secrets (which may grow) and parent."""
-
-    secrets: tuple[str, ...]
-    parent: _Scope | None
-
-
-# The innermost open scope in this context.
-_ACTIVE: contextvars.ContextVar[_Scope | None] = contextvars.ContextVar(
-    "lading_active_secrets", default=None
-)
-# Every open scope. The log hooks are process-wide, so they read this rather
-# than the per-context ``_ACTIVE``.
-_LOGGED: list[_Scope] = []
 
 
 def _overlaps_marker(secret: str) -> bool:
@@ -239,104 +207,6 @@ def redact_text(text: str, secrets: cabc.Sequence[str]) -> str:
     """
     plan = _plan(tuple(secrets))
     return text if plan is None else plan.pattern.sub(lambda _m: plan.marker, text)
-
-
-@contextlib.contextmanager
-def use_secrets(secrets: cabc.Iterable[str]) -> cabc.Generator[None]:
-    """Hide ``secrets`` (in addition to any already active) from shown output.
-
-    For the duration of the block the secrets are replaced by
-    :func:`redact_active`, a :class:`RecordFactory` redacts every log record as
-    it is created (so a handler on any logger is covered), and a
-    :class:`RedactingFilter` is installed on the root logger's handlers. Both
-    are removed afterwards, so nothing changes for a run that never activates
-    any. The hooks redact with the secrets of every open scope at once (see
-    :func:`_redact_logged`). An exception that propagates out of the block is
-    sanitized first (see
-    :func:`~lading.utils.exception_redaction.sanitize_exception`).
-    """
-    parent = _ACTIVE.get()
-    scope = _Scope(ordered_secrets((*_active_secrets(), *secrets)), parent)
-    token = _ACTIVE.set(scope)
-    _LOGGED.append(scope)
-    hooks = LogRedaction(_redact_logged)
-    try:
-        yield
-    except Exception as exc:
-        # An exception leaving the scope is a sink too: it reaches callers, logs
-        # and tracebacks after the scope has ended.
-        safe = sanitize_exception(
-            exc, functools.partial(redact_text, secrets=scope.secrets)
-        )
-        if safe is exc:
-            raise
-        raise safe from safe.__cause__
-    finally:
-        hooks.remove()
-        _LOGGED.remove(scope)
-        _ACTIVE.reset(token)
-
-
-def add_active_secrets(values: cabc.Iterable[str]) -> None:
-    """Hide ``values`` as well, until the outermost open scope ends.
-
-    A command can bring secrets unknown when its scope opened, such as the
-    tokens in its own Cargo home's credentials file. Every enclosing scope
-    gains them, so messages built later hide them too. Outside any scope this
-    does nothing, so a run that never activated secrets is unchanged.
-
-    Examples
-    --------
-    >>> with use_secrets(("abc",)):
-    ...     add_active_secrets(("xyz",))
-    ...     redact_active("abc xyz")
-    '<redacted> <redacted>'
-    >>> redact_active("xyz")
-    'xyz'
-    """
-    added = tuple(values)
-    scope = _ACTIVE.get()
-    while scope is not None:
-        # Replaced whole, so a concurrent reader sees the old or the new set.
-        scope.secrets = ordered_secrets((*scope.secrets, *added))
-        scope = scope.parent
-
-
-def _redact_logged(text: str) -> str:
-    """Redact ``text`` with the secrets of every open scope, in one pass.
-
-    Each scope's log hooks wrap the previous scope's, so the outermost runs
-    first. Were it to use only its own secrets, it could replace the prefix of a
-    longer secret an inner scope added and leave the rest showing. Every hook
-    uses this one combined set instead: the first rewrite hides each secret
-    whole, longest first, and the later hooks find nothing left to replace.
-
-    Returns
-    -------
-    str
-        ``text`` with every open scope's secrets replaced.
-    """
-    scopes = tuple(_LOGGED)
-    return redact_text(
-        text, tuple(itertools.chain.from_iterable(s.secrets for s in scopes))
-    )
-
-
-def _active_secrets() -> tuple[str, ...]:
-    """Return the innermost open scope's secrets, or none outside any scope."""
-    scope = _ACTIVE.get()
-    return () if scope is None else scope.secrets
-
-
-def redact_active(text: str) -> str:
-    """Return ``text`` with the currently active secrets replaced.
-
-    Returns
-    -------
-    str
-        ``text`` unchanged when no secrets are active.
-    """
-    return redact_text(text, _active_secrets())
 
 
 class SecretRedactor:

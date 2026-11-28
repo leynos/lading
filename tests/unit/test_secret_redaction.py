@@ -22,8 +22,8 @@ from lading.utils.redaction import (
     SecretRedactor,
     redact_text,
     registry_token_values,
-    use_secrets,
 )
+from lading.utils.secret_scope import SecretScope, use_secrets
 from lading.workspace.metadata import CargoMetadataInvocationError
 from tests.helpers.publish_digests import PublishRig
 
@@ -81,7 +81,7 @@ def test_runner_hides_the_token_from_the_relay_but_captures_it_raw(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """What lading shows is redacted; what it parses is exactly what was written."""
-    runner = redacting_runner((_LEAK,))
+    runner = redacting_runner(SecretScope((_LEAK,)))
 
     exit_code, stdout, stderr = runner(_printing_command(0))
 
@@ -98,7 +98,7 @@ def test_token_in_a_call_environment_is_hidden_from_the_relay(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """A token passed through ``env`` is hidden without being pre-registered."""
-    runner = redacting_runner(())
+    runner = redacting_runner(SecretScope())
 
     runner(_printing_command(0), env={"CARGO_REGISTRY_TOKEN": _LEAK})
 
@@ -111,7 +111,7 @@ def test_captured_metadata_parses_even_when_it_contains_a_secret_value(
     """Redaction must not alter the data lading parses."""
     document = json.dumps({"target_directory": f"/work/{_LEAK}/target"})
     script = f"print({document!r})"
-    runner = redacting_runner((_LEAK,))
+    runner = redacting_runner(SecretScope((_LEAK,)))
 
     _code, stdout, _stderr = runner([sys.executable, "-c", script])
 
@@ -138,7 +138,7 @@ def test_debug_environment_log_hides_a_token_copied_into_another_variable(
 
 def test_spawn_failure_hides_a_token_in_the_program_and_its_cause() -> None:
     """A token in an executable path does not leak through a spawn error."""
-    runner = redacting_runner((_LEAK,))
+    runner = redacting_runner(SecretScope((_LEAK,)))
 
     with pytest.raises(CommandSpawnError) as excinfo:
         runner([f"/definitely/missing/{_LEAK}/tool"], echo_stdout=False)
@@ -152,7 +152,7 @@ def test_spawn_failure_hides_a_token_in_the_program_and_its_cause() -> None:
 
 def test_spawn_failure_without_a_secret_keeps_the_original_cause() -> None:
     """Nothing to hide means the error is exactly what it was."""
-    runner = redacting_runner((_LEAK,))
+    runner = redacting_runner(SecretScope((_LEAK,)))
 
     with pytest.raises(CommandSpawnError) as excinfo:
         runner(["/definitely/missing/tool"], echo_stdout=False)
@@ -172,7 +172,7 @@ def test_failure_message_and_logs_never_contain_the_token(
     caplog.set_level(logging.DEBUG)
     rig = PublishRig.create(tmp_path)
     environment = CargoEnvironment(None, None, (_LEAK,))
-    real = redacting_runner((_LEAK,))
+    real = redacting_runner(SecretScope((_LEAK,)))
     ran: list[str] = []
 
     def runner(

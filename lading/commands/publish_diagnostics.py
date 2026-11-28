@@ -3,7 +3,7 @@
 import re
 from pathlib import Path
 
-from lading.utils.redaction import redact_active
+from lading.utils.secret_scope import redact_active
 
 _STDERR_PATTERN = re.compile(r"(/[^\s)]+\.stderr)")
 
