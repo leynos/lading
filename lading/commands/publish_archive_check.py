@@ -216,14 +216,22 @@ class ArchiveVerifier:
     def fetch_published_digest(self, crate: WorkspaceCrate) -> str | None:
         """Return the digest crates.io holds for ``crate``'s version (a query).
 
-        Pure with respect to the verifier: it records nothing and tells nobody,
-        so it can be called to look without deciding anything.
+        It downloads the published archive through the injected fetcher, but
+        records nothing and tells nobody, so it can be called to look without
+        deciding anything. A lookup that fails propagates as an error rather
+        than reading as "not published".
 
         Returns
         -------
         str | None
             The published archive's digest, or ``None`` when not yet published.
-        """
+
+        Raises
+        ------
+        PublishedArchiveUnavailableError
+            If the published archive cannot be fetched or hashed, so whether
+            the version is published is unknown.
+        """  # ruff: ignore[docstring-extraneous-exception]  # raised by the injected fetcher
         return self.fetch(crate.name, crate.version)
 
     def settle_published(self, crate: WorkspaceCrate) -> bool:
@@ -242,7 +250,9 @@ class ArchiveVerifier:
         ------
         PublishedArchiveConflictError
             If the published archive differs from the expectation.
-        """
+        PublishedArchiveUnavailableError
+            If the published archive cannot be fetched or hashed.
+        """  # ruff: ignore[docstring-extraneous-exception]  # raised by fetch_published_digest
         published = self.fetch_published_digest(crate)
         if published is None:
             return False
@@ -280,7 +290,11 @@ class ArchiveVerifier:
         ArchiveUnavailableError
             If crates.io does not serve the archive Cargo says exists, so it
             cannot be compared.
-        """
+        PublishedArchiveConflictError
+            If the published archive differs from the expectation.
+        PublishedArchiveUnavailableError
+            If the published archive cannot be fetched or hashed.
+        """  # ruff: ignore[docstring-extraneous-exception]  # raised by settle_published
         if not self.settle_published(crate):
             message = (
                 f"cargo reports that crate {crate.name} {crate.version} is "

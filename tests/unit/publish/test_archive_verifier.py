@@ -16,6 +16,7 @@ from lading.commands.publish_errors import (
     ArchiveMismatchError,
     ArchiveUnavailableError,
 )
+from lading.commands.publish_registry import PublishedArchiveUnavailableError
 from lading.utils import metrics
 from tests.helpers.publish_digests import (
     OTHER_ARCHIVE,
@@ -197,3 +198,21 @@ def test_verifier_compares_archives_through_an_injected_locator(
     assert [item.outcome for item in observer.seen] == [ArchiveOutcome.VERIFIED], (
         "a matching archive found through the injected locator is verified"
     )
+
+
+def test_failed_lookup_query_raises_without_recording(tmp_path: Path) -> None:
+    """The read-only query reports an unavailable archive as an error, not None."""
+    crate = make_crate(tmp_path, "alpha")
+
+    def unavailable(name: str, version: str) -> str | None:
+        """Fail the way the crates.io fetcher does when it gives up."""
+        message = f"Could not fetch {name} {version}"
+        raise PublishedArchiveUnavailableError(message)
+
+    expected = ExpectedDigests("d", {"alpha-0.1.0.crate": digest(PLAIN_ARCHIVE)})
+    verifier = create_verifier(expected, FakeCargo(), unavailable)
+
+    with pytest.raises(PublishedArchiveUnavailableError):
+        verifier.fetch_published_digest(crate)
+
+    assert not verifier.outcomes, "a query records no outcome"

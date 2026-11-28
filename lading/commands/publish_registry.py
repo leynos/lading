@@ -76,7 +76,14 @@ class PublishedDigestFetcher(typ.Protocol):
     """Port that reports the digest of a crate version's published archive."""
 
     def __call__(self, name: str, version: str) -> str | None:
-        """Return the published archive's SHA-256, or ``None`` if not published."""
+        """Return the published archive's SHA-256, or ``None`` if not published.
+
+        Raises
+        ------
+        PublishedArchiveUnavailableError
+            If the archive cannot be fetched or hashed, so whether the version
+            is published is unknown. A fetcher never reports that as ``None``.
+        """
 
 
 class PublishedArchiveUnavailableError(PublishError):
